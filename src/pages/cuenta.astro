@@ -1,0 +1,377 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+// Datos simulados del usuario logueado
+const userData = {
+  nombre: 'Admin',
+  apellidos: 'SporTenis',
+  telefono: '5512345678',
+  correo: 'admin@sportenis.com'
+};
+---
+
+<Layout>
+  <div class="cuenta-page">
+    <!-- Header -->
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="SporTenis, inicio">
+        <span class="brand-mark">S</span>
+        <span>Spor<span>Tenis</span></span>
+      </a>
+      <a href="/" class="back-link">← Volver a la tienda</a>
+    </header>
+
+    <main class="cuenta-main">
+      <div class="cuenta-card">
+        <!-- Panel decorativo izquierdo -->
+        <div class="cuenta-card-left">
+          <div class="cuenta-deco">
+            <div class="deco-avatar">
+              <span class="avatar-initial">{userData.nombre.charAt(0)}{userData.apellidos.charAt(0)}</span>
+            </div>
+            <p class="deco-text">Hola,<br /><strong>{userData.nombre}</strong></p>
+            <p class="deco-sub">Administra tus datos personales y preferencias de tu cuenta.</p>
+          </div>
+        </div>
+
+        <!-- Panel formulario -->
+        <div class="cuenta-card-right">
+          <h1>Mi Perfil</h1>
+          <p class="cuenta-sub">Actualiza tu información personal</p>
+
+          <form id="profileForm" novalidate>
+            <div id="successBanner" class="success-banner" style="display: none;">¡Tus datos han sido actualizados exitosamente!</div>
+
+            <!-- Nombre y Apellidos -->
+            <div class="form-row">
+              <div class="field-group">
+                <label for="nombre">Nombre</label>
+                <input type="text" id="nombre" name="nombre" value={userData.nombre} placeholder="Tu nombre" autocomplete="given-name" />
+                <span class="field-error" id="error-nombre"></span>
+              </div>
+              <div class="field-group">
+                <label for="apellidos">Apellidos</label>
+                <input type="text" id="apellidos" name="apellidos" value={userData.apellidos} placeholder="Tus apellidos" autocomplete="family-name" />
+                <span class="field-error" id="error-apellidos"></span>
+              </div>
+            </div>
+
+            <!-- Teléfono -->
+            <div class="field-group">
+              <label for="telefono">Número de teléfono</label>
+              <input type="tel" id="telefono" name="telefono" value={userData.telefono} placeholder="ej. 5512345678" autocomplete="tel" />
+              <span class="field-error" id="error-telefono"></span>
+            </div>
+
+            <!-- Correo -->
+            <div class="field-group">
+              <label for="correo">Correo electrónico</label>
+              <input type="email" id="correo" name="correo" value={userData.correo} readonly class="readonly-input" title="El correo no se puede modificar" />
+              <span class="field-hint">El correo electrónico no se puede modificar.</span>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn-guardar">Guardar cambios <span>✓</span></button>
+              <button type="button" class="btn-logout" id="logoutBtn">Cerrar sesión</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<style>
+  :global(*) { box-sizing: border-box; }
+  :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; margin: 0; }
+
+  .cuenta-page { min-height: 100vh; display: flex; flex-direction: column; }
+
+  .topbar {
+    align-items: center;
+    background: #f7d21c;
+    display: flex;
+    justify-content: space-between;
+    min-height: 76px;
+    padding: 0 clamp(20px, 4vw, 64px);
+  }
+  .brand {
+    align-items: center;
+    color: #171717;
+    display: flex;
+    font-family: Arial, sans-serif;
+    font-size: 25px;
+    font-weight: 900;
+    letter-spacing: -1.5px;
+    text-decoration: none;
+  }
+  .brand span span { font-weight: 400; }
+  .brand-mark {
+    align-items: center;
+    border: 3px solid #171717;
+    border-radius: 50%;
+    display: inline-flex;
+    font-size: 15px;
+    height: 30px;
+    justify-content: center;
+    margin-right: 8px;
+    width: 30px;
+  }
+  .back-link {
+    color: #171717;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .back-link:hover { text-decoration: underline; }
+
+  .cuenta-main {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+
+  .cuenta-card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 8px 40px rgba(23,23,23,0.10);
+    display: grid;
+    grid-template-columns: 1fr 1.5fr;
+    max-width: 860px;
+    overflow: hidden;
+    width: 100%;
+  }
+
+  .cuenta-card-left {
+    background: #f7d21c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 32px;
+  }
+  .cuenta-deco { position: relative; text-align: center; }
+  
+  .deco-avatar {
+    background: #171717;
+    border-radius: 50%;
+    height: 110px;
+    margin: 0 auto 24px;
+    position: relative;
+    width: 110px;
+    box-shadow: 10px 12px 0 rgba(23,23,23,0.10);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .avatar-initial {
+    color: #fffdf3;
+    font-family: Arial, sans-serif;
+    font-size: 40px;
+    font-weight: 900;
+    letter-spacing: -2px;
+  }
+
+  .deco-text {
+    color: #171717;
+    font-size: clamp(22px, 3vw, 30px);
+    font-weight: 400;
+    letter-spacing: -1px;
+    margin: 0 0 10px;
+    line-height: 1.1;
+  }
+  .deco-text strong { font-style: italic; color: #d93e2e; }
+  .deco-sub {
+    color: rgba(23,23,23,0.75);
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .cuenta-card-right { padding: 44px 40px; }
+  h1 {
+    font-size: clamp(26px, 3vw, 36px);
+    font-weight: 400;
+    letter-spacing: -1.5px;
+    margin: 0 0 6px;
+  }
+  .cuenta-sub {
+    color: #716e67;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    margin: 0 0 28px;
+  }
+
+  form { display: flex; flex-direction: column; gap: 16px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .field-group { display: flex; flex-direction: column; gap: 5px; }
+
+  label {
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+  }
+
+  input[type="text"],
+  input[type="tel"],
+  input[type="email"] {
+    background: #f6f4ed;
+    border: 1.5px solid #d8d3c3;
+    border-radius: 8px;
+    color: #171717;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    outline: none;
+    padding: 10px 14px;
+    transition: border-color .2s;
+    width: 100%;
+  }
+  input:focus:not(.readonly-input) { border-color: #f7d21c; }
+  input.invalid { border-color: #e7442e; }
+  input.valid   { border-color: #4caf50; }
+  
+  .readonly-input {
+    background: #e8e4da !important;
+    color: #716e67 !important;
+    cursor: not-allowed;
+    border-color: #d8d3c3 !important;
+  }
+
+  .field-error {
+    color: #e7442e;
+    font-family: Arial, sans-serif;
+    font-size: 10px;
+    min-height: 14px;
+  }
+  .field-hint {
+    color: #716e67;
+    font-family: Arial, sans-serif;
+    font-size: 10px;
+    margin-top: 2px;
+  }
+
+  .success-banner {
+    background: #ecfdf5;
+    border: 1.5px solid #10b981;
+    color: #047857;
+    border-radius: 8px;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 12px;
+    margin-bottom: 8px;
+    text-align: center;
+  }
+
+  .form-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 4px;
+  }
+
+  .btn-guardar {
+    align-items: center;
+    background: #171717;
+    border: none;
+    border-radius: 8px;
+    color: #fffdf3;
+    cursor: pointer;
+    display: flex;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 800;
+    gap: 12px;
+    justify-content: center;
+    letter-spacing: .5px;
+    padding: 14px 20px;
+    text-transform: uppercase;
+    transition: background .2s, transform .1s;
+    width: 100%;
+  }
+  .btn-guardar span { font-size: 16px; color: #f7d21c; }
+  .btn-guardar:hover { background: #333; }
+  .btn-guardar:active { transform: scale(.98); }
+
+  .btn-logout {
+    background: transparent;
+    border: 1.5px solid #d8d3c3;
+    border-radius: 8px;
+    color: #716e67;
+    cursor: pointer;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 12px 20px;
+    text-transform: uppercase;
+    transition: all .2s;
+  }
+  .btn-logout:hover {
+    border-color: #171717;
+    color: #171717;
+  }
+
+  @media (max-width: 680px) {
+    .cuenta-card { grid-template-columns: 1fr; }
+    .cuenta-card-left { display: none; }
+    .cuenta-card-right { padding: 36px 24px; }
+    .form-row { grid-template-columns: 1fr; }
+  }
+</style>
+
+<script>
+  function showError(id: string, msg: string): void { const el = document.getElementById(id); if (el) el.textContent = msg; }
+  function clearError(id: string): void     { const el = document.getElementById(id); if (el) el.textContent = ''; }
+  function setValidity(input: HTMLInputElement, valid: boolean): void {
+    input.classList.toggle('valid', valid);
+    input.classList.toggle('invalid', !valid);
+  }
+
+  const form = document.getElementById('profileForm') as HTMLFormElement | null;
+  const successBanner = document.getElementById('successBanner');
+  const logoutBtn = document.getElementById('logoutBtn');
+
+  form && form.addEventListener('submit', e => {
+    e.preventDefault();
+    let ok = true;
+    if (successBanner) successBanner.style.display = 'none';
+
+    const nombre    = document.getElementById('nombre') as HTMLInputElement;
+    const apellidos = document.getElementById('apellidos') as HTMLInputElement;
+    const telefono  = document.getElementById('telefono') as HTMLInputElement;
+
+    if (!nombre.value.trim()) {
+      showError('error-nombre', 'El nombre es obligatorio.'); setValidity(nombre, false); ok = false;
+    } else { clearError('error-nombre'); setValidity(nombre, true); }
+
+    if (!apellidos.value.trim()) {
+      showError('error-apellidos', 'Los apellidos son obligatorios.'); setValidity(apellidos, false); ok = false;
+    } else { clearError('error-apellidos'); setValidity(apellidos, true); }
+
+    if (!/^\d{10}$/.test(telefono.value.trim())) {
+      showError('error-telefono', 'Ingresa un número de 10 dígitos.'); setValidity(telefono, false); ok = false;
+    } else { clearError('error-telefono'); setValidity(telefono, true); }
+
+    if (ok) {
+      if (successBanner) successBanner.style.display = 'block';
+      document.querySelectorAll('input').forEach(i => i.classList.remove('valid', 'invalid'));
+      
+      // Ocultar mensaje después de 3 segundos
+      setTimeout(() => {
+        if (successBanner) successBanner.style.display = 'none';
+      }, 3000);
+    }
+  });
+
+  logoutBtn && logoutBtn.addEventListener('click', () => {
+    // En una app real esto llamaría al endpoint de logout o limpiaría cookies
+    document.cookie = "sportenis_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    window.location.href = '/login';
+  });
+</script>

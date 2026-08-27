@@ -1,0 +1,290 @@
+---
+// src/pages/login.astro
+import Layout from '../layouts/Layout.astro';
+
+const session = Astro.cookies.get('sportenis_session');
+if (session) {
+  return Astro.redirect('/');
+}
+---
+
+<Layout>
+  <div class="auth-page">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="SporTenis, volver al inicio">
+        <span class="brand-mark">S</span>
+        <span>Spor<span>Tenis</span></span>
+      </a>
+      <a href="/" class="back-link">← Volver a la tienda</a>
+    </header>
+
+    <main class="auth-main">
+      <div class="auth-card">
+        <div class="card-header">
+          <p class="eyebrow"><span></span> Acceso a clientes</p>
+          <h1>Iniciar <em>Sesión</em></h1>
+          <p class="subtitle">Ingresa tus datos para ver tus pedidos y beneficios.</p>
+        </div>
+
+        <form id="loginForm" class="auth-form">
+          <div id="errorBanner" class="error-banner" style="display: none;"></div>
+
+          <div class="field-group">
+            <label for="email">Correo electrónico</label>
+            <input 
+              type="email" 
+              id="email" 
+              name="email" 
+              placeholder="tu@email.com" 
+              required 
+            />
+          </div>
+
+          <div class="field-group">
+            <label for="password">Contraseña</label>
+            <input 
+              type="password" 
+              id="password" 
+              name="password" 
+              placeholder="••••••••" 
+              required 
+            />
+          </div>
+
+          <button type="submit" id="submitBtn" class="primary-button">
+            Entrar a mi cuenta <span>↗</span>
+          </button>
+        </form>
+
+        <div class="mock-credentials">
+          <strong>Credenciales de prueba:</strong>
+          <span>Email: <code>admin@sportenis.com</code></span>
+          <span>Password: <code>password123</code></span>
+        </div>
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<script>
+  const form = document.getElementById('loginForm') as HTMLFormElement;
+  const errorBanner = document.getElementById('errorBanner') as HTMLDivElement;
+  const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement;
+
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBanner.style.display = 'none';
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = 'Verificando...';
+
+    const formData = new FormData(form);
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        errorBanner.innerText = data.message || 'Error al iniciar sesión';
+        errorBanner.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = 'Entrar a mi cuenta <span>↗</span>';
+        return;
+      }
+
+      window.location.href = data.redirect || '/';
+    } catch {
+      errorBanner.innerText = 'Error de conexión con el servidor.';
+      errorBanner.style.display = 'block';
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = 'Entrar a mi cuenta <span>↗</span>';
+    }
+  });
+</script>
+
+<style>
+  :global(*) { box-sizing: border-box; }
+  :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; margin: 0; }
+
+  .auth-page { min-height: 100vh; display: flex; flex-direction: column; }
+  
+  .topbar {
+    align-items: center;
+    background: #f7d21c;
+    display: flex;
+    justify-content: space-between;
+    min-height: 76px;
+    padding: 0 clamp(20px, 4vw, 64px);
+  }
+
+  .brand {
+    align-items: center;
+    color: #171717;
+    display: flex;
+    font-family: Arial, sans-serif;
+    font-size: 25px;
+    font-weight: 900;
+    letter-spacing: -1.5px;
+    text-decoration: none;
+  }
+  .brand span span { font-weight: 400; }
+  .brand-mark {
+    align-items: center;
+    border: 3px solid #171717;
+    border-radius: 50%;
+    display: inline-flex;
+    font-size: 15px;
+    height: 30px;
+    justify-content: center;
+    margin-right: 8px;
+    width: 30px;
+  }
+
+  .back-link {
+    color: #171717;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .back-link:hover { text-decoration: underline; }
+
+  .auth-main {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+
+  .auth-card {
+    background: #fffdf3;
+    border: 2px solid #171717;
+    box-shadow: 8px 8px 0 rgba(23, 23, 23, 1);
+    width: 100%;
+    max-width: 440px;
+    padding: clamp(30px, 5vw, 45px);
+  }
+
+  .eyebrow {
+    color: #d93e2e;
+    font-family: Arial, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin: 0 0 10px;
+    text-transform: uppercase;
+  }
+  .eyebrow span {
+    background: #f7d21c;
+    display: inline-block;
+    height: 7px;
+    margin-right: 8px;
+    width: 7px;
+  }
+
+  h1 {
+    font-size: 42px;
+    font-weight: 400;
+    letter-spacing: -2px;
+    line-height: 0.95;
+    margin: 0 0 10px;
+  }
+  h1 em {
+    color: #d93e2e;
+    font-style: italic;
+  }
+
+  .subtitle {
+    color: #716e67;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    margin: 0 0 25px;
+  }
+
+  .auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .field-group label {
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .field-group input {
+    background: #f6f4ed;
+    border: 1.5px solid #171717;
+    padding: 12px 14px;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    outline: none;
+  }
+
+  .field-group input:focus {
+    background: #fff;
+    border-color: #d93e2e;
+  }
+
+  .primary-button {
+    align-items: center;
+    background: #171717;
+    color: #fffdf3;
+    display: inline-flex;
+    justify-content: space-between;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 16px 20px;
+    text-decoration: none;
+    text-transform: uppercase;
+    border: 0;
+    cursor: pointer;
+    margin-top: 10px;
+    transition: background-color 0.15s ease;
+  }
+  .primary-button:hover { background: #d93e2e; }
+  .primary-button:disabled { opacity: 0.6; cursor: not-allowed; }
+  .primary-button span { font-size: 16px; }
+
+  .error-banner {
+    background: #fee2e2;
+    border: 1.5px solid #ef4444;
+    color: #991b1b;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 10px 12px;
+  }
+
+  .mock-credentials {
+    margin-top: 25px;
+    padding-top: 18px;
+    border-top: 1px dashed #d8d3c3;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    color: #716e67;
+  }
+  .mock-credentials code {
+    background: #ede9dc;
+    color: #171717;
+    padding: 2px 5px;
+  }
+</style>
