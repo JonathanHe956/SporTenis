@@ -1,0 +1,437 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout>
+  <div class="registro-page">
+    <!-- Header -->
+    <header class="reg-header">
+      <a class="brand" href="/" aria-label="SporTenis, inicio">
+        <span class="brand-mark">S</span>
+        <span>Spor<span>Tenis</span></span>
+      </a>
+    </header>
+
+    <main class="reg-main">
+      <div class="reg-card">
+        <!-- Panel decorativo izquierdo -->
+        <div class="reg-card-left">
+          <div class="reg-deco">
+            <div class="deco-ball"></div>
+            <div class="deco-ring"></div>
+            <p class="deco-text">Únete a<br /><strong>SporTenis</strong></p>
+            <p class="deco-sub">Accede a ofertas exclusivas,<br />historial de compras y más.</p>
+          </div>
+        </div>
+
+        <!-- Panel formulario -->
+        <div class="reg-card-right">
+          <h1>Crear cuenta</h1>
+          <p class="reg-sub">Completa los datos para registrarte</p>
+
+          <form id="registerForm" novalidate>
+            <!-- Nombre y Apellidos -->
+            <div class="form-row">
+              <div class="field-group">
+                <label for="nombre">Nombre</label>
+                <input type="text" id="nombre" name="nombre" placeholder="Tu nombre" autocomplete="given-name" />
+                <span class="field-error" id="error-nombre"></span>
+              </div>
+              <div class="field-group">
+                <label for="apellidos">Apellidos</label>
+                <input type="text" id="apellidos" name="apellidos" placeholder="Tus apellidos" autocomplete="family-name" />
+                <span class="field-error" id="error-apellidos"></span>
+              </div>
+            </div>
+
+            <!-- Teléfono -->
+            <div class="field-group">
+              <label for="telefono">Número de teléfono</label>
+              <input type="tel" id="telefono" name="telefono" placeholder="ej. 5512345678" autocomplete="tel" />
+              <span class="field-error" id="error-telefono"></span>
+            </div>
+
+            <!-- Correo -->
+            <div class="field-group">
+              <label for="correo">Correo electrónico</label>
+              <input type="email" id="correo" name="correo" placeholder="tu@correo.com" autocomplete="email" />
+              <span class="field-error" id="error-correo"></span>
+            </div>
+
+            <!-- Contraseña -->
+            <div class="field-group">
+              <label for="password">Contraseña</label>
+              <div class="input-password">
+                <input type="password" id="password" name="password" placeholder="Crea tu contraseña" autocomplete="new-password" />
+                <button type="button" class="eye-btn" id="togglePassword" aria-label="Mostrar contraseña">
+                  <svg id="eyeIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="password-rules">
+                <span id="rule-upper" class="rule">✗ Al menos 1 mayúscula</span>
+                <span id="rule-number" class="rule">✗ Al menos 1 número</span>
+                <span id="rule-special" class="rule">✗ Al menos 1 carácter especial</span>
+                <span id="rule-length" class="rule">✗ Mínimo 8 caracteres</span>
+              </div>
+              <span class="field-error" id="error-password"></span>
+            </div>
+
+            <!-- Confirmar contraseña -->
+            <div class="field-group">
+              <label for="confirmPassword">Confirmar contraseña</label>
+              <div class="input-password">
+                <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Repite tu contraseña" autocomplete="new-password" />
+                <button type="button" class="eye-btn" id="toggleConfirm" aria-label="Mostrar contraseña">
+                  <svg id="eyeIconConfirm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                </button>
+              </div>
+              <span class="field-error" id="error-confirm"></span>
+            </div>
+
+            <button type="submit" class="btn-crear">Crear cuenta <span>→</span></button>
+
+            <p class="login-link">¿Ya tienes cuenta? <a href="/">Inicia sesión</a></p>
+          </form>
+        </div>
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<style>
+  :global(*) { box-sizing: border-box; }
+  :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; margin: 0; }
+
+  .reg-header {
+    background: #f7d21c;
+    padding: 0 clamp(20px, 4vw, 64px);
+    min-height: 66px;
+    display: flex;
+    align-items: center;
+  }
+  .brand {
+    align-items: center;
+    color: #171717;
+    display: flex;
+    font-family: Arial, sans-serif;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: -1.5px;
+    text-decoration: none;
+  }
+  .brand span span { font-weight: 400; }
+  .brand-mark {
+    align-items: center;
+    border: 3px solid #171717;
+    border-radius: 50%;
+    display: inline-flex;
+    font-size: 14px;
+    height: 28px;
+    justify-content: center;
+    margin-right: 8px;
+    width: 28px;
+  }
+
+  .reg-main {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(100vh - 66px);
+    padding: 40px 20px;
+  }
+
+  .reg-card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 8px 40px rgba(23,23,23,0.10);
+    display: grid;
+    grid-template-columns: 1fr 1.5fr;
+    max-width: 860px;
+    overflow: hidden;
+    width: 100%;
+  }
+
+  .reg-card-left {
+    background: #d93e2e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 32px;
+  }
+  .reg-deco { position: relative; text-align: center; }
+  .deco-ball {
+    background: #d8ee32;
+    border-radius: 50%;
+    height: 130px;
+    margin: 0 auto 24px;
+    position: relative;
+    width: 130px;
+    box-shadow: 10px 12px 0 rgba(23,23,23,0.18);
+  }
+  .deco-ball::before, .deco-ball::after {
+    border: 4px solid #f7d21c;
+    border-radius: 50%;
+    content: '';
+    height: 80%;
+    position: absolute;
+    top: 10%;
+    width: 35%;
+  }
+  .deco-ball::before { left: -4%; transform: rotate(25deg); }
+  .deco-ball::after  { right: -4%; transform: rotate(25deg); }
+  .deco-ring {
+    border: 2px solid rgba(255,255,255,.45);
+    border-radius: 50%;
+    height: 200px;
+    left: 50%;
+    pointer-events: none;
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -55%);
+    width: 200px;
+  }
+  .deco-text {
+    color: #fffdf3;
+    font-size: clamp(22px, 3vw, 30px);
+    font-weight: 400;
+    letter-spacing: -1px;
+    margin: 0 0 10px;
+    line-height: 1.1;
+  }
+  .deco-text strong { font-style: italic; color: #f7d21c; }
+  .deco-sub {
+    color: rgba(255,253,243,0.75);
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .reg-card-right { padding: 44px 40px; }
+  h1 {
+    font-size: clamp(26px, 3vw, 36px);
+    font-weight: 400;
+    letter-spacing: -1.5px;
+    margin: 0 0 6px;
+  }
+  .reg-sub {
+    color: #716e67;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    margin: 0 0 28px;
+  }
+
+  form { display: flex; flex-direction: column; gap: 16px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .field-group { display: flex; flex-direction: column; gap: 5px; }
+
+  label {
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+  }
+
+  input[type="text"],
+  input[type="tel"],
+  input[type="email"],
+  input[type="password"] {
+    background: #f6f4ed;
+    border: 1.5px solid #d8d3c3;
+    border-radius: 8px;
+    color: #171717;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    outline: none;
+    padding: 10px 14px;
+    transition: border-color .2s;
+    width: 100%;
+  }
+  input:focus  { border-color: #d93e2e; }
+  input.invalid { border-color: #e7442e; }
+  input.valid   { border-color: #4caf50; }
+
+  .input-password { position: relative; }
+  .input-password input { padding-right: 42px; }
+
+  .eye-btn {
+    background: none;
+    border: none;
+    color: #716e67;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    height: 36px;
+    justify-content: center;
+    padding: 0;
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 24px;
+  }
+  .eye-btn svg { height: 18px; width: 18px; transition: color .15s; }
+  .eye-btn:hover { color: #d93e2e; }
+
+  .password-rules {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin-top: 4px;
+  }
+  .rule {
+    color: #b0a99a;
+    font-family: Arial, sans-serif;
+    font-size: 10px;
+    transition: color .2s;
+  }
+  .rule.ok { color: #4caf50; }
+
+  .field-error {
+    color: #e7442e;
+    font-family: Arial, sans-serif;
+    font-size: 10px;
+    min-height: 14px;
+  }
+
+  .btn-crear {
+    align-items: center;
+    background: #d93e2e;
+    border: none;
+    border-radius: 8px;
+    color: #fffdf3;
+    cursor: pointer;
+    display: flex;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 800;
+    gap: 12px;
+    justify-content: center;
+    letter-spacing: .5px;
+    margin-top: 4px;
+    padding: 14px 20px;
+    text-transform: uppercase;
+    transition: background .2s, transform .1s;
+    width: 100%;
+  }
+  .btn-crear span { font-size: 16px; }
+  .btn-crear:hover { background: #b83225; }
+  .btn-crear:active { transform: scale(.98); }
+
+  .login-link {
+    color: #716e67;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    margin: 0;
+    text-align: center;
+  }
+  .login-link a { color: #d93e2e; font-weight: 700; text-decoration: none; }
+  .login-link a:hover { text-decoration: underline; }
+
+  @media (max-width: 680px) {
+    .reg-card { grid-template-columns: 1fr; }
+    .reg-card-left { display: none; }
+    .reg-card-right { padding: 36px 24px; }
+    .form-row { grid-template-columns: 1fr; }
+  }
+</style>
+
+<script>
+  const EYE_OPEN = `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`;
+  const EYE_SHUT = `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>`;
+
+  function makeEyeToggle(btnId, inputId, iconId) {
+    const btn   = document.getElementById(btnId);
+    const input = document.getElementById(inputId);
+    const icon  = document.getElementById(iconId);
+    let visible = false;
+    btn && btn.addEventListener('click', () => {
+      visible = !visible;
+      input.type = visible ? 'text' : 'password';
+      if (icon) icon.innerHTML = visible ? EYE_SHUT : EYE_OPEN;
+      btn.setAttribute('aria-label', visible ? 'Ocultar contraseña' : 'Mostrar contraseña');
+    });
+  }
+
+  makeEyeToggle('togglePassword', 'password', 'eyeIcon');
+  makeEyeToggle('toggleConfirm', 'confirmPassword', 'eyeIconConfirm');
+
+  // Reglas de contraseña
+  const passwordInput = document.getElementById('password');
+  const rulesDef = {
+    upper:   { el: document.getElementById('rule-upper'),   test: v => /[A-Z]/.test(v),      label: 'Al menos 1 mayúscula' },
+    number:  { el: document.getElementById('rule-number'),  test: v => /[0-9]/.test(v),      label: 'Al menos 1 número' },
+    special: { el: document.getElementById('rule-special'), test: v => /[^A-Za-z0-9]/.test(v), label: 'Al menos 1 carácter especial' },
+    length:  { el: document.getElementById('rule-length'),  test: v => v.length >= 8,         label: 'Mínimo 8 caracteres' },
+  };
+
+  passwordInput && passwordInput.addEventListener('input', () => {
+    const val = passwordInput.value;
+    for (const rule of Object.values(rulesDef)) {
+      const ok = rule.test(val);
+      rule.el.textContent = (ok ? '✓ ' : '✗ ') + rule.label;
+      rule.el.classList.toggle('ok', ok);
+    }
+  });
+
+  // Validación
+  function showError(id, msg) { const el = document.getElementById(id); if (el) el.textContent = msg; }
+  function clearError(id)     { const el = document.getElementById(id); if (el) el.textContent = ''; }
+  function setValidity(input, valid) {
+    input.classList.toggle('valid', valid);
+    input.classList.toggle('invalid', !valid);
+  }
+
+  const form = document.getElementById('registerForm');
+  form && form.addEventListener('submit', e => {
+    e.preventDefault();
+    let ok = true;
+
+    const nombre    = document.getElementById('nombre');
+    const apellidos = document.getElementById('apellidos');
+    const telefono  = document.getElementById('telefono');
+    const correo    = document.getElementById('correo');
+    const password  = document.getElementById('password');
+    const confirm   = document.getElementById('confirmPassword');
+
+    if (!nombre.value.trim()) {
+      showError('error-nombre', 'El nombre es obligatorio.'); setValidity(nombre, false); ok = false;
+    } else { clearError('error-nombre'); setValidity(nombre, true); }
+
+    if (!apellidos.value.trim()) {
+      showError('error-apellidos', 'Los apellidos son obligatorios.'); setValidity(apellidos, false); ok = false;
+    } else { clearError('error-apellidos'); setValidity(apellidos, true); }
+
+    if (!/^\d{10}$/.test(telefono.value.trim())) {
+      showError('error-telefono', 'Ingresa un número de 10 dígitos.'); setValidity(telefono, false); ok = false;
+    } else { clearError('error-telefono'); setValidity(telefono, true); }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo.value.trim())) {
+      showError('error-correo', 'Ingresa un correo válido.'); setValidity(correo, false); ok = false;
+    } else { clearError('error-correo'); setValidity(correo, true); }
+
+    const pwd = password.value;
+    const pwdOk = /[A-Z]/.test(pwd) && /[0-9]/.test(pwd) && /[^A-Za-z0-9]/.test(pwd) && pwd.length >= 8;
+    if (!pwdOk) {
+      showError('error-password', 'La contraseña no cumple los requisitos.'); setValidity(password, false); ok = false;
+    } else { clearError('error-password'); setValidity(password, true); }
+
+    if (confirm.value !== password.value) {
+      showError('error-confirm', 'Las contraseñas no coinciden.'); setValidity(confirm, false); ok = false;
+    } else { clearError('error-confirm'); setValidity(confirm, true); }
+
+    if (ok) {
+      alert('¡Cuenta creada exitosamente! Bienvenido a SporTenis 🎾');
+      form.reset();
+      document.querySelectorAll('input').forEach(i => i.classList.remove('valid', 'invalid'));
+      Object.values(rulesDef).forEach(r => { r.el.classList.remove('ok'); r.el.textContent = '✗ ' + r.label; });
+    }
+  });
+</script>

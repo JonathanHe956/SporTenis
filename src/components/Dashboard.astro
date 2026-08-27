@@ -1,0 +1,153 @@
+---
+const categories = ['Novedades', 'Tenis', 'Pádel', 'Running', 'Ropa', 'Accesorios'];
+const products = [
+  { name: 'Pala Pro Carbon', type: 'Pádel', price: '$2,499', className: 'product-padel' },
+  { name: 'Court Air 2.0', type: 'Tenis', price: '$1,899', className: 'product-shoe' },
+  { name: 'Player Tee', type: 'Ropa deportiva', price: '$699', className: 'product-shirt' },
+];
+---
+
+<div class="storefront">
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="SporTenis, inicio"><span class="brand-mark">S</span><span>Spor<span>Tenis</span></span></a>
+    <nav aria-label="Navegación principal">
+      {categories.map((category) => <a href={`#${category.toLowerCase()}`}>{category}</a>)}
+    </nav>
+    <div class="actions">
+      <label class="search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Buscar productos" aria-label="Buscar productos" /></label>
+      <div class="account-menu">
+        <button class="icon-button" type="button" aria-label="Mi cuenta" aria-haspopup="true" aria-expanded="false" id="accountBtn">Cuenta</button>
+        <div class="account-dropdown" id="accountDropdown" role="menu">
+          <a href="#login" class="dropdown-item" role="menuitem">
+            <span class="dropdown-icon">👤</span>
+            <span>
+              <strong>Ya tengo cuenta</strong>
+              <small>Inicia sesión</small>
+            </span>
+          </a>
+          <div class="dropdown-divider"></div>
+          <a href="/registro" class="dropdown-item dropdown-item--highlight" role="menuitem">
+            <span class="dropdown-icon">✨</span>
+            <span>
+              <strong>Crear cuenta nueva</strong>
+              <small>Es gratis, únete ahora</small>
+            </span>
+          </a>
+        </div>
+      </div>
+      <button class="icon-button" type="button" aria-label="Favoritos">Favoritos</button>
+      <button class="cart" type="button" aria-label="Carrito de compra">Carrito<b>0</b></button>
+    </div>
+  </header>
+  <main>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy"><p class="eyebrow"><span></span> Colección 2026</p><h1 id="hero-title">Juega a<br /><em>tu manera.</em></h1><p class="hero-text">El equipo que acompaña cada saque, cada punto y cada victoria.</p><a class="primary-button" href="#productos">Comprar colección <span>↗</span></a></div>
+      <div class="hero-art" aria-label="Pelota de tenis amarilla sobre una cancha deportiva" role="img"><div class="court-line"></div><div class="tennis-ball"></div><div class="hero-stamp">SPOR<br />TENIS</div><p class="art-caption">Hecho para<br /><strong>competir</strong></p></div>
+    </section>
+    <section class="benefits" aria-label="Beneficios de compra"><div><strong>Envío gratis</strong><span>En compras mayores a $999</span></div><div><strong>Compra segura</strong><span>Tu información está protegida</span></div><div><strong>30 días</strong><span>Para cambios y devoluciones</span></div><div><strong>Soporte experto</strong><span>Te ayudamos a elegir mejor</span></div></section>
+    <section class="products-section" id="productos" aria-labelledby="products-title"><div class="section-heading"><div><p class="eyebrow">Selección SporTenis</p><h2 id="products-title">Favoritos de la cancha</h2></div><a href="#todos">Ver todo <span>↗</span></a></div><div class="product-grid">{products.map((product) => (<article class="product-card"><div class={`product-visual ${product.className}`}><span>Nuevo</span><button type="button" aria-label={`Añadir ${product.name} a favoritos`}>♡</button><i></i></div><div class="product-info"><div><p>{product.type}</p><h3>{product.name}</h3></div><strong>{product.price}</strong></div></article>))}</div></section>
+  </main>
+</div>
+
+<style>
+  :global(*) { box-sizing: border-box; } :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; } .storefront { min-height: 100vh; overflow: hidden; }
+  .topbar { align-items: center; background: #f7d21c; display: flex; gap: 32px; min-height: 76px; padding: 0 clamp(20px, 4vw, 64px); } .brand { align-items: center; color: #171717; display: flex; font-family: Arial, sans-serif; font-size: 25px; font-weight: 900; letter-spacing: -1.5px; text-decoration: none; white-space: nowrap; } .brand span span { font-weight: 400; } .brand-mark { align-items: center; border: 3px solid #171717; border-radius: 50%; display: inline-flex; font-size: 15px; height: 30px; justify-content: center; margin-right: 8px; width: 30px; }
+  nav { display: flex; flex: 1; gap: clamp(16px, 2.4vw, 38px); justify-content: center; } nav a { color: #171717; font-family: Arial, sans-serif; font-size: 12px; font-weight: 700; text-decoration: none; text-transform: uppercase; } nav a:hover, .section-heading a:hover { text-decoration: underline; } .actions { align-items: center; display: flex; gap: 15px; } .search { align-items: center; background: #fff8dc; border-radius: 24px; display: flex; gap: 7px; padding: 9px 14px; width: 185px; } .search span { font-family: Arial, sans-serif; font-size: 25px; line-height: 15px; transform: rotate(-20deg); } .search input { background: transparent; border: 0; font-family: Arial, sans-serif; font-size: 12px; outline: 0; width: 100%; } .icon-button, .cart { background: transparent; border: 0; color: #171717; cursor: pointer; font-family: Arial, sans-serif; font-size: 23px; padding: 0; } .cart { font-size: 25px; position: relative; } .cart b { align-items: center; background: #e7442e; border-radius: 50%; color: white; display: flex; font-size: 9px; height: 15px; justify-content: center; position: absolute; right: -8px; top: -7px; width: 15px; }
+  main { margin: 0 auto; max-width: 1600px; } .hero { background: #d93e2e; display: grid; grid-template-columns: .9fr 1.1fr; min-height: 455px; } .hero-copy { color: #fffdf3; padding: clamp(42px, 7vw, 100px) clamp(30px, 8vw, 125px); } .eyebrow { color: inherit; font-family: Arial, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 2px; margin: 0 0 18px; text-transform: uppercase; } .eyebrow span { background: #f7d21c; display: inline-block; height: 7px; margin-right: 8px; width: 7px; } h1 { font-size: clamp(60px, 7vw, 108px); font-weight: 400; letter-spacing: -6px; line-height: .82; margin: 0 0 28px; } h1 em { color: #f7d21c; font-style: italic; } .hero-text { font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; margin: 0 0 28px; max-width: 275px; } .primary-button { align-items: center; background: #fffdf3; color: #171717; display: inline-flex; font-family: Arial, sans-serif; font-size: 11px; font-weight: 800; gap: 25px; padding: 15px 20px; text-decoration: none; text-transform: uppercase; } .primary-button span, .section-heading a span { font-size: 18px; }
+  .hero-art { background: #edc319; min-height: 455px; overflow: hidden; position: relative; } .hero-art:before, .hero-art:after { border: 1px solid rgba(255,255,255,.55); border-radius: 50%; content: ''; height: 520px; position: absolute; right: -100px; top: -40px; width: 520px; } .hero-art:after { height: 290px; right: 70px; top: 100px; width: 290px; } .court-line { border: 3px solid #fffdf3; border-radius: 50%; height: 740px; left: 28%; position: absolute; top: -145px; transform: rotate(-22deg); width: 300px; } .tennis-ball { background: #d8ee32; border-radius: 50%; box-shadow: 25px 28px 0 rgba(27,27,27,.13); height: clamp(180px, 20vw, 300px); position: absolute; right: 19%; top: 19%; transform: rotate(-27deg); width: clamp(180px, 20vw, 300px); } .tennis-ball:before, .tennis-ball:after { border: 5px solid #f7d21c; border-radius: 50%; content: ''; height: 80%; position: absolute; top: 10%; width: 35%; } .tennis-ball:before { left: -4%; transform: rotate(25deg); } .tennis-ball:after { right: -4%; transform: rotate(25deg); } .hero-stamp { border: 2px solid #171717; border-radius: 50%; bottom: 42px; color: #171717; font-family: Arial, sans-serif; font-size: 11px; font-weight: 900; line-height: 1; padding: 17px 10px; position: absolute; right: 8%; text-align: center; transform: rotate(12deg); } .art-caption { bottom: 23px; color: #171717; font-family: Arial, sans-serif; font-size: 11px; left: 8%; line-height: 1.2; position: absolute; text-transform: uppercase; } .art-caption strong { font-size: 18px; }
+  .benefits { background: #fffdf3; display: grid; grid-template-columns: repeat(4, 1fr); padding: 24px clamp(24px, 6vw, 96px); } .benefits div { border-right: 1px solid #d8d3c3; display: flex; flex-direction: column; gap: 5px; padding: 0 25px; } .benefits div:first-child { padding-left: 0; } .benefits div:last-child { border: 0; } .benefits strong, .benefits span { font-family: Arial, sans-serif; } .benefits strong { font-size: 11px; text-transform: uppercase; } .benefits span { color: #716e67; font-size: 10px; }
+  .products-section { padding: 55px clamp(24px, 6vw, 96px) 70px; } .section-heading { align-items: end; display: flex; justify-content: space-between; margin-bottom: 26px; } .section-heading .eyebrow { color: #d93e2e; margin-bottom: 8px; } h2 { font-size: clamp(30px, 4vw, 48px); font-weight: 400; letter-spacing: -2px; margin: 0; } .section-heading a { color: #171717; font-family: Arial, sans-serif; font-size: 11px; font-weight: 800; text-decoration: none; text-transform: uppercase; } .product-grid { display: grid; gap: 18px; grid-template-columns: repeat(3, 1fr); } .product-visual { align-items: flex-start; display: flex; height: 275px; justify-content: space-between; overflow: hidden; padding: 16px; position: relative; } .product-visual > span { background: #f7d21c; font-family: Arial, sans-serif; font-size: 9px; font-weight: 800; padding: 7px 9px; text-transform: uppercase; } .product-visual button { background: #fffdf3; border: 0; border-radius: 50%; cursor: pointer; font-size: 20px; height: 32px; width: 32px; } .product-visual i { display: block; position: absolute; } .product-padel { background: #d7e1c3; } .product-padel i { background: #242424; border-radius: 50% 50% 44% 44%; height: 190px; left: 35%; top: 58px; transform: rotate(28deg); width: 90px; } .product-padel i:after { background: repeating-linear-gradient(45deg, transparent 0 8px, #b4c293 9px 11px); border: 3px solid #f7d21c; border-radius: inherit; content: ''; inset: 12px; position: absolute; } .product-shoe { background: #e9c8bd; } .product-shoe i { background: #fffdf3; border-bottom: 19px solid #d93e2e; border-radius: 45% 55% 18% 20%; height: 105px; left: 22%; top: 110px; transform: rotate(-12deg); width: 215px; } .product-shirt { background: #d9d3ed; } .product-shirt i { background: #e9e4f5; height: 220px; left: 30%; top: 50px; transform: rotate(45deg); width: 150px; } .product-info { align-items: end; display: flex; justify-content: space-between; padding: 14px 2px 0; } .product-info p { color: #716e67; font-family: Arial, sans-serif; font-size: 10px; margin: 0 0 5px; text-transform: uppercase; } h3 { font-size: 17px; font-weight: 400; margin: 0; } .product-info strong { font-family: Arial, sans-serif; font-size: 13px; }
+  @media (max-width: 900px) { nav { display: none; } .topbar { justify-content: space-between; } .hero { grid-template-columns: 1fr; } .hero-art { min-height: 300px; } .hero-copy { padding-bottom: 50px; } .benefits { grid-template-columns: repeat(2, 1fr); gap: 22px 0; } .benefits div:nth-child(2) { border: 0; } } @media (max-width: 600px) { .topbar { gap: 12px; min-height: 66px; padding: 0 16px; } .actions { gap: 10px; } .search { width: 35px; padding: 8px; } .search input { display: none; } .icon-button { font-size: 20px; } .brand { font-size: 20px; } .brand-mark { height: 25px; width: 25px; } .hero-copy { padding: 48px 24px; } h1 { font-size: 68px; } .hero-art { min-height: 260px; } .tennis-ball { right: 22%; top: 15%; } .benefits { padding: 22px 20px; } .benefits div { padding: 0 12px; } .products-section { padding: 42px 20px 55px; } .product-grid { grid-template-columns: 1fr; } .product-visual { height: 240px; } }
+
+  /* ── Menú de cuenta ─────────────────────────────────────── */
+  .account-menu { position: relative; display: inline-flex; }
+
+  .account-dropdown {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(23,23,23,.16), 0 2px 8px rgba(23,23,23,.08);
+    display: none;
+    flex-direction: column;
+    min-width: 220px;
+    padding: 8px;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 10px);
+    z-index: 200;
+  }
+  /* flecha decorativa */
+  .account-dropdown::before {
+    border: 7px solid transparent;
+    border-bottom-color: #fff;
+    content: '';
+    position: absolute;
+    right: 14px;
+    top: -14px;
+  }
+
+  .account-menu:hover .account-dropdown,
+  .account-dropdown.open { display: flex; }
+
+  .dropdown-item {
+    align-items: center;
+    border-radius: 8px;
+    color: #171717;
+    display: flex;
+    gap: 12px;
+    padding: 10px 12px;
+    text-decoration: none;
+    transition: background .15s;
+  }
+  .dropdown-item:hover { background: #f6f4ed; }
+  .dropdown-item--highlight { color: #d93e2e; }
+  .dropdown-item--highlight:hover { background: #fff1ef; }
+
+  .dropdown-icon { font-size: 20px; line-height: 1; }
+
+  .dropdown-item strong {
+    display: block;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .dropdown-item small {
+    color: #716e67;
+    font-family: Arial, sans-serif;
+    font-size: 10px;
+  }
+  .dropdown-item--highlight small { color: #e87060; }
+
+  .dropdown-divider {
+    background: #e8e4da;
+    height: 1px;
+    margin: 4px 0;
+  }
+</style>
+
+<script>
+  // Abrir/cerrar al hacer click (para touch y teclado)
+  const btn      = document.getElementById('accountBtn');
+  const dropdown = document.getElementById('accountDropdown');
+
+  btn && btn.addEventListener('click', () => {
+    const isOpen = dropdown.classList.toggle('open');
+    btn.setAttribute('aria-expanded', String(isOpen));
+  });
+
+  // Cerrar al hacer click fuera
+  document.addEventListener('click', (e) => {
+    if (!btn?.contains(e.target) && !dropdown?.contains(e.target)) {
+      dropdown?.classList.remove('open');
+      btn?.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  // Cerrar con Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      dropdown?.classList.remove('open');
+      btn?.setAttribute('aria-expanded', 'false');
+      btn?.focus();
+    }
+  });
+</script>
