@@ -15,7 +15,30 @@ const products = [
     </nav>
     <div class="actions">
       <label class="search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Buscar productos" aria-label="Buscar productos" /></label>
+<<<<<<< HEAD
       <button class="icon-button" type="button" aria-label="Mi cuenta">Cuenta</button>
+=======
+      <div class="account-menu">
+        <button class="icon-button" type="button" aria-label="Mi cuenta" aria-haspopup="true" aria-expanded="false" id="accountBtn">Cuenta</button>
+        <div class="account-dropdown" id="accountDropdown" role="menu">
+          <a href="#login" class="dropdown-item" role="menuitem">
+            <span class="dropdown-icon">👤</span>
+            <span>
+              <strong>Ya tengo cuenta</strong>
+              <small>Inicia sesión</small>
+            </span>
+          </a>
+          <div class="dropdown-divider"></div>
+          <a href="/registro" class="dropdown-item dropdown-item--highlight" role="menuitem">
+            <span class="dropdown-icon">✨</span>
+            <span>
+              <strong>Crear cuenta nueva</strong>
+              <small>Es gratis, únete ahora</small>
+            </span>
+          </a>
+        </div>
+      </div>
+>>>>>>> master
       <button class="icon-button" type="button" aria-label="Favoritos">Favoritos</button>
       <button class="cart" type="button" aria-label="Carrito de compra">Carrito<b>0</b></button>
     </div>
@@ -39,4 +62,100 @@ const products = [
   .benefits { background: #fffdf3; display: grid; grid-template-columns: repeat(4, 1fr); padding: 24px clamp(24px, 6vw, 96px); } .benefits div { border-right: 1px solid #d8d3c3; display: flex; flex-direction: column; gap: 5px; padding: 0 25px; } .benefits div:first-child { padding-left: 0; } .benefits div:last-child { border: 0; } .benefits strong, .benefits span { font-family: Arial, sans-serif; } .benefits strong { font-size: 11px; text-transform: uppercase; } .benefits span { color: #716e67; font-size: 10px; }
   .products-section { padding: 55px clamp(24px, 6vw, 96px) 70px; } .section-heading { align-items: end; display: flex; justify-content: space-between; margin-bottom: 26px; } .section-heading .eyebrow { color: #d93e2e; margin-bottom: 8px; } h2 { font-size: clamp(30px, 4vw, 48px); font-weight: 400; letter-spacing: -2px; margin: 0; } .section-heading a { color: #171717; font-family: Arial, sans-serif; font-size: 11px; font-weight: 800; text-decoration: none; text-transform: uppercase; } .product-grid { display: grid; gap: 18px; grid-template-columns: repeat(3, 1fr); } .product-visual { align-items: flex-start; display: flex; height: 275px; justify-content: space-between; overflow: hidden; padding: 16px; position: relative; } .product-visual > span { background: #f7d21c; font-family: Arial, sans-serif; font-size: 9px; font-weight: 800; padding: 7px 9px; text-transform: uppercase; } .product-visual button { background: #fffdf3; border: 0; border-radius: 50%; cursor: pointer; font-size: 20px; height: 32px; width: 32px; } .product-visual i { display: block; position: absolute; } .product-padel { background: #d7e1c3; } .product-padel i { background: #242424; border-radius: 50% 50% 44% 44%; height: 190px; left: 35%; top: 58px; transform: rotate(28deg); width: 90px; } .product-padel i:after { background: repeating-linear-gradient(45deg, transparent 0 8px, #b4c293 9px 11px); border: 3px solid #f7d21c; border-radius: inherit; content: ''; inset: 12px; position: absolute; } .product-shoe { background: #e9c8bd; } .product-shoe i { background: #fffdf3; border-bottom: 19px solid #d93e2e; border-radius: 45% 55% 18% 20%; height: 105px; left: 22%; top: 110px; transform: rotate(-12deg); width: 215px; } .product-shirt { background: #d9d3ed; } .product-shirt i { background: #e9e4f5; height: 220px; left: 30%; top: 50px; transform: rotate(45deg); width: 150px; } .product-info { align-items: end; display: flex; justify-content: space-between; padding: 14px 2px 0; } .product-info p { color: #716e67; font-family: Arial, sans-serif; font-size: 10px; margin: 0 0 5px; text-transform: uppercase; } h3 { font-size: 17px; font-weight: 400; margin: 0; } .product-info strong { font-family: Arial, sans-serif; font-size: 13px; }
   @media (max-width: 900px) { nav { display: none; } .topbar { justify-content: space-between; } .hero { grid-template-columns: 1fr; } .hero-art { min-height: 300px; } .hero-copy { padding-bottom: 50px; } .benefits { grid-template-columns: repeat(2, 1fr); gap: 22px 0; } .benefits div:nth-child(2) { border: 0; } } @media (max-width: 600px) { .topbar { gap: 12px; min-height: 66px; padding: 0 16px; } .actions { gap: 10px; } .search { width: 35px; padding: 8px; } .search input { display: none; } .icon-button { font-size: 20px; } .brand { font-size: 20px; } .brand-mark { height: 25px; width: 25px; } .hero-copy { padding: 48px 24px; } h1 { font-size: 68px; } .hero-art { min-height: 260px; } .tennis-ball { right: 22%; top: 15%; } .benefits { padding: 22px 20px; } .benefits div { padding: 0 12px; } .products-section { padding: 42px 20px 55px; } .product-grid { grid-template-columns: 1fr; } .product-visual { height: 240px; } }
+<<<<<<< HEAD
 </style>
+=======
+
+  /* ── Menú de cuenta ─────────────────────────────────────── */
+  .account-menu { position: relative; display: inline-flex; }
+
+  .account-dropdown {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(23,23,23,.16), 0 2px 8px rgba(23,23,23,.08);
+    display: none;
+    flex-direction: column;
+    min-width: 220px;
+    padding: 8px;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 10px);
+    z-index: 200;
+  }
+  /* flecha decorativa */
+  .account-dropdown::before {
+    border: 7px solid transparent;
+    border-bottom-color: #fff;
+    content: '';
+    position: absolute;
+    right: 14px;
+    top: -14px;
+  }
+
+  .account-menu:hover .account-dropdown,
+  .account-dropdown.open { display: flex; }
+
+  .dropdown-item {
+    align-items: center;
+    border-radius: 8px;
+    color: #171717;
+    display: flex;
+    gap: 12px;
+    padding: 10px 12px;
+    text-decoration: none;
+    transition: background .15s;
+  }
+  .dropdown-item:hover { background: #f6f4ed; }
+  .dropdown-item--highlight { color: #d93e2e; }
+  .dropdown-item--highlight:hover { background: #fff1ef; }
+
+  .dropdown-icon { font-size: 20px; line-height: 1; }
+
+  .dropdown-item strong {
+    display: block;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .dropdown-item small {
+    color: #716e67;
+    font-family: Arial, sans-serif;
+    font-size: 10px;
+  }
+  .dropdown-item--highlight small { color: #e87060; }
+
+  .dropdown-divider {
+    background: #e8e4da;
+    height: 1px;
+    margin: 4px 0;
+  }
+</style>
+
+<script>
+  // Abrir/cerrar al hacer click (para touch y teclado)
+  const btn      = document.getElementById('accountBtn');
+  const dropdown = document.getElementById('accountDropdown');
+
+  btn && btn.addEventListener('click', () => {
+    const isOpen = dropdown.classList.toggle('open');
+    btn.setAttribute('aria-expanded', String(isOpen));
+  });
+
+  // Cerrar al hacer click fuera
+  document.addEventListener('click', (e) => {
+    if (!btn?.contains(e.target) && !dropdown?.contains(e.target)) {
+      dropdown?.classList.remove('open');
+      btn?.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  // Cerrar con Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      dropdown?.classList.remove('open');
+      btn?.setAttribute('aria-expanded', 'false');
+      btn?.focus();
+    }
+  });
+</script>
+>>>>>>> master
