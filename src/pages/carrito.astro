@@ -1,0 +1,492 @@
+---
+// src/pages/carrito.astro
+import Layout from '../layouts/Layout.astro';
+
+// Datos de prueba iniciales
+const cartItems = [
+  {
+    id: 'p1',
+    name: 'Pala Pro Carbon',
+    category: 'Pádel',
+    price: 2499,
+    quantity: 1,
+    variant: 'Grip estándar',
+    themeClass: 'theme-padel'
+  },
+  {
+    id: 'p2',
+    name: 'Court Air 2.0',
+    category: 'Tenis',
+    price: 1899,
+    quantity: 2,
+    variant: 'Talla 27.5 MX',
+    themeClass: 'theme-shoe'
+  }
+];
+---
+
+<Layout title="Carrito de Compras | SporTenis">
+  <div class="cart-wrapper">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="SporTenis, inicio">
+        <span class="brand-mark">S</span>
+        <span>Spor<span>Tenis</span></span>
+      </a>
+      <a href="/" class="return-link">← Volver al catálogo</a>
+    </header>
+
+    <main class="cart-main">
+      <div class="header-section">
+        <p class="eyebrow"><span></span> Tu selección</p>
+        <h1>Carrito de <em>Compra</em></h1>
+      </div>
+
+      <div class="cart-grid">
+        <!-- Listado de Productos -->
+        <section class="items-card" aria-label="Productos en el carrito">
+          <div class="table-head">
+            <span>Artículo</span>
+            <span>Cantidad</span>
+            <span class="text-right">Total</span>
+          </div>
+
+          <div class="items-body" id="itemsList">
+            {cartItems.map((item) => (
+              <article class="cart-row" data-id={item.id} data-price={item.price}>
+                <div class="product-cell">
+                  <div class={`product-box ${item.themeClass}`}>
+                    <i></i>
+                  </div>
+                  <div class="product-meta">
+                    <span class="cat-tag">{item.category}</span>
+                    <h3>{item.name}</h3>
+                    <p class="variant">{item.variant}</p>
+                    <span class="unit-price">${item.price.toLocaleString('es-MX')} c/u</span>
+                    <button type="button" class="btn-remove" aria-label={`Eliminar ${item.name}`}>
+                      Eliminar
+                    </button>
+                  </div>
+                </div>
+
+                <div class="qty-cell">
+                  <div class="counter-control">
+                    <button type="button" class="btn-qty dec" aria-label="Disminuir">−</button>
+                    <input type="number" class="qty-field" value={item.quantity} min="1" max="10" readonly />
+                    <button type="button" class="btn-qty inc" aria-label="Aumentar">+</button>
+                  </div>
+                </div>
+
+                <div class="total-cell text-right">
+                  <strong class="item-total-val">${(item.price * item.quantity).toLocaleString('es-MX')}</strong>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <div id="emptyMessage" class="empty-state" style="display: none;">
+            <p>Tu carrito está actualmente vacío.</p>
+            <a href="/" class="primary-button inline">Explorar artículos <span>↗</span></a>
+          </div>
+        </section>
+
+        <!-- Resumen de Pago -->
+        <aside class="order-summary" aria-label="Resumen del pedido">
+          <h2>Resumen</h2>
+
+          <div class="summary-line">
+            <span>Subtotal</span>
+            <strong id="subtotalDisplay">$6,297 MXN</strong>
+          </div>
+
+          <div class="summary-line">
+            <span>Costo de envío</span>
+            <span class="badge-free">Gratis</span>
+          </div>
+
+          <div class="promo-input-group">
+            <input type="text" id="couponCode" placeholder="Código de descuento" />
+            <button type="button" id="applyCoupon">Aplicar</button>
+          </div>
+
+          <hr class="summary-separator" />
+
+          <div class="summary-line total-line">
+            <span>Total estimado</span>
+            <strong id="totalDisplay">$6,297 MXN</strong>
+          </div>
+
+          <button type="button" class="primary-button checkout-btn">
+            Proceder al Checkout <span>↗</span>
+          </button>
+
+          <div class="badges-list">
+            <p>Pago 100% protegido y cifrado</p>
+            <p>Devoluciones sin costo por 30 días</p>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<script>
+  const itemsList = document.getElementById('itemsList') as HTMLElement | null;
+  const emptyMsg = document.getElementById('emptyMessage') as HTMLElement | null;
+  const subtotalDisplay = document.getElementById('subtotalDisplay') as HTMLElement | null;
+  const totalDisplay = document.getElementById('totalDisplay') as HTMLElement | null;
+
+  function recalculateCart(): void {
+    const rows = document.querySelectorAll<HTMLElement>('.cart-row');
+    let subtotal = 0;
+
+    if (rows.length === 0) {
+      if (itemsList) itemsList.style.display = 'none';
+      if (emptyMsg) emptyMsg.style.display = 'flex';
+      if (subtotalDisplay) subtotalDisplay.textContent = '$0 MXN';
+      if (totalDisplay) totalDisplay.textContent = '$0 MXN';
+      return;
+    }
+
+    rows.forEach((row) => {
+      const price = Number(row.dataset.price || 0);
+      const qtyInput = row.querySelector('.qty-field') as HTMLInputElement | null;
+      const totalField = row.querySelector('.item-total-val') as HTMLElement | null;
+      const qty = Number(qtyInput?.value || 1);
+
+      const rowTotal = price * qty;
+      subtotal += rowTotal;
+
+      if (totalField) {
+        totalField.textContent = `$${rowTotal.toLocaleString('es-MX')}`;
+      }
+    });
+
+    const formatted = `$${subtotal.toLocaleString('es-MX')} MXN`;
+    if (subtotalDisplay) subtotalDisplay.textContent = formatted;
+    if (totalDisplay) totalDisplay.textContent = formatted;
+  }
+
+  // Delegación de eventos para botones (+, -, eliminar)
+  itemsList?.addEventListener('click', (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+
+    const row = target.closest<HTMLElement>('.cart-row');
+    if (!row) return;
+
+    const input = row.querySelector('.qty-field') as HTMLInputElement | null;
+
+    if (target.classList.contains('inc') && input) {
+      let val = Number(input.value);
+      if (val < 10) input.value = String(val + 1);
+      recalculateCart();
+    }
+
+    if (target.classList.contains('dec') && input) {
+      let val = Number(input.value);
+      if (val > 1) input.value = String(val - 1);
+      recalculateCart();
+    }
+
+    if (target.classList.contains('btn-remove')) {
+      row.remove();
+      recalculateCart();
+    }
+  });
+</script>
+
+<style>
+  :global(*) { box-sizing: border-box; }
+  :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; margin: 0; }
+
+  .cart-wrapper { min-height: 100vh; display: flex; flex-direction: column; }
+  
+  .topbar {
+    align-items: center;
+    background: #f7d21c;
+    display: flex;
+    justify-content: space-between;
+    min-height: 76px;
+    padding: 0 clamp(20px, 4vw, 64px);
+  }
+
+  .brand {
+    align-items: center;
+    color: #171717;
+    display: flex;
+    font-family: Arial, sans-serif;
+    font-size: 25px;
+    font-weight: 900;
+    letter-spacing: -1.5px;
+    text-decoration: none;
+  }
+  .brand span span { font-weight: 400; }
+  .brand-mark {
+    align-items: center;
+    border: 3px solid #171717;
+    border-radius: 50%;
+    display: inline-flex;
+    font-size: 15px;
+    height: 30px;
+    justify-content: center;
+    margin-right: 8px;
+    width: 30px;
+  }
+
+  .return-link {
+    color: #171717;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .return-link:hover { text-decoration: underline; }
+
+  .cart-main {
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+    padding: clamp(30px, 4vw, 50px) clamp(20px, 4vw, 64px);
+  }
+
+  .eyebrow {
+    color: #d93e2e;
+    font-family: Arial, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin: 0 0 6px;
+    text-transform: uppercase;
+  }
+  .eyebrow span {
+    background: #f7d21c;
+    display: inline-block;
+    height: 7px;
+    margin-right: 8px;
+    width: 7px;
+  }
+
+  h1 {
+    font-size: clamp(36px, 5vw, 56px);
+    font-weight: 400;
+    letter-spacing: -2px;
+    line-height: 0.95;
+    margin: 0 0 32px;
+  }
+  h1 em { color: #d93e2e; font-style: italic; }
+
+  .cart-grid {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 36px;
+    align-items: start;
+  }
+
+  .items-card {
+    background: #fffdf3;
+    border: 2px solid #171717;
+    box-shadow: 6px 6px 0 #171717;
+    padding: 24px 30px;
+  }
+
+  .table-head {
+    display: grid;
+    grid-template-columns: 2.2fr 1fr 1fr;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 800;
+    color: #716e67;
+    text-transform: uppercase;
+    border-bottom: 2px solid #171717;
+    padding-bottom: 12px;
+  }
+
+  .cart-row {
+    display: grid;
+    grid-template-columns: 2.2fr 1fr 1fr;
+    align-items: center;
+    padding: 24px 0;
+    border-bottom: 1px dashed #d8d3c3;
+  }
+  .cart-row:last-child { border-bottom: none; }
+
+  .product-cell { display: flex; gap: 18px; align-items: center; }
+  
+  .product-box {
+    width: 80px;
+    height: 80px;
+    border: 1.5px solid #171717;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .theme-padel { background: #d7e1c3; }
+  .theme-shoe { background: #e9c8bd; }
+
+  .cat-tag {
+    font-family: Arial, sans-serif;
+    font-size: 9px;
+    font-weight: 700;
+    color: #716e67;
+    text-transform: uppercase;
+  }
+
+  .product-meta h3 { margin: 2px 0; font-size: 16px; font-weight: 400; }
+  .variant { margin: 0 0 4px; font-family: Arial, sans-serif; font-size: 11px; color: #555; }
+  .unit-price { font-family: Arial, sans-serif; font-size: 12px; font-weight: 700; color: #171717; }
+  
+  .btn-remove {
+    background: none;
+    border: 0;
+    color: #d93e2e;
+    font-family: Arial, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    cursor: pointer;
+    padding: 6px 0 0;
+    display: block;
+  }
+  .btn-remove:hover { text-decoration: underline; }
+
+  .counter-control {
+    display: inline-flex;
+    border: 1.5px solid #171717;
+    background: #f6f4ed;
+  }
+  .btn-qty {
+    background: transparent;
+    border: 0;
+    font-family: Arial, sans-serif;
+    font-weight: 800;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+  .btn-qty:hover { background: #f7d21c; }
+  .qty-field {
+    width: 32px;
+    border: 0;
+    background: transparent;
+    text-align: center;
+    font-family: Arial, sans-serif;
+    font-weight: 700;
+    outline: 0;
+  }
+
+  .text-right { text-align: right; }
+  .item-total-val { font-family: Arial, sans-serif; font-size: 15px; }
+
+  .order-summary {
+    background: #fffdf3;
+    border: 2px solid #171717;
+    box-shadow: 6px 6px 0 #171717;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .order-summary h2 {
+    font-size: 20px;
+    margin: 0;
+    border-bottom: 2px solid #171717;
+    padding-bottom: 10px;
+  }
+
+  .summary-line {
+    display: flex;
+    justify-content: space-between;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+  }
+  .badge-free {
+    color: #15803d;
+    font-weight: 800;
+    text-transform: uppercase;
+    font-size: 11px;
+  }
+
+  .promo-input-group {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .promo-input-group input {
+    flex: 1;
+    border: 1.5px solid #171717;
+    background: #f6f4ed;
+    padding: 8px 10px;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    outline: 0;
+  }
+  .promo-input-group button {
+    background: #f7d21c;
+    border: 1.5px solid #171717;
+    padding: 8px 12px;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 800;
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+
+  .summary-separator {
+    border: 0;
+    height: 1px;
+    background: #d8d3c3;
+    margin: 6px 0;
+  }
+
+  .total-line { font-size: 17px; font-weight: 800; }
+
+  .primary-button {
+    align-items: center;
+    background: #171717;
+    color: #fffdf3;
+    display: inline-flex;
+    justify-content: space-between;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 15px 18px;
+    text-decoration: none;
+    text-transform: uppercase;
+    border: 0;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .primary-button:hover { background: #d93e2e; }
+  .primary-button span { font-size: 16px; }
+  .primary-button.inline { margin-top: 15px; width: fit-content; }
+
+  .badges-list {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-family: Arial, sans-serif;
+    font-size: 10px;
+    color: #716e67;
+  }
+  .badges-list p { margin: 0; }
+
+  .empty-state {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 0;
+    font-family: Arial, sans-serif;
+    color: #716e67;
+  }
+
+  @media (max-width: 900px) {
+    .cart-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 600px) {
+    .table-head { display: none; }
+    .cart-row { grid-template-columns: 1fr; gap: 14px; }
+    .total-cell { text-align: left; }
+  }
+</style>

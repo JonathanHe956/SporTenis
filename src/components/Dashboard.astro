@@ -36,7 +36,7 @@ const products = [
         </div>
       </div>
       <button class="icon-button" type="button" aria-label="Favoritos">Favoritos</button>
-      <button class="cart" type="button" aria-label="Carrito de compra">Carrito<b>0</b></button>
+      <a href="/carrito" class="cart" aria-label="Carrito de compra" style="text-decoration: none; color: inherit;">Carrito<b>0</b></a>
     </div>
   </header>
   <main>
@@ -133,24 +133,25 @@ const products = [
 
 <script>
   // Abrir/cerrar al hacer click (para touch y teclado)
-  const btn      = document.getElementById('accountBtn');
-  const dropdown = document.getElementById('accountDropdown');
+  const btn = document.getElementById('accountBtn') as HTMLElement | null;
+  const dropdown = document.getElementById('accountDropdown') as HTMLElement | null;
 
-  btn && btn.addEventListener('click', () => {
-    const isOpen = dropdown.classList.toggle('open');
+  btn?.addEventListener('click', () => {
+    const isOpen = dropdown?.classList.toggle('open') ?? false;
     btn.setAttribute('aria-expanded', String(isOpen));
   });
 
   // Cerrar al hacer click fuera
-  document.addEventListener('click', (e) => {
-    if (!btn?.contains(e.target) && !dropdown?.contains(e.target)) {
+  document.addEventListener('click', (e: MouseEvent) => {
+    const target = e.target as Node | null;
+    if (target && !btn?.contains(target) && !dropdown?.contains(target)) {
       dropdown?.classList.remove('open');
       btn?.setAttribute('aria-expanded', 'false');
     }
   });
 
   // Cerrar con Escape
-  document.addEventListener('keydown', (e) => {
+  document.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       dropdown?.classList.remove('open');
       btn?.setAttribute('aria-expanded', 'false');
@@ -160,37 +161,68 @@ const products = [
 </script>
 
 <script>
-  const productDialog = document.getElementById('productDialog');
-  const dialogVisual = document.getElementById('dialogVisual');
-  const dialogType = document.getElementById('dialogType');
-  const dialogTitle = document.getElementById('dialogTitle');
-  const dialogPrice = document.getElementById('dialogPrice');
-  const dialogDescription = document.getElementById('dialogDescription');
-  const productOption = document.getElementById('productOption');
-  const productQuantity = document.getElementById('productQuantity');
-  const dialogFeedback = document.getElementById('dialogFeedback');
-  const cartCount = document.querySelector('.cart b');
+  // 1. Declarar y tipar los elementos del DOM para TypeScript
+  const cartCount = document.querySelector('.cart b') as HTMLElement | null;
+  const productDialog = document.querySelector('.product-dialog') as HTMLDialogElement | null;
+  const dialogType = document.querySelector('.dialog-type') as HTMLElement | null;
+  const dialogTitle = document.querySelector('.dialog-title') as HTMLElement | null;
+  const dialogPrice = document.querySelector('.dialog-price') as HTMLElement | null;
+  const dialogDescription = document.querySelector('.dialog-description') as HTMLElement | null;
+  const productOption = document.querySelector('.dialog-options') as HTMLSelectElement | null;
+  const dialogVisual = document.querySelector('.dialog-visual') as HTMLElement | null;
+  const dialogFeedback = document.querySelector('.dialog-feedback') as HTMLElement | null;
+  const productQuantity = document.querySelector('.dialog-qty') as HTMLInputElement | null;
+  const closeBtn = document.querySelector('.dialog_close, .dialog-close') as HTMLButtonElement | null;
+  const addToCartBtn = document.getElementById('addToCart') as HTMLButtonElement | null;
+
   let selectedProduct = '';
 
-  document.querySelectorAll('.detail-button').forEach((button) => {
+  // 2. Evento para abrir el modal con la información del producto seleccionado
+  document.querySelectorAll<HTMLButtonElement>('.detail button').forEach((button) => {
     button.addEventListener('click', () => {
       selectedProduct = button.dataset.product || '';
-      dialogType.textContent = button.dataset.type || '';
-      dialogTitle.textContent = selectedProduct;
-      dialogPrice.textContent = button.dataset.price || '';
-      dialogDescription.textContent = button.dataset.description || '';
-      productOption.replaceChildren(...(button.dataset.options || '').split('|').map((option) => new Option(option, option)));
-      dialogVisual.className = `dialog-visual ${button.closest('.product-visual')?.classList[1] || ''}`;
-      dialogFeedback.textContent = '';
-      productQuantity.value = '1';
-      productDialog.showModal();
+      
+      if (dialogType) dialogType.textContent = button.dataset.type || '';
+      if (dialogTitle) dialogTitle.textContent = selectedProduct;
+      if (dialogPrice) dialogPrice.textContent = button.dataset.price || '';
+      if (dialogDescription) dialogDescription.textContent = button.dataset.description || '';
+      
+      if (productOption) {
+        const options = (button.dataset.options || '')
+          .split('|')
+          .filter(Boolean)
+          .map((option) => new Option(option, option));
+        productOption.replaceChildren(...options);
+      }
+
+      if (dialogVisual) {
+        const visualClass = button.closest('.product-visual')?.classList[1] || '';
+        dialogVisual.className = `dialog-visual ${visualClass}`;
+      }
+
+      if (dialogFeedback) dialogFeedback.textContent = '';
+      if (productQuantity) productQuantity.value = '1';
+
+      productDialog?.showModal();
     });
   });
 
-  document.querySelector('.dialog-close').addEventListener('click', () => productDialog.close());
-  document.getElementById('addToCart').addEventListener('click', () => {
-    const currentCount = Number(cartCount.textContent || 0);
-    cartCount.textContent = String(currentCount + Number(productQuantity.value));
-    dialogFeedback.textContent = `${selectedProduct} se añadió al carrito.`;
+  // 3. Evento para cerrar el modal
+  closeBtn?.addEventListener('click', () => {
+    productDialog?.close();
+  });
+
+  // 4. Actualizar contador del carrito
+  addToCartBtn?.addEventListener('click', () => {
+    const qty = Number(productQuantity?.value || 1);
+    const currentCount = Number(cartCount?.textContent || 0);
+
+    if (cartCount) {
+      cartCount.textContent = String(currentCount + qty);
+    }
+
+    if (dialogFeedback) {
+      dialogFeedback.textContent = `${selectedProduct} se añadió al carrito.`;
+    }
   });
 </script>
