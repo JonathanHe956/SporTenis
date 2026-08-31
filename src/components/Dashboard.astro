@@ -1,9 +1,9 @@
 ---
 const categories = ['Novedades', 'Tenis', 'Pádel', 'Running', 'Ropa', 'Accesorios'];
 const products = [
-  { name: 'Pala Pro Carbon', type: 'Pádel', price: '$2,499', className: 'product-padel', description: 'Potencia y control para elevar tu juego en cada punto.', options: ['Negro / Amarillo', 'Carbono / Rojo'] },
-  { name: 'Court Air 2.0', type: 'Tenis', price: '$1,899', className: 'product-shoe', description: 'Amortiguación ligera y estabilidad para moverte con confianza.', options: ['Blanco / Rojo', 'Negro / Amarillo'] },
-  { name: 'Player Tee', type: 'Ropa deportiva', price: '$699', className: 'product-shirt', description: 'Tela transpirable para mantenerte cómodo durante todo el partido.', options: ['Blanco', 'Amarillo', 'Negro'] },
+  { name: 'Pala Pro Carbon', type: 'Pádel', price: '$2,499', badge: 'Oferta', className: 'product-padel', description: 'Potencia y control para elevar tu juego en cada punto.', options: ['Negro / Amarillo', 'Carbono / Rojo'] },
+  { name: 'Court Air 2.0', type: 'Tenis', price: '$1,899', badge: 'Top ventas', className: 'product-shoe', description: 'Amortiguación ligera y estabilidad para moverte con confianza.', options: ['Blanco / Rojo', 'Negro / Amarillo'] },
+  { name: 'Player Tee', type: 'Ropa deportiva', price: '$699', badge: 'Nuevo', className: 'product-shirt', description: 'Tela transpirable para mantenerte cómodo durante todo el partido.', options: ['Blanco', 'Amarillo', 'Negro'] },
 ];
 ---
 
@@ -53,7 +53,46 @@ const products = [
       <div class="hero-art" aria-label="Pelota de tenis amarilla sobre una cancha deportiva" role="img"><div class="court-line"></div><div class="tennis-ball"></div><div class="hero-stamp">SPOR<br />TENIS</div><p class="art-caption">Hecho para<br /><strong>competir</strong></p></div>
     </section>
     <section class="benefits" aria-label="Beneficios de compra"><div><strong>Envío gratis</strong><span>En compras mayores a $999</span></div><div><strong>Compra segura</strong><span>Tu información está protegida</span></div><div><strong>30 días</strong><span>Para cambios y devoluciones</span></div><div><strong>Soporte experto</strong><span>Te ayudamos a elegir mejor</span></div></section>
-    <section class="products-section" id="productos" aria-labelledby="products-title"><div class="section-heading"><div><p class="eyebrow">Selección SporTenis</p><h2 id="products-title">Favoritos de la cancha</h2></div><a href="#todos">Ver todo <span>↗</span></a></div><div class="product-grid">{products.map((product) => (<article class="product-card"><div class={`product-visual ${product.className}`}><span>Nuevo</span><button type="button" aria-label={`Añadir ${product.name} a favoritos`}>♡</button><i></i></div><div class="product-info"><div><p>{product.type}</p><h3>{product.name}</h3></div><strong>{product.price}</strong></div><button class="detail-button" type="button" data-product={product.name} data-type={product.type} data-price={product.price} data-description={product.description} data-options={product.options.join('|')}>Ver detalle <span>↗</span></button></article>))}</div></section>
+    <section class="products-section" id="productos" aria-labelledby="products-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Selección SporTenis</p>
+          <h2 id="products-title">Favoritos de la cancha</h2>
+        </div>
+        <a href="#todos">Ver todo <span>↗</span></a>
+      </div>
+      <div class="product-grid">
+        {products.map((product) => (
+          <article class="product-card">
+            <div class={`product-visual ${product.className}`}>
+              <span class="product-badge">{product.badge}</span>
+              <button type="button" aria-label={`Añadir ${product.name} a favoritos`} class="favorite-btn">♡</button>
+              <i></i>
+            </div>
+            <div class="product-info">
+              <div class="product-copy">
+                <p>{product.type}</p>
+                <h3>{product.name}</h3>
+              </div>
+              <strong>{product.price}</strong>
+            </div>
+            <div class="card-actions">
+              <button
+                class="detail-button"
+                type="button"
+                data-product={product.name}
+                data-type={product.type}
+                data-price={product.price}
+                data-description={product.description}
+                data-options={product.options.join('|')}
+              >
+                Comprar
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
   </main>
 </div>
 
@@ -169,58 +208,59 @@ const products = [
 </script>
 
 <script>
-  // 1. Declarar y tipar los elementos del DOM para TypeScript
   const cartCount = document.querySelector('.cart b') as HTMLElement | null;
-  const productDialog = document.querySelector('.product-dialog') as HTMLDialogElement | null;
-  const dialogType = document.querySelector('.dialog-type') as HTMLElement | null;
-  const dialogTitle = document.querySelector('.dialog-title') as HTMLElement | null;
-  const dialogPrice = document.querySelector('.dialog-price') as HTMLElement | null;
-  const dialogDescription = document.querySelector('.dialog-description') as HTMLElement | null;
-  const productOption = document.querySelector('.dialog-options') as HTMLSelectElement | null;
-  const dialogVisual = document.querySelector('.dialog-visual') as HTMLElement | null;
-  const dialogFeedback = document.querySelector('.dialog-feedback') as HTMLElement | null;
-  const productQuantity = document.querySelector('.dialog-qty') as HTMLInputElement | null;
-  const closeBtn = document.querySelector('.dialog_close, .dialog-close') as HTMLButtonElement | null;
+  const productDialog = document.getElementById('productDialog') as HTMLDialogElement | null;
+  const dialogType = document.getElementById('dialogType') as HTMLElement | null;
+  const dialogTitle = document.getElementById('dialogTitle') as HTMLElement | null;
+  const dialogPrice = document.getElementById('dialogPrice') as HTMLElement | null;
+  const dialogDescription = document.getElementById('dialogDescription') as HTMLElement | null;
+  const productOption = document.getElementById('productOption') as HTMLSelectElement | null;
+  const dialogVisual = document.getElementById('dialogVisual') as HTMLElement | null;
+  const dialogFeedback = document.getElementById('dialogFeedback') as HTMLElement | null;
+  const productQuantity = document.getElementById('productQuantity') as HTMLInputElement | null;
+  const closeBtn = document.querySelector('.dialog-close') as HTMLButtonElement | null;
   const addToCartBtn = document.getElementById('addToCart') as HTMLButtonElement | null;
 
   let selectedProduct = '';
 
-  // 2. Evento para abrir el modal con la información del producto seleccionado
-  document.querySelectorAll<HTMLButtonElement>('.detail button').forEach((button) => {
-    button.addEventListener('click', () => {
-      selectedProduct = button.dataset.product || '';
-      
-      if (dialogType) dialogType.textContent = button.dataset.type || '';
-      if (dialogTitle) dialogTitle.textContent = selectedProduct;
-      if (dialogPrice) dialogPrice.textContent = button.dataset.price || '';
-      if (dialogDescription) dialogDescription.textContent = button.dataset.description || '';
-      
-      if (productOption) {
-        const options = (button.dataset.options || '')
-          .split('|')
-          .filter(Boolean)
-          .map((option) => new Option(option, option));
-        productOption.replaceChildren(...options);
-      }
+  const openProductDialog = (button: HTMLButtonElement) => {
+    selectedProduct = button.dataset.product || '';
 
-      if (dialogVisual) {
-        const visualClass = button.closest('.product-visual')?.classList[1] || '';
-        dialogVisual.className = `dialog-visual ${visualClass}`;
-      }
+    if (dialogType) dialogType.textContent = button.dataset.type || '';
+    if (dialogTitle) dialogTitle.textContent = selectedProduct;
+    if (dialogPrice) dialogPrice.textContent = button.dataset.price || '';
+    if (dialogDescription) dialogDescription.textContent = button.dataset.description || '';
 
-      if (dialogFeedback) dialogFeedback.textContent = '';
-      if (productQuantity) productQuantity.value = '1';
+    if (productOption) {
+      const options = (button.dataset.options || '')
+        .split('|')
+        .filter(Boolean)
+        .map((option) => new Option(option, option));
+      productOption.replaceChildren(...options);
+      productOption.selectedIndex = 0;
+    }
 
+    if (dialogVisual) {
+      const visualClass = button.closest('.product-card')?.querySelector('.product-visual')?.classList[1] || '';
+      dialogVisual.className = `dialog-visual ${visualClass}`;
+    }
+
+    if (dialogFeedback) dialogFeedback.textContent = '';
+    if (productQuantity) productQuantity.value = '1';
+
+    if (!productDialog?.open) {
       productDialog?.showModal();
-    });
+    }
+  };
+
+  document.querySelectorAll<HTMLButtonElement>('.detail-button').forEach((button) => {
+    button.addEventListener('click', () => openProductDialog(button));
   });
 
-  // 3. Evento para cerrar el modal
   closeBtn?.addEventListener('click', () => {
     productDialog?.close();
   });
 
-  // 4. Actualizar contador del carrito
   addToCartBtn?.addEventListener('click', () => {
     const qty = Number(productQuantity?.value || 1);
     const currentCount = Number(cartCount?.textContent || 0);
