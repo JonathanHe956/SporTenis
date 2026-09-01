@@ -71,37 +71,29 @@ if (session) {
   const errorBanner = document.getElementById('errorBanner') as HTMLDivElement;
   const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement;
 
-  form?.addEventListener('submit', async (e) => {
+  form?.addEventListener('submit', (e) => {
     e.preventDefault();
     errorBanner.style.display = 'none';
     submitBtn.disabled = true;
     submitBtn.innerHTML = 'Verificando...';
 
     const formData = new FormData(form);
+    const email = formData.get('email');
+    const password = formData.get('password');
 
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        errorBanner.innerText = data.message || 'Error al iniciar sesión';
+    // Validar las credenciales de prueba
+    setTimeout(() => {
+      if (email === 'admin@sportenis.com' && password === 'password123') {
+        // Crear la cookie de sesión que Astro espera
+        document.cookie = "sportenis_session=12345; path=/; max-age=86400";
+        window.location.href = '/';
+      } else {
+        errorBanner.innerText = 'Correo o contraseña incorrectos.';
         errorBanner.style.display = 'block';
         submitBtn.disabled = false;
         submitBtn.innerHTML = 'Entrar a mi cuenta <span>↗</span>';
-        return;
       }
-
-      window.location.href = data.redirect || '/';
-    } catch {
-      errorBanner.innerText = 'Error de conexión con el servidor.';
-      errorBanner.style.display = 'block';
-      submitBtn.disabled = false;
-      submitBtn.innerHTML = 'Entrar a mi cuenta <span>↗</span>';
-    }
+    }, 600); // Simulamos una pequeña carga
   });
 </script>
 
