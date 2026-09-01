@@ -1,10 +1,40 @@
 ---
 // src/pages/login.astro
 import Layout from '../layouts/Layout.astro';
+import { db, Usuarios, eq } from 'astro:db';
 
 const session = Astro.cookies.get('sportenis_session');
-if (session) {
-  return Astro.redirect('/');
+let errorMsg = '';
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  
+  if (formData.get('action') === 'logout') {
+    Astro.cookies.delete('sportenis_session', { path: '/' });
+    return Astro.redirect('/login');
+  }
+
+  const email = formData.get('email')?.toString();
+  const password = formData.get('password')?.toString();
+
+  if (email && password) {
+    const userResult = await db.select().from(Usuarios).where(eq(Usuarios.correo, email));
+    if (userResult.length > 0 && userResult[0].password_hash === password) {
+      Astro.cookies.set('sportenis_session', userResult[0].id.toString(), { path: '/' });
+      
+      if (userResult[0].id_rol === 1 || userResult[0].id_rol === 2) {
+        return Astro.redirect('/crm');
+      }
+      return Astro.redirect('/cuenta');
+    } else {
+      errorMsg = 'Correo o contraseña incorrectos.';
+    }
+  }
+} else {
+  // Si es GET y ya hay sesión, redirigir
+  if (session) {
+    return Astro.redirect('/cuenta');
+  }
 }
 ---
 
@@ -21,13 +51,17 @@ if (session) {
     <main class="auth-main">
       <div class="auth-card">
         <div class="card-header">
-          <p class="eyebrow"><span></span> Acceso a clientes</p>
+          <p class="eyebrow"><span></span> Acceso a la Tienda</p>
           <h1>Iniciar <em>Sesión</em></h1>
           <p class="subtitle">Ingresa tus datos para ver tus pedidos y beneficios.</p>
         </div>
 
-        <form id="loginForm" class="auth-form">
-          <div id="errorBanner" class="error-banner" style="display: none;"></div>
+        <form method="POST" class="auth-form">
+          {errorMsg && (
+            <div class="error-banner">
+              {errorMsg}
+            </div>
+          )}
 
           <div class="field-group">
             <label for="email">Correo electrónico</label>
@@ -51,51 +85,20 @@ if (session) {
             />
           </div>
 
-          <button type="submit" id="submitBtn" class="primary-button">
+          <button type="submit" class="primary-button">
             Entrar a mi cuenta <span>↗</span>
           </button>
         </form>
 
         <div class="mock-credentials">
           <strong>Credenciales de prueba:</strong>
-          <span>Email: <code>admin@sportenis.com</code></span>
-          <span>Password: <code>password123</code></span>
+          <span>Vendedor: <code>ventas1@sportenis.com</code> / <code>password123</code></span>
+          <span>Admin: <code>admin@sportenis.com</code> / <code>password123</code></span>
         </div>
       </div>
     </main>
   </div>
 </Layout>
-
-<script>
-  const form = document.getElementById('loginForm') as HTMLFormElement;
-  const errorBanner = document.getElementById('errorBanner') as HTMLDivElement;
-  const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement;
-
-  form?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    errorBanner.style.display = 'none';
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = 'Verificando...';
-
-    const formData = new FormData(form);
-    const email = formData.get('email');
-    const password = formData.get('password');
-
-    // Validar las credenciales de prueba
-    setTimeout(() => {
-      if (email === 'admin@sportenis.com' && password === 'password123') {
-        // Crear la cookie de sesión que Astro espera
-        document.cookie = "sportenis_session=12345; path=/; max-age=86400";
-        window.location.href = '/';
-      } else {
-        errorBanner.innerText = 'Correo o contraseña incorrectos.';
-        errorBanner.style.display = 'block';
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = 'Entrar a mi cuenta <span>↗</span>';
-      }
-    }, 600); // Simulamos una pequeña carga
-  });
-</script>
 
 <style>
   :global(*) { box-sizing: border-box; }

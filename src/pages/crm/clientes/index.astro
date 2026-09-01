@@ -1,0 +1,413 @@
+---
+import CrmLayout from '../../../layouts/CrmLayout.astro';
+import { db, Clientes, EtapasCrm, Interacciones, eq, like, or } from 'astro:db';
+
+// Manejo de peticiones POST (CRUD)
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = formData.get('action');
+
+  if (action === 'create') {
+    await db.insert(Clientes).values({
+      nombre: formData.get('nombre') as string,
+      empresa: formData.get('empresa') as string,
+      correo: formData.get('correo') as string,
+      telefono: formData.get('telefono') as string,
+      id_etapa_crm: Number(formData.get('etapa_id')),
+      estado: 'Activo',
+      fecha_registro: new Date()
+    });
+  } else if (action === 'update') {
+    const id = Number(formData.get('id'));
+    await db.update(Clientes)
+      .set({
+        nombre: formData.get('nombre') as string,
+        empresa: formData.get('empresa') as string,
+        correo: formData.get('correo') as string,
+        telefono: formData.get('telefono') as string,
+        id_etapa_crm: Number(formData.get('etapa_id')),
+      })
+      .where(eq(Clientes.id, id));
+  } else if (action === 'delete') {
+    const id = Number(formData.get('id'));
+    // Eliminar interacciones relacionadas primero para evitar error de Foreign Key
+    await db.delete(Interacciones).where(eq(Interacciones.id_cliente, id));
+    // Eliminar cliente
+    await db.delete(Clientes).where(eq(Clientes.id, id));
+  }
+  
+  return Astro.redirect(Astro.url.pathname);
+}
+
+// Obtener datos para la vista
+const etapas = await db.select().from(EtapasCrm);
+
+// Join de Clientes con EtapasCrm
+const clientes = await db
+  .select({
+    id: Clientes.id,
+    nombre: Clientes.nombre,
+    empresa: Clientes.empresa,
+    correo: Clientes.correo,
+    telefono: Clientes.telefono,
+    estado: Clientes.estado,
+    id_etapa: Clientes.id_etapa_crm,
+    etapa: EtapasCrm.nombre
+  })
+  .from(Clientes)
+  .leftJoin(EtapasCrm, eq(Clientes.id_etapa_crm, EtapasCrm.id));
+
+const q = Astro.url.searchParams.get('q');
+let clientesFiltrados = clientes;
+
+if (q) {
+  const searchTerm = q.toLowerCase();
+  clientesFiltrados = clientes.filter(c => 
+    c.nombre.toLowerCase().includes(searchTerm) || 
+    c.correo.toLowerCase().includes(searchTerm) || 
+    (c.empresa && c.empresa.toLowerCase().includes(searchTerm))
+  );
+}
+
+function getStageBadge(stage: string | null) {
+  switch (stage) {
+    case 'Activo': return 'badge-success';
+    case 'Prospecto': return 'badge-neutral';
+    case 'Frecuente': return 'badge-success';
+    case 'Inactivo': return 'badge-danger';
+    default: return 'badge-neutral';
+  }
+}
+---
+
+<CrmLayout title="Clientes" activePath="/crm/clientes">
+  <div class="header-actions">
+    <h1 class="crm-title">Clientes</h1>
+    <button class="btn-primary" onclick="document.getElementById('modalCreate').showModal()">+ Nuevo cliente</button>
+  </div>
+
+  <div class="crm-card">
+    <div class="filters">
+      <input type="search" placeholder="Buscar por nombre, correo o empresa..." class="search-input" />
+      <select class="filter-select">
+        <option value="todos">Filtrar por estado: Todos</option>
+        <option value="activo">Activos</option>
+        <option value="inactivo">Inactivos</option>
+      </select>
+    </div>
+
+    <div class="table-responsive">
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Nombre</th>
+            <th>Empresa</th>
+            <th>Correo</th>
+            <th>Teléfono</th>
+            <th>Etapa CRM</th>
+            <th>Estado</th>
+            <th class="text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {clientesFiltrados.map(cliente => (
+            <tr>
+              <td>{cliente.id}</td>
+              <td><strong>{cliente.nombre}</strong></td>
+              <td>{cliente.empresa || '-'}</td>
+              <td>{cliente.correo}</td>
+              <td>{cliente.telefono || '-'}</td>
+              <td><span class={`badge ${getStageBadge(cliente.etapa)}`}>{cliente.etapa || '-'}</span></td>
+              <td>{cliente.estado}</td>
+              <td class="text-right" style="white-space: nowrap;">
+                <a href={`/crm/clientes/${cliente.id}`} class="action-btn" title="Ver detalle">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </a>
+                
+                <button 
+                  class="action-btn" 
+                  title="Editar" 
+                  onclick={`openEditModal(${cliente.id}, '${cliente.nombre}', '${cliente.empresa || ''}', '${cliente.correo}', '${cliente.telefono || ''}', ${cliente.id_etapa || 1})`}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                
+                <form method="POST" style="display:inline;" onsubmit="return confirm('¿Estás seguro de eliminar este cliente? Esto borrará sus interacciones asociadas.');">
+                  <input type="hidden" name="action" value="delete" />
+                  <input type="hidden" name="id" value={cliente.id} />
+                  <button type="submit" class="action-btn text-danger" title="Eliminar">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                  </button>
+                </form>
+              </td>
+            </tr>
+          ))}
+          {clientesFiltrados.length === 0 && (
+            <tr>
+              <td colspan="8" class="text-center" style="padding: 32px; color: var(--color-text-muted)">
+                {q ? `No se encontraron clientes coincidiendo con "${q}".` : 'No hay clientes registrados aún.'}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination">
+      <span>Mostrando {clientesFiltrados.length} clientes</span>
+      <div class="page-controls">
+        <button disabled>‹</button>
+        <button class="active">1</button>
+        <button disabled>›</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Crear Cliente -->
+  <dialog id="modalCreate" class="crm-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nuevo Cliente</h2>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalCreate').close()">×</button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="action" value="create" />
+        
+        <div class="form-group">
+          <label>Nombre del Cliente *</label>
+          <input type="text" name="nombre" required placeholder="Ej. Carlos Alcaraz" />
+        </div>
+
+        <div class="form-group">
+          <label>Empresa / Club</label>
+          <input type="text" name="empresa" placeholder="Ej. Club Valle Verde" />
+        </div>
+
+        <div class="form-group">
+          <label>Correo Electrónico *</label>
+          <input type="email" name="correo" required placeholder="correo@ejemplo.com" />
+        </div>
+
+        <div class="form-group">
+          <label>Teléfono</label>
+          <input type="tel" name="telefono" placeholder="555-123-4567" />
+        </div>
+
+        <div class="form-group">
+          <label>Etapa CRM</label>
+          <select name="etapa_id" required>
+            {etapas.map(e => <option value={e.id}>{e.nombre}</option>)}
+          </select>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-outline" onclick="document.getElementById('modalCreate').close()">Cancelar</button>
+          <button type="submit" class="btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Modal: Editar Cliente -->
+  <dialog id="modalEdit" class="crm-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar Cliente</h2>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalEdit').close()">×</button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="action" value="update" />
+        <input type="hidden" name="id" id="edit_id" value="" />
+        
+        <div class="form-group">
+          <label>Nombre del Cliente *</label>
+          <input type="text" name="nombre" id="edit_nombre" required />
+        </div>
+
+        <div class="form-group">
+          <label>Empresa / Club</label>
+          <input type="text" name="empresa" id="edit_empresa" />
+        </div>
+
+        <div class="form-group">
+          <label>Correo Electrónico *</label>
+          <input type="email" name="correo" id="edit_correo" required />
+        </div>
+
+        <div class="form-group">
+          <label>Teléfono</label>
+          <input type="tel" name="telefono" id="edit_telefono" />
+        </div>
+
+        <div class="form-group">
+          <label>Etapa CRM</label>
+          <select name="etapa_id" id="edit_etapa" required>
+            {etapas.map(e => <option value={e.id}>{e.nombre}</option>)}
+          </select>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-outline" onclick="document.getElementById('modalEdit').close()">Cancelar</button>
+          <button type="submit" class="btn-primary">Actualizar cambios</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+</CrmLayout>
+
+<script is:inline>
+  function openEditModal(id, nombre, empresa, correo, telefono, etapaId) {
+    document.getElementById('edit_id').value = id;
+    document.getElementById('edit_nombre').value = nombre;
+    document.getElementById('edit_empresa').value = empresa;
+    document.getElementById('edit_correo').value = correo;
+    document.getElementById('edit_telefono').value = telefono;
+    document.getElementById('edit_etapa').value = etapaId;
+    
+    document.getElementById('modalEdit').showModal();
+  }
+</script>
+
+<style>
+  .header-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  .crm-title { margin-bottom: 0; }
+  
+  .filters {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .search-input {
+    flex: 1;
+    padding: 10px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-family: inherit;
+  }
+  .filter-select {
+    padding: 10px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: white;
+    font-family: inherit;
+  }
+
+  .table-responsive {
+    overflow-x: auto;
+    margin: 0 -24px;
+  }
+  .crm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .crm-table th {
+    text-align: left;
+    padding: 12px 24px;
+    border-bottom: 2px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-weight: 700;
+  }
+  .crm-table td {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .crm-table tbody tr:hover {
+    background: var(--color-bg);
+  }
+  
+  .text-right { text-align: right; }
+  .text-center { text-align: center; }
+
+  .action-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    opacity: 0.6;
+    margin-left: 8px;
+    color: inherit;
+  }
+  .action-btn:hover { opacity: 1; color: var(--color-text); }
+  .action-btn.text-danger:hover { color: var(--color-danger); }
+
+  .pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 24px;
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+  .page-controls {
+    display: flex;
+    gap: 4px;
+  }
+  .page-controls button {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .page-controls button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .page-controls button.active { background: var(--color-text); color: white; border-color: var(--color-text); }
+
+  /* Modals */
+  .crm-modal {
+    border: none;
+    border-radius: 12px;
+    padding: 0;
+    width: 100%;
+    max-width: 500px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+  }
+  .crm-modal::backdrop { background: rgba(0,0,0,0.5); }
+  .modal-content { padding: 24px; }
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  .modal-header h2 { margin: 0; font-size: 20px; }
+  .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: var(--color-text-muted); }
+  
+  .form-group { margin-bottom: 16px; text-align: left; }
+  .form-group label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+  .form-group select, .form-group input, .form-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 14px;
+  }
+  
+  .btn-outline {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    padding: 10px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .btn-outline:hover { background: var(--color-bg); }
+
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+  }
+</style>

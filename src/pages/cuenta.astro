@@ -1,13 +1,26 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import { db, Usuarios, eq } from 'astro:db';
 
-// Datos simulados del usuario logueado
-const userData = {
+const sessionId = Astro.cookies.get('sportenis_session')?.value;
+
+let userData = {
   nombre: 'Admin',
   apellidos: 'SporTenis',
   telefono: '5512345678',
   correo: 'admin@sportenis.com'
 };
+
+if (sessionId) {
+  const user = await db.select().from(Usuarios).where(eq(Usuarios.id, Number(sessionId)));
+  if (user.length > 0) {
+    const nombresSplit = user[0].nombre.split(' ');
+    userData.nombre = nombresSplit[0];
+    userData.apellidos = nombresSplit.slice(1).join(' ') || '';
+    userData.correo = user[0].correo;
+    // Si la tabla de usuarios tuviera teléfono lo leeríamos, por ahora simulamos.
+  }
+}
 ---
 
 <Layout>
@@ -18,7 +31,22 @@ const userData = {
         <span class="brand-mark">S</span>
         <span>Spor<span>Tenis</span></span>
       </a>
-      <a href="/" class="back-link">← Volver a la tienda</a>
+      
+      <div class="store-actions">
+        <a href="/" class="back-link">← Volver a la tienda</a>
+        
+        <div class="user-nav">
+          <a href="/cuenta" class="nav-icon active" title="Mi Cuenta">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </a>
+          <a href="/favoritos" class="nav-icon" title="Mis Favoritos">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+          </a>
+          <a href="/carrito" class="nav-icon" title="Mi Carrito">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+          </a>
+        </div>
+      </div>
     </header>
 
     <main class="cuenta-main">
@@ -126,6 +154,41 @@ const userData = {
     text-transform: uppercase;
   }
   .back-link:hover { text-decoration: underline; }
+
+  .store-actions {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+
+  .user-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-left: 1px solid #171717;
+    padding-left: 24px;
+  }
+  
+  .nav-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    color: #171717;
+    border-radius: 50%;
+    transition: background-color 0.2s, transform 0.1s;
+  }
+  .nav-icon:hover {
+    background-color: rgba(23, 23, 23, 0.05);
+  }
+  .nav-icon:active {
+    transform: scale(0.95);
+  }
+  .nav-icon.active {
+    background-color: #171717;
+    color: #f7d21c;
+  }
 
   .cuenta-main {
     flex: 1;

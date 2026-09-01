@@ -1,0 +1,178 @@
+---
+import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db, Interacciones, Clientes, TiposInteraccion, Usuarios, eq, desc, and, gte, lte } from 'astro:db';
+
+const searchParams = Astro.url.searchParams;
+const startDateParam = searchParams.get('start_date');
+const endDateParam = searchParams.get('end_date');
+
+// Default a un rango donde sabemos que hay datos en nuestro seed (Mayo 2025)
+const currentStartDate = startDateParam || '2025-05-01'; 
+const currentEndDate = endDateParam || '2025-05-15'; 
+
+let queryConditions = [];
+
+if (currentStartDate) {
+  const start = new Date(`${currentStartDate}T00:00:00Z`);
+  queryConditions.push(gte(Interacciones.fecha_hora, start));
+}
+if (currentEndDate) {
+  const end = new Date(`${currentEndDate}T23:59:59Z`);
+  queryConditions.push(lte(Interacciones.fecha_hora, end));
+}
+
+const todasLasInteracciones = await db
+  .select({
+    id: Interacciones.id,
+    fecha: Interacciones.fecha_hora,
+    cliente: Clientes.nombre,
+    clienteId: Clientes.id,
+    tipo: TiposInteraccion.nombre,
+    descripcion: Interacciones.descripcion,
+    usuario: Usuarios.nombre
+  })
+  .from(Interacciones)
+  .leftJoin(Clientes, eq(Interacciones.id_cliente, Clientes.id))
+  .leftJoin(TiposInteraccion, eq(Interacciones.id_tipo_interaccion, TiposInteraccion.id))
+  .leftJoin(Usuarios, eq(Interacciones.id_usuario, Usuarios.id))
+  .where(queryConditions.length > 0 ? and(...queryConditions) : undefined)
+  .orderBy(desc(Interacciones.fecha_hora));
+---
+
+<CrmLayout title="Interacciones Globales" activePath="/crm/interacciones">
+  <div class="header-actions">
+    <h1 class="crm-title">Bitácora Global de Interacciones</h1>
+    
+    <form method="GET" class="date-filter-form">
+      <div class="date-filter">
+        <input type="date" name="start_date" value={currentStartDate} required />
+        <span> - </span>
+        <input type="date" name="end_date" value={currentEndDate} required />
+        <button type="submit" class="filter-btn" title="Filtrar por fechas">
+          <svg style="vertical-align: middle;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <div class="crm-card">
+    <div class="table-responsive">
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Agente / Usuario</th>
+            <th>Cliente</th>
+            <th>Tipo</th>
+            <th>Descripción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {todasLasInteracciones.map(act => (
+            <tr>
+              <td style="white-space: nowrap">{act.fecha.toLocaleString()}</td>
+              <td><strong>{act.usuario}</strong></td>
+              <td><a href={`/crm/clientes/${act.clienteId}`} class="cliente-link">{act.cliente}</a></td>
+              <td><span class="badge badge-neutral">{act.tipo}</span></td>
+              <td>{act.descripcion}</td>
+            </tr>
+          ))}
+          {todasLasInteracciones.length === 0 && (
+            <tr>
+              <td colspan="5" class="text-center" style="padding: 32px; color: var(--color-text-muted)">
+                No hay interacciones registradas en este periodo.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination">
+      <span>Mostrando {todasLasInteracciones.length} interacciones en total</span>
+    </div>
+  </div>
+</CrmLayout>
+
+<style>
+  .header-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .crm-title { margin-bottom: 0; }
+  
+  .date-filter-form { margin: 0; }
+  
+  .date-filter {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    background: white;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    gap: 8px;
+  }
+  .date-filter input[type="date"] {
+    border: none;
+    outline: none;
+    font-family: inherit;
+    font-size: 13px;
+    background: transparent;
+    cursor: pointer;
+    color: var(--color-text);
+  }
+  .filter-btn {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text);
+    transition: background 0.2s;
+  }
+  .filter-btn:hover { background: var(--color-text); color: white; border-color: var(--color-text); }
+
+  .table-responsive {
+    overflow-x: auto;
+    margin: 0 -24px;
+  }
+  .crm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .crm-table th {
+    text-align: left;
+    padding: 12px 24px;
+    border-bottom: 2px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-weight: 700;
+  }
+  .crm-table td {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .crm-table tbody tr:hover { background: var(--color-bg); }
+  
+  .cliente-link { color: var(--color-text); font-weight: 700; text-decoration: none; }
+  .cliente-link:hover { text-decoration: underline; color: var(--color-danger); }
+  
+  .text-center { text-align: center; }
+  
+  .pagination {
+    margin-top: 16px;
+    display: flex;
+    justify-content: space-between;
+    color: var(--color-text-muted);
+    font-size: 13px;
+  }
+</style>

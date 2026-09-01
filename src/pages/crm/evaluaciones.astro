@@ -1,0 +1,212 @@
+---
+import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db, Evaluaciones, Clientes, Usuarios, eq, desc } from 'astro:db';
+
+const todasLasEvaluaciones = await db
+  .select({
+    id: Evaluaciones.id,
+    fecha: Evaluaciones.fecha_evaluacion,
+    calificacion: Evaluaciones.calificacion,
+    comentarios: Evaluaciones.comentarios,
+    cliente: Clientes.nombre,
+    clienteId: Clientes.id,
+    usuario: Usuarios.nombre
+  })
+  .from(Evaluaciones)
+  .leftJoin(Clientes, eq(Evaluaciones.id_cliente, Clientes.id))
+  .leftJoin(Usuarios, eq(Evaluaciones.id_usuario, Usuarios.id))
+  .orderBy(desc(Evaluaciones.fecha_evaluacion));
+
+// Calcular promedio NPS básico (1 al 5)
+const total = todasLasEvaluaciones.length;
+const suma = todasLasEvaluaciones.reduce((acc, ev) => acc + ev.calificacion, 0);
+const promedio = total > 0 ? (suma / total).toFixed(1) : 'N/A';
+
+// Contar estrellas para la UI
+const counts = [0, 0, 0, 0, 0]; // Index 0 = 1 estrella, etc.
+todasLasEvaluaciones.forEach(ev => {
+  if (ev.calificacion >= 1 && ev.calificacion <= 5) {
+    counts[ev.calificacion - 1]++;
+  }
+});
+
+function getScoreColor(score: number) {
+  if (score >= 4) return 'var(--color-success)';
+  if (score === 3) return '#f59e0b';
+  return 'var(--color-danger)';
+}
+---
+
+<CrmLayout title="Evaluaciones de Clientes" activePath="/crm/evaluaciones">
+  <div class="header-actions">
+    <h1 class="crm-title">Evaluaciones de Clientes</h1>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <h3>Promedio Global</h3>
+      <div class="kpi-value">{promedio} <span style="font-size: 16px;">/ 5.0</span></div>
+      <p>Nivel de satisfacción general</p>
+    </div>
+    <div class="kpi-card">
+      <h3>Total Evaluaciones</h3>
+      <div class="kpi-value">{total}</div>
+      <p>Encuestas respondidas</p>
+    </div>
+    <div class="kpi-card stats-bars">
+      <div class="bar-row">
+        <span>5 ★</span>
+        <div class="bar-bg"><div class="bar-fill" style={`width: ${total > 0 ? (counts[4]/total)*100 : 0}%`}></div></div>
+        <span>{counts[4]}</span>
+      </div>
+      <div class="bar-row">
+        <span>4 ★</span>
+        <div class="bar-bg"><div class="bar-fill" style={`width: ${total > 0 ? (counts[3]/total)*100 : 0}%`}></div></div>
+        <span>{counts[3]}</span>
+      </div>
+      <div class="bar-row">
+        <span>3 ★</span>
+        <div class="bar-bg"><div class="bar-fill" style={`width: ${total > 0 ? (counts[2]/total)*100 : 0}%`}></div></div>
+        <span>{counts[2]}</span>
+      </div>
+      <div class="bar-row">
+        <span>2 ★</span>
+        <div class="bar-bg"><div class="bar-fill" style={`width: ${total > 0 ? (counts[1]/total)*100 : 0}%`}></div></div>
+        <span>{counts[1]}</span>
+      </div>
+      <div class="bar-row">
+        <span>1 ★</span>
+        <div class="bar-bg"><div class="bar-fill" style={`width: ${total > 0 ? (counts[0]/total)*100 : 0}%`}></div></div>
+        <span>{counts[0]}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="crm-card">
+    <div class="table-responsive">
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Cliente</th>
+            <th>Calificación</th>
+            <th>Comentarios</th>
+            <th>Agente Asociado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {todasLasEvaluaciones.map(ev => (
+            <tr>
+              <td style="white-space: nowrap">{ev.fecha.toLocaleDateString()}</td>
+              <td><a href={`/crm/clientes/${ev.clienteId}`} class="cliente-link">{ev.cliente}</a></td>
+              <td>
+                <div class="score-badge" style={`color: ${getScoreColor(ev.calificacion)}; border-color: ${getScoreColor(ev.calificacion)}`}>
+                  {ev.calificacion} ★
+                </div>
+              </td>
+              <td>{ev.comentarios || <em style="color: var(--color-text-muted)">Sin comentarios</em>}</td>
+              <td style="color: var(--color-text-muted)">{ev.usuario}</td>
+            </tr>
+          ))}
+          {todasLasEvaluaciones.length === 0 && (
+            <tr>
+              <td colspan="5" class="text-center" style="padding: 32px; color: var(--color-text-muted)">
+                Aún no has recibido ninguna evaluación de satisfacción.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</CrmLayout>
+
+<style>
+  .header-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  .crm-title { margin-bottom: 0; }
+  
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+  .kpi-card {
+    background: white;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .kpi-card h3 { margin: 0 0 16px 0; font-size: 14px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .kpi-value { font-size: 40px; font-weight: 900; margin-bottom: 8px; line-height: 1; }
+  .kpi-card p { margin: 0; color: var(--color-text-muted); font-size: 13px; }
+  
+  .stats-bars {
+    gap: 8px;
+    justify-content: flex-start;
+  }
+  .bar-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+  .bar-row span { width: 24px; font-weight: 700; }
+  .bar-bg {
+    flex: 1;
+    height: 8px;
+    background: var(--color-bg);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--color-text);
+    border-radius: 4px;
+  }
+
+  .table-responsive {
+    overflow-x: auto;
+    margin: 0 -24px;
+  }
+  .crm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .crm-table th {
+    text-align: left;
+    padding: 12px 24px;
+    border-bottom: 2px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-weight: 700;
+  }
+  .crm-table td {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .crm-table tbody tr:hover { background: var(--color-bg); }
+  
+  .cliente-link { color: var(--color-text); font-weight: 700; text-decoration: none; }
+  .cliente-link:hover { text-decoration: underline; color: var(--color-danger); }
+  
+  .score-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border: 1px solid currentColor;
+    border-radius: 12px;
+    font-weight: 900;
+    font-size: 12px;
+  }
+  
+  .text-center { text-align: center; }
+</style>

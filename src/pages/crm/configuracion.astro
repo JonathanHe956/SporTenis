@@ -1,0 +1,165 @@
+---
+import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db, EtapasCrm, TiposInteraccion, Clientes, Interacciones, eq } from 'astro:db';
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = formData.get('action');
+
+  if (action === 'create_etapa') {
+    await db.insert(EtapasCrm).values({ nombre: formData.get('nombre') as string });
+  } else if (action === 'delete_etapa') {
+    const id = Number(formData.get('id'));
+    // En produccion se validaría que no haya clientes usando esta etapa
+    await db.delete(EtapasCrm).where(eq(EtapasCrm.id, id));
+  } else if (action === 'create_tipo') {
+    await db.insert(TiposInteraccion).values({ nombre: formData.get('nombre') as string });
+  } else if (action === 'delete_tipo') {
+    const id = Number(formData.get('id'));
+    await db.delete(TiposInteraccion).where(eq(TiposInteraccion.id, id));
+  }
+  
+  return Astro.redirect(Astro.url.pathname);
+}
+
+const etapas = await db.select().from(EtapasCrm);
+const tipos = await db.select().from(TiposInteraccion);
+---
+
+<CrmLayout title="Configuración" activePath="/crm/configuracion">
+  <div class="header-actions">
+    <h1 class="crm-title">Configuración de Catálogos CRM</h1>
+  </div>
+
+  <div class="settings-grid">
+    <!-- Catálogo de Etapas CRM -->
+    <div class="crm-card">
+      <div class="card-header">
+        <h3>Etapas de Venta (CRM)</h3>
+      </div>
+      <p class="text-muted" style="margin-bottom: 16px; font-size: 13px;">Define el pipeline por el que pasan tus clientes.</p>
+      
+      <ul class="catalog-list">
+        {etapas.map(e => (
+          <li>
+            <span>{e.nombre}</span>
+            <form method="POST" style="margin: 0;" onsubmit="return confirm('¿Eliminar esta etapa?');">
+              <input type="hidden" name="action" value="delete_etapa" />
+              <input type="hidden" name="id" value={e.id} />
+              <button type="submit" class="action-btn text-danger">×</button>
+            </form>
+          </li>
+        ))}
+      </ul>
+
+      <form method="POST" class="add-form">
+        <input type="hidden" name="action" value="create_etapa" />
+        <input type="text" name="nombre" placeholder="Nueva etapa..." required />
+        <button type="submit" class="btn-outline">Añadir</button>
+      </form>
+    </div>
+
+    <!-- Catálogo de Tipos de Interacción -->
+    <div class="crm-card">
+      <div class="card-header">
+        <h3>Tipos de Interacción</h3>
+      </div>
+      <p class="text-muted" style="margin-bottom: 16px; font-size: 13px;">Canales o motivos por los que contactas a los clientes.</p>
+      
+      <ul class="catalog-list">
+        {tipos.map(t => (
+          <li>
+            <span>{t.nombre}</span>
+            <form method="POST" style="margin: 0;" onsubmit="return confirm('¿Eliminar este tipo de interacción?');">
+              <input type="hidden" name="action" value="delete_tipo" />
+              <input type="hidden" name="id" value={t.id} />
+              <button type="submit" class="action-btn text-danger">×</button>
+            </form>
+          </li>
+        ))}
+      </ul>
+
+      <form method="POST" class="add-form">
+        <input type="hidden" name="action" value="create_tipo" />
+        <input type="text" name="nombre" placeholder="Nuevo tipo..." required />
+        <button type="submit" class="btn-outline">Añadir</button>
+      </form>
+    </div>
+  </div>
+</CrmLayout>
+
+<style>
+  .header-actions {
+    margin-bottom: 24px;
+  }
+  .crm-title { margin-bottom: 0; }
+  
+  .settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 24px;
+  }
+
+  .card-header {
+    border-bottom: 1px solid var(--color-border);
+    margin: -24px -24px 16px;
+    padding: 16px 24px;
+  }
+  .card-header h3 { margin: 0; font-size: 16px; }
+
+  .text-muted { color: var(--color-text-muted); }
+
+  .catalog-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 24px 0;
+  }
+  .catalog-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border: 1px solid var(--color-border);
+    border-bottom: none;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .catalog-list li:first-child { border-radius: 8px 8px 0 0; }
+  .catalog-list li:last-child { border-bottom: 1px solid var(--color-border); border-radius: 0 0 8px 8px; }
+  
+  .action-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.5;
+    padding: 0 4px;
+  }
+  .action-btn:hover { opacity: 1; color: var(--color-danger); }
+
+  .add-form {
+    display: flex;
+    gap: 8px;
+  }
+  .add-form input {
+    flex: 1;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-family: inherit;
+  }
+  
+  .btn-outline {
+    background: transparent;
+    border: 1px solid var(--color-text);
+    color: var(--color-text);
+    padding: 10px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .btn-outline:hover { background: var(--color-text); color: white; }
+</style>

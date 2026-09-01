@@ -1,0 +1,207 @@
+---
+import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db, Clientes, Interacciones } from 'astro:db';
+
+// Obtener datos reales de la DB
+const todosLosClientes = await db.select().from(Clientes);
+const todosLosActivos = todosLosClientes.filter(c => c.estado === 'Activo');
+
+const totalClientes = todosLosClientes.length;
+const totalActivos = todosLosActivos.length;
+const porcentajeActivos = totalClientes > 0 ? Math.round((totalActivos / totalClientes) * 100) : 0;
+const totalInactivos = totalClientes - totalActivos;
+const porcentajeInactivos = totalClientes > 0 ? 100 - porcentajeActivos : 0;
+
+// Obtener interacciones del mes actual (simplificado para la demo)
+const interacciones = await db.select().from(Interacciones);
+const interaccionesMes = interacciones.length; // En producción, filtrar por fecha_hora
+
+// Simular clientes sin interacción (para UI)
+const sinInteraccion = 2; // Ejemplo
+---
+
+<CrmLayout title="Dashboard" activePath="/crm">
+  <h1 class="crm-title">Resumen CRM</h1>
+
+  <div class="metrics-grid">
+    <div class="crm-card metric-card">
+      <h3>Total de clientes</h3>
+      <div class="metric-value">{totalClientes}</div>
+      <p class="metric-desc">Todos los clientes registrados</p>
+    </div>
+    
+    <div class="crm-card metric-card">
+      <h3>Clientes activos</h3>
+      <div class="metric-value text-success">{totalActivos}</div>
+      <p class="metric-desc">{porcentajeActivos}% del total</p>
+    </div>
+
+    <div class="crm-card metric-card">
+      <h3>Interacciones (este mes)</h3>
+      <div class="metric-value">{interaccionesMes}</div>
+      <p class="metric-desc text-success">+12% vs mes anterior</p>
+    </div>
+
+    <div class="crm-card metric-card">
+      <h3>Clientes sin interacción</h3>
+      <div class="metric-value text-danger">{sinInteraccion}</div>
+      <p class="metric-desc">Últimos 30 días</p>
+    </div>
+  </div>
+
+  <div class="dashboard-widgets">
+    <!-- Widget: Gráfico (Simulado con CSS) -->
+    <div class="crm-card widget-card">
+      <h3>Clientes activos vs inactivos</h3>
+      <div class="chart-container">
+        <div class="donut-chart" style={`--active: ${porcentajeActivos}%; --inactive: ${porcentajeInactivos}%;`}></div>
+        <div class="chart-legend">
+          <div class="legend-item">
+            <span class="dot bg-success"></span> Activos <strong>{totalActivos} ({porcentajeActivos}%)</strong>
+          </div>
+          <div class="legend-item">
+            <span class="dot bg-danger"></span> Inactivos <strong>{totalInactivos} ({porcentajeInactivos}%)</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Widget: Clientes en riesgo -->
+    <div class="crm-card widget-card">
+      <h3>Clientes en riesgo</h3>
+      <div class="risk-list">
+        {todosLosClientes.slice(0, 3).map(c => (
+          <a href={`/crm/clientes/${c.id}`} class="risk-item">
+            <div>
+              <strong>{c.nombre}</strong>
+              <p>Sin interacción desde hace 45 días</p>
+            </div>
+            <span>›</span>
+          </a>
+        ))}
+      </div>
+      <a href="/crm/clientes" class="view-all">Ver todos</a>
+    </div>
+  </div>
+</CrmLayout>
+
+<style>
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+  .metric-card {
+    padding: 24px;
+  }
+  .metric-card h3 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    color: var(--color-text-muted);
+    font-weight: 700;
+  }
+  .metric-value {
+    font-size: 42px;
+    font-weight: 900;
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+  .metric-desc {
+    margin: 0;
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+  .text-success { color: var(--color-success); }
+  .text-danger { color: var(--color-danger); }
+
+  .dashboard-widgets {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  .widget-card h3 {
+    margin: 0 0 24px 0;
+    font-size: 16px;
+  }
+
+  /* Donut Chart CSS */
+  .chart-container {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+  }
+  .donut-chart {
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    background: conic-gradient(
+      var(--color-success) 0% var(--active),
+      var(--color-danger) var(--active) 100%
+    );
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .donut-chart::after {
+    content: '';
+    width: 90px;
+    height: 90px;
+    background: var(--color-surface);
+    border-radius: 50%;
+  }
+  .chart-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--color-text-muted);
+  }
+  .legend-item strong {
+    color: var(--color-text);
+    margin-left: 8px;
+  }
+  .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+  .bg-success { background: var(--color-success); }
+  .bg-danger { background: var(--color-danger); }
+
+  /* Risk List */
+  .risk-list {
+    display: flex;
+    flex-direction: column;
+  }
+  .risk-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--color-border);
+    text-decoration: none;
+    color: inherit;
+  }
+  .risk-item:hover { background: var(--color-bg); margin: 0 -16px; padding: 16px; border-radius: 8px; border-bottom-color: transparent; }
+  .risk-item strong { font-size: 14px; display: block; margin-bottom: 4px; }
+  .risk-item p { margin: 0; font-size: 12px; color: var(--color-text-muted); }
+  .risk-item span { font-size: 20px; color: var(--color-border); font-family: monospace; }
+  
+  .view-all {
+    display: block;
+    text-align: right;
+    margin-top: 16px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-text);
+    text-decoration: none;
+  }
+  .view-all:hover { text-decoration: underline; }
+</style>

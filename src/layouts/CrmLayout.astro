@@ -1,0 +1,336 @@
+---
+import { db, Usuarios, eq } from 'astro:db';
+
+interface Props {
+  title: string;
+  activePath?: string;
+}
+
+const { title, activePath = '/crm' } = Astro.props;
+
+const crmUserId = Astro.cookies.get('sportenis_session')?.value;
+let userName = 'Admin';
+let userInitial = 'A';
+
+if (crmUserId) {
+  const user = await db.select().from(Usuarios).where(eq(Usuarios.id, Number(crmUserId)));
+  if (user.length > 0) {
+    userName = user[0].nombre.split(' ')[0]; // Primer nombre
+    userInitial = userName.charAt(0).toUpperCase();
+  }
+}
+
+
+const menuItems = [
+  { path: '/crm', label: 'Dashboard', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>' },
+  { path: '/crm/clientes', label: 'Clientes', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>' },
+  { path: '/crm/interacciones', label: 'Interacciones', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
+  { path: '/crm/evaluaciones', label: 'Evaluaciones', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>' },
+  { path: '/crm/usuarios', label: 'Usuarios', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' },
+  { path: '/crm/actividad', label: 'Mi actividad', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>' },
+  { path: '/crm/configuracion', label: 'Configuración', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>' },
+];
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>{title} | SporTenis CRM</title>
+  </head>
+  <body>
+    <div class="crm-app">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <a class="brand" href="/crm">
+            <span class="brand-mark">S</span>
+            <span>Spor<span>Tenis</span> CRM</span>
+          </a>
+        </div>
+        
+        <nav class="sidebar-nav">
+          {menuItems.map(item => (
+            <a 
+              href={item.path} 
+              class={`nav-item ${activePath === item.path || (item.path !== '/crm' && activePath.startsWith(item.path)) ? 'active' : ''}`}
+            >
+              <span class="nav-icon" set:html={item.icon}></span>
+              {item.label}
+            </a>
+          ))}
+        </nav>
+
+        <div class="sidebar-footer">
+          <a href="/" class="nav-item">
+            <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
+            Ver Tienda
+          </a>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <div class="main-wrapper">
+        <!-- Topbar -->
+        <header class="topbar">
+          <div class="topbar-search">
+            <form id="globalSearchForm" action="/crm/clientes" method="GET" style="margin:0; display:flex; width:100%;">
+              <input type="search" name="q" placeholder="Buscar por nombre, correo o empresa..." />
+            </form>
+          </div>
+          <div class="topbar-actions">
+            <!-- Botón Buscar -->
+            <button type="submit" form="globalSearchForm" class="icon-btn" aria-label="Buscar" title="Buscar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+            
+            <!-- Botón Notificaciones / Campana -->
+            <a href="/crm/interacciones" class="icon-btn" aria-label="Notificaciones" title="Ver notificaciones y actividades" style="color: inherit; text-decoration: none; display: flex; align-items: center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></a>
+            
+            <!-- Perfil de Usuario (Cerrar Sesión) -->
+            <form method="POST" action="/login" style="margin:0;">
+              <input type="hidden" name="action" value="logout" />
+              <button type="submit" class="user-profile" title="Cerrar sesión" style="background: none; border: none; font-family: inherit; color: inherit; cursor: pointer;">
+                <div class="avatar">{userInitial}</div>
+                <span>{userName} (Salir)</span>
+              </button>
+            </form>
+          </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="content-area">
+          <slot />
+        </main>
+      </div>
+    </div>
+
+    <style is:global>
+      :root {
+        --color-bg: #f6f4ed;
+        --color-surface: #ffffff;
+        --color-text: #171717;
+        --color-text-muted: #716e67;
+        --color-primary: #f7d21c;
+        --color-danger: #d93e2e;
+        --color-danger-light: #fff1ef;
+        --color-border: #d8d3c3;
+        --color-success: #15803d;
+        --color-success-bg: #dcfce7;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--color-bg);
+        color: var(--color-text);
+        font-family: Arial, sans-serif;
+      }
+
+      .crm-app {
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      /* Sidebar */
+      .sidebar {
+        width: 260px;
+        background: #171717;
+        color: white;
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+      }
+
+      .sidebar-header {
+        padding: 24px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        color: white;
+        text-decoration: none;
+        font-size: 20px;
+        font-weight: 900;
+        letter-spacing: -1px;
+      }
+      .brand span span { font-weight: 400; }
+      .brand-mark {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--color-primary);
+        color: #171717;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        margin-right: 10px;
+        font-size: 14px;
+      }
+
+      .sidebar-nav {
+        flex: 1;
+        padding: 20px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        overflow-y: auto;
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        color: #a3a3a3;
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 700;
+        border-radius: 8px;
+        transition: all 0.2s;
+      }
+      .nav-item:hover {
+        background: rgba(255,255,255,0.05);
+        color: white;
+      }
+      .nav-item.active {
+        background: var(--color-primary);
+        color: #171717;
+      }
+      .nav-icon { font-size: 16px; }
+
+      .sidebar-footer {
+        padding: 20px 12px;
+        border-top: 1px solid rgba(255,255,255,0.1);
+      }
+
+      /* Main Wrapper */
+      .main-wrapper {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      /* Topbar */
+      .topbar {
+        height: 70px;
+        background: var(--color-surface);
+        border-bottom: 1px solid var(--color-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 32px;
+        flex-shrink: 0;
+      }
+
+      .topbar-search input {
+        width: 320px;
+        padding: 10px 16px;
+        border: 1px solid var(--color-border);
+        border-radius: 20px;
+        background: var(--color-bg);
+        font-family: inherit;
+        font-size: 13px;
+        outline: none;
+      }
+      .topbar-search input:focus {
+        border-color: var(--color-text);
+      }
+
+      .topbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .icon-btn {
+        background: none;
+        border: none;
+        font-size: 18px;
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 50%;
+      }
+      .icon-btn:hover { background: var(--color-bg); }
+
+      .user-profile {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        padding-left: 16px;
+        border-left: 1px solid var(--color-border);
+      }
+      .avatar {
+        width: 32px;
+        height: 32px;
+        background: var(--color-text);
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+      }
+
+      /* Content Area */
+      .content-area {
+        flex: 1;
+        padding: 32px;
+        overflow-y: auto;
+      }
+
+      /* Utilidades CRM Globales */
+      .crm-card {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+      }
+      
+      .crm-title {
+        font-family: Georgia, serif;
+        font-size: 28px;
+        font-weight: 400;
+        margin: 0 0 24px 0;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .badge-success { background: var(--color-success-bg); color: var(--color-success); }
+      .badge-danger { background: var(--color-danger-light); color: var(--color-danger); }
+      .badge-neutral { background: #e5e5e5; color: #555; }
+
+      .btn-primary {
+        background: var(--color-text);
+        color: white;
+        border: none;
+        padding: 10px 16px;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        border-radius: 6px;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .btn-primary:hover { background: var(--color-danger); }
+    </style>
+  </body>
+</html>
