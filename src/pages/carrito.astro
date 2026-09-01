@@ -94,7 +94,7 @@ const cartItems = [
           <h2>Resumen</h2>
 
           <div class="summary-line">
-            <span>Subtotal</span>
+            <span>Subtotal (<span id="totalItemsCount">3</span> productos)</span>
             <strong id="subtotalDisplay">$6,297 MXN</strong>
           </div>
 
@@ -134,16 +134,21 @@ const cartItems = [
   const emptyMsg = document.getElementById('emptyMessage') as HTMLElement | null;
   const subtotalDisplay = document.getElementById('subtotalDisplay') as HTMLElement | null;
   const totalDisplay = document.getElementById('totalDisplay') as HTMLElement | null;
+  const totalItemsCount = document.getElementById('totalItemsCount') as HTMLElement | null;
+  const checkoutBtn = document.querySelector('.checkout-btn') as HTMLButtonElement | null;
 
   function recalculateCart(): void {
     const rows = document.querySelectorAll<HTMLElement>('.cart-row');
     let subtotal = 0;
+    let totalItems = 0;
 
     if (rows.length === 0) {
       if (itemsList) itemsList.style.display = 'none';
       if (emptyMsg) emptyMsg.style.display = 'flex';
       if (subtotalDisplay) subtotalDisplay.textContent = '$0 MXN';
       if (totalDisplay) totalDisplay.textContent = '$0 MXN';
+      if (totalItemsCount) totalItemsCount.textContent = '0';
+      if (checkoutBtn) checkoutBtn.disabled = true;
       return;
     }
 
@@ -153,6 +158,7 @@ const cartItems = [
       const totalField = row.querySelector('.item-total-val') as HTMLElement | null;
       const qty = Number(qtyInput?.value || 1);
 
+      totalItems += qty;
       const rowTotal = price * qty;
       subtotal += rowTotal;
 
@@ -164,6 +170,8 @@ const cartItems = [
     const formatted = `$${subtotal.toLocaleString('es-MX')} MXN`;
     if (subtotalDisplay) subtotalDisplay.textContent = formatted;
     if (totalDisplay) totalDisplay.textContent = formatted;
+    if (totalItemsCount) totalItemsCount.textContent = String(totalItems);
+    if (checkoutBtn) checkoutBtn.disabled = false;
   }
 
   // Delegación de eventos para botones (+, -, eliminar)
@@ -193,6 +201,16 @@ const cartItems = [
       recalculateCart();
     }
   });
+
+  // Flujo de compra
+  checkoutBtn?.addEventListener('click', () => {
+    alert('Redirigiendo a pasarela de pago segura... \n¡Gracias por probar el flujo de compra!');
+    // Opcionalmente redirigimos a la tienda al finalizar
+    window.location.href = '/';
+  });
+
+  // Inicializar cálculos al cargar la página
+  recalculateCart();
 </script>
 
 <style>
