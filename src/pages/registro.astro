@@ -1,104 +1,100 @@
 ---
 import Layout from '../layouts/Layout.astro';
+
+const session = Astro.cookies.get('sportenis_session');
+if (session) {
+  return Astro.redirect('/');
+}
 ---
 
 <Layout>
-  <div class="registro-page">
-    <!-- Header -->
-    <header class="reg-header">
+  <div class="auth-page">
+    <header class="topbar">
       <a class="brand" href="/" aria-label="SporTenis, inicio">
         <span class="brand-mark">S</span>
         <span>Spor<span>Tenis</span></span>
       </a>
+      <a href="/" class="back-link">← Volver a la tienda</a>
     </header>
 
-    <main class="reg-main">
-      <div class="reg-card">
-        <!-- Panel decorativo izquierdo -->
-        <div class="reg-card-left">
-          <div class="reg-deco">
-            <div class="deco-ball"></div>
-            <div class="deco-ring"></div>
-            <p class="deco-text">Únete a<br /><strong>SporTenis</strong></p>
-            <p class="deco-sub">Accede a ofertas exclusivas,<br />historial de compras y más.</p>
+    <main class="auth-main">
+      <div class="auth-card">
+        <div class="card-header">
+          <p class="eyebrow"><span></span> Registro</p>
+          <h1>Crear <em>Cuenta</em></h1>
+          <p class="subtitle">Completa tus datos para disfrutar de ofertas exclusivas, historial de compras y pagos rápidos.</p>
+        </div>
+
+        <form id="registerForm" class="auth-form" novalidate>
+          <div id="errorBanner" class="error-banner" role="alert" aria-live="polite" hidden></div>
+          <div id="successBanner" class="success-banner" role="status" aria-live="polite" hidden></div>
+
+          <div class="form-row">
+            <div class="field-group">
+              <label for="nombre">Nombre</label>
+              <input type="text" id="nombre" name="nombre" placeholder="Tu nombre" autocomplete="given-name" required minlength="2" />
+              <span class="field-error" id="error-nombre"></span>
+            </div>
+
+            <div class="field-group">
+              <label for="apellidos">Apellidos</label>
+              <input type="text" id="apellidos" name="apellidos" placeholder="Tus apellidos" autocomplete="family-name" required minlength="2" />
+              <span class="field-error" id="error-apellidos"></span>
+            </div>
           </div>
-        </div>
 
-        <!-- Panel formulario -->
-        <div class="reg-card-right">
-          <h1>Crear cuenta</h1>
-          <p class="reg-sub">Completa los datos para registrarte</p>
+          <div class="field-group">
+            <label for="telefono">Número de teléfono</label>
+            <input type="tel" id="telefono" name="telefono" placeholder="5512345678" autocomplete="tel" inputmode="numeric" required />
+            <span class="field-error" id="error-telefono"></span>
+          </div>
 
-          <form id="registerForm" novalidate>
-            <!-- Nombre y Apellidos -->
-            <div class="form-row">
-              <div class="field-group">
-                <label for="nombre">Nombre</label>
-                <input type="text" id="nombre" name="nombre" placeholder="Tu nombre" autocomplete="given-name" />
-                <span class="field-error" id="error-nombre"></span>
-              </div>
-              <div class="field-group">
-                <label for="apellidos">Apellidos</label>
-                <input type="text" id="apellidos" name="apellidos" placeholder="Tus apellidos" autocomplete="family-name" />
-                <span class="field-error" id="error-apellidos"></span>
-              </div>
+          <div class="field-group">
+            <label for="correo">Correo electrónico</label>
+            <input type="email" id="correo" name="correo" placeholder="tu@correo.com" autocomplete="email" required />
+            <span class="field-error" id="error-correo"></span>
+          </div>
+
+          <div class="field-group">
+            <label for="password">Contraseña</label>
+            <div class="input-password">
+              <input type="password" id="password" name="password" placeholder="Crea tu contraseña" autocomplete="new-password" required />
+              <button type="button" class="eye-btn" id="togglePassword" aria-label="Mostrar contraseña">
+                <svg id="eyeIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
             </div>
-
-            <!-- Teléfono -->
-            <div class="field-group">
-              <label for="telefono">Número de teléfono</label>
-              <input type="tel" id="telefono" name="telefono" placeholder="ej. 5512345678" autocomplete="tel" />
-              <span class="field-error" id="error-telefono"></span>
+            <div class="password-rules" aria-live="polite">
+              <span id="rule-upper" class="rule">✗ Al menos 1 mayúscula</span>
+              <span id="rule-number" class="rule">✗ Al menos 1 número</span>
+              <span id="rule-special" class="rule">✗ Al menos 1 carácter especial</span>
+              <span id="rule-length" class="rule">✗ Mínimo 8 caracteres</span>
             </div>
+            <span class="field-error" id="error-password"></span>
+          </div>
 
-            <!-- Correo -->
-            <div class="field-group">
-              <label for="correo">Correo electrónico</label>
-              <input type="email" id="correo" name="correo" placeholder="tu@correo.com" autocomplete="email" />
-              <span class="field-error" id="error-correo"></span>
+          <div class="field-group">
+            <label for="confirmPassword">Confirmar contraseña</label>
+            <div class="input-password">
+              <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Repite tu contraseña" autocomplete="new-password" required />
+              <button type="button" class="eye-btn" id="toggleConfirm" aria-label="Mostrar contraseña">
+                <svg id="eyeIconConfirm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
             </div>
+            <span class="field-error" id="error-confirm"></span>
+          </div>
 
-            <!-- Contraseña -->
-            <div class="field-group">
-              <label for="password">Contraseña</label>
-              <div class="input-password">
-                <input type="password" id="password" name="password" placeholder="Crea tu contraseña" autocomplete="new-password" />
-                <button type="button" class="eye-btn" id="togglePassword" aria-label="Mostrar contraseña">
-                  <svg id="eyeIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/>
-                  </svg>
-                </button>
-              </div>
-              <div class="password-rules">
-                <span id="rule-upper" class="rule">✗ Al menos 1 mayúscula</span>
-                <span id="rule-number" class="rule">✗ Al menos 1 número</span>
-                <span id="rule-special" class="rule">✗ Al menos 1 carácter especial</span>
-                <span id="rule-length" class="rule">✗ Mínimo 8 caracteres</span>
-              </div>
-              <span class="field-error" id="error-password"></span>
-            </div>
+          <button type="submit" id="submitBtn" class="primary-button">
+            Crear cuenta <span>↗</span>
+          </button>
 
-            <!-- Confirmar contraseña -->
-            <div class="field-group">
-              <label for="confirmPassword">Confirmar contraseña</label>
-              <div class="input-password">
-                <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Repite tu contraseña" autocomplete="new-password" />
-                <button type="button" class="eye-btn" id="toggleConfirm" aria-label="Mostrar contraseña">
-                  <svg id="eyeIconConfirm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/>
-                  </svg>
-                </button>
-              </div>
-              <span class="field-error" id="error-confirm"></span>
-            </div>
-
-            <button type="submit" class="btn-crear">Crear cuenta <span>→</span></button>
-
-            <p class="login-link">¿Ya tienes cuenta? <a href="/">Inicia sesión</a></p>
-          </form>
-        </div>
+          <p class="login-link">¿Ya tienes cuenta? <a href="/login">Inicia sesión</a></p>
+        </form>
       </div>
     </main>
   </div>
@@ -108,19 +104,23 @@ import Layout from '../layouts/Layout.astro';
   :global(*) { box-sizing: border-box; }
   :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; margin: 0; }
 
-  .reg-header {
-    background: #f7d21c;
-    padding: 0 clamp(20px, 4vw, 64px);
-    min-height: 66px;
-    display: flex;
+  .auth-page { min-height: 100vh; display: flex; flex-direction: column; }
+
+  .topbar {
     align-items: center;
+    background: #f7d21c;
+    display: flex;
+    justify-content: space-between;
+    min-height: 76px;
+    padding: 0 clamp(20px, 4vw, 64px);
   }
+
   .brand {
     align-items: center;
     color: #171717;
     display: flex;
     font-family: Arial, sans-serif;
-    font-size: 22px;
+    font-size: 25px;
     font-weight: 900;
     letter-spacing: -1.5px;
     text-decoration: none;
@@ -131,143 +131,146 @@ import Layout from '../layouts/Layout.astro';
     border: 3px solid #171717;
     border-radius: 50%;
     display: inline-flex;
-    font-size: 14px;
-    height: 28px;
+    font-size: 15px;
+    height: 30px;
     justify-content: center;
     margin-right: 8px;
-    width: 28px;
+    width: 30px;
   }
 
-  .reg-main {
+  .back-link {
+    color: #171717;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .back-link:hover { text-decoration: underline; }
+
+  .auth-main {
+    flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: calc(100vh - 66px);
     padding: 40px 20px;
   }
 
-  .reg-card {
-    background: #fff;
-    border-radius: 16px;
-    box-shadow: 0 8px 40px rgba(23,23,23,0.10);
-    display: grid;
-    grid-template-columns: 1fr 1.5fr;
-    max-width: 860px;
-    overflow: hidden;
+  .auth-card {
+    background: #fffdf3;
+    border: 2px solid #171717;
+    box-shadow: 8px 8px 0 rgba(23, 23, 23, 1);
     width: 100%;
+    max-width: 520px;
+    padding: clamp(30px, 5vw, 45px);
   }
 
-  .reg-card-left {
-    background: #d93e2e;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 48px 32px;
-  }
-  .reg-deco { position: relative; text-align: center; }
-  .deco-ball {
-    background: #d8ee32;
-    border-radius: 50%;
-    height: 130px;
-    margin: 0 auto 24px;
-    position: relative;
-    width: 130px;
-    box-shadow: 10px 12px 0 rgba(23,23,23,0.18);
-  }
-  .deco-ball::before, .deco-ball::after {
-    border: 4px solid #f7d21c;
-    border-radius: 50%;
-    content: '';
-    height: 80%;
-    position: absolute;
-    top: 10%;
-    width: 35%;
-  }
-  .deco-ball::before { left: -4%; transform: rotate(25deg); }
-  .deco-ball::after  { right: -4%; transform: rotate(25deg); }
-  .deco-ring {
-    border: 2px solid rgba(255,255,255,.45);
-    border-radius: 50%;
-    height: 200px;
-    left: 50%;
-    pointer-events: none;
-    position: absolute;
-    top: 50%;
-    transform: translate(-50%, -55%);
-    width: 200px;
-  }
-  .deco-text {
-    color: #fffdf3;
-    font-size: clamp(22px, 3vw, 30px);
-    font-weight: 400;
-    letter-spacing: -1px;
-    margin: 0 0 10px;
-    line-height: 1.1;
-  }
-  .deco-text strong { font-style: italic; color: #f7d21c; }
-  .deco-sub {
-    color: rgba(255,253,243,0.75);
+  .eyebrow {
+    color: #d93e2e;
     font-family: Arial, sans-serif;
-    font-size: 12px;
-    line-height: 1.6;
-    margin: 0;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin: 0 0 10px;
+    text-transform: uppercase;
+  }
+  .eyebrow span {
+    background: #f7d21c;
+    display: inline-block;
+    height: 7px;
+    margin-right: 8px;
+    width: 7px;
   }
 
-  .reg-card-right { padding: 44px 40px; }
   h1 {
-    font-size: clamp(26px, 3vw, 36px);
+    font-size: 42px;
     font-weight: 400;
-    letter-spacing: -1.5px;
-    margin: 0 0 6px;
+    letter-spacing: -2px;
+    line-height: 0.95;
+    margin: 0 0 10px;
   }
-  .reg-sub {
+  h1 em {
+    color: #d93e2e;
+    font-style: italic;
+  }
+
+  .subtitle {
     color: #716e67;
     font-family: Arial, sans-serif;
-    font-size: 13px;
-    margin: 0 0 28px;
+    font-size: 12px;
+    margin: 0 0 25px;
   }
 
-  form { display: flex; flex-direction: column; gap: 16px; }
-  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  .field-group { display: flex; flex-direction: column; gap: 5px; }
+  .auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
 
-  label {
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .field-group label {
     font-family: Arial, sans-serif;
     font-size: 11px;
     font-weight: 700;
-    letter-spacing: .5px;
+    letter-spacing: 0.5px;
     text-transform: uppercase;
   }
 
-  input[type="text"],
-  input[type="tel"],
-  input[type="email"],
-  input[type="password"] {
+  .field-group input {
     background: #f6f4ed;
-    border: 1.5px solid #d8d3c3;
-    border-radius: 8px;
+    border: 1.5px solid #171717;
     color: #171717;
     font-family: Arial, sans-serif;
     font-size: 13px;
     outline: none;
-    padding: 10px 14px;
-    transition: border-color .2s;
+    padding: 12px 14px;
+    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .field-group input:focus {
+    background: #fff;
+    border-color: #d93e2e;
+    box-shadow: 0 0 0 3px rgba(217, 62, 46, 0.12);
+  }
+
+  .field-group input.invalid {
+    border-color: #e7442e;
+    background: #fff7f7;
+  }
+
+  .field-group input.valid {
+    border-color: #4caf50;
+    background: #f5fff6;
+  }
+
+  .input-password {
+    position: relative;
+  }
+
+  .input-password input {
+    padding-right: 42px;
     width: 100%;
   }
-  input:focus  { border-color: #d93e2e; }
-  input.invalid { border-color: #e7442e; }
-  input.valid   { border-color: #4caf50; }
-
-  .input-password { position: relative; }
-  .input-password input { padding-right: 42px; }
 
   .eye-btn {
+    align-items: center;
     background: none;
     border: none;
     color: #716e67;
     cursor: pointer;
     display: flex;
-    align-items: center;
     height: 36px;
     justify-content: center;
     padding: 0;
@@ -277,22 +280,23 @@ import Layout from '../layouts/Layout.astro';
     transform: translateY(-50%);
     width: 24px;
   }
-  .eye-btn svg { height: 18px; width: 18px; transition: color .15s; }
+  .eye-btn svg { height: 18px; width: 18px; }
   .eye-btn:hover { color: #d93e2e; }
 
   .password-rules {
     display: flex;
     flex-wrap: wrap;
     gap: 4px 12px;
-    margin-top: 4px;
+    margin-top: 2px;
   }
+
   .rule {
     color: #b0a99a;
     font-family: Arial, sans-serif;
     font-size: 10px;
-    transition: color .2s;
+    transition: color 0.2s ease;
   }
-  .rule.ok { color: #4caf50; }
+  .rule.ok { color: #2e7d32; }
 
   .field-error {
     color: #e7442e;
@@ -301,29 +305,48 @@ import Layout from '../layouts/Layout.astro';
     min-height: 14px;
   }
 
-  .btn-crear {
+  .error-banner,
+  .success-banner {
+    border-radius: 10px;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 10px 12px;
+  }
+
+  .error-banner {
+    background: #fee2e2;
+    border: 1.5px solid #ef4444;
+    color: #991b1b;
+  }
+
+  .success-banner {
+    background: #dcfce7;
+    border: 1.5px solid #22c55e;
+    color: #166534;
+  }
+
+  .primary-button {
     align-items: center;
-    background: #d93e2e;
-    border: none;
-    border-radius: 8px;
+    background: #171717;
+    border: 0;
     color: #fffdf3;
     cursor: pointer;
-    display: flex;
+    display: inline-flex;
     font-family: Arial, sans-serif;
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 800;
-    gap: 12px;
-    justify-content: center;
-    letter-spacing: .5px;
-    margin-top: 4px;
-    padding: 14px 20px;
+    justify-content: space-between;
+    letter-spacing: 0.5px;
+    margin-top: 10px;
+    padding: 16px 20px;
     text-transform: uppercase;
-    transition: background .2s, transform .1s;
-    width: 100%;
+    transition: background-color 0.15s ease, transform 0.15s ease;
   }
-  .btn-crear span { font-size: 16px; }
-  .btn-crear:hover { background: #b83225; }
-  .btn-crear:active { transform: scale(.98); }
+  .primary-button:hover { background: #d93e2e; }
+  .primary-button:active { transform: scale(0.99); }
+  .primary-button:disabled { opacity: 0.6; cursor: not-allowed; }
+  .primary-button span { font-size: 16px; }
 
   .login-link {
     color: #716e67;
@@ -332,106 +355,206 @@ import Layout from '../layouts/Layout.astro';
     margin: 0;
     text-align: center;
   }
-  .login-link a { color: #d93e2e; font-weight: 700; text-decoration: none; }
+  .login-link a {
+    color: #d93e2e;
+    font-weight: 700;
+    text-decoration: none;
+  }
   .login-link a:hover { text-decoration: underline; }
 
   @media (max-width: 680px) {
-    .reg-card { grid-template-columns: 1fr; }
-    .reg-card-left { display: none; }
-    .reg-card-right { padding: 36px 24px; }
     .form-row { grid-template-columns: 1fr; }
+    .auth-card { padding: 28px 20px; }
   }
 </style>
 
 <script>
+  type Rule = {
+    el: HTMLElement | null;
+    test: (value: string) => boolean;
+    label: string;
+  };
+
   const EYE_OPEN = `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`;
   const EYE_SHUT = `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>`;
 
-  function makeEyeToggle(btnId, inputId, iconId) {
-    const btn   = document.getElementById(btnId);
-    const input = document.getElementById(inputId);
-    const icon  = document.getElementById(iconId);
+  function getInput(id: string): HTMLInputElement | null {
+    return document.getElementById(id) as HTMLInputElement | null;
+  }
+
+  function makeEyeToggle(buttonId: string, inputId: string, iconId: string) {
+    const button = document.getElementById(buttonId) as HTMLButtonElement | null;
+    const input = getInput(inputId);
+    const icon = document.getElementById(iconId) as SVGElement | null;
+
+    if (!button || !input) return;
+
     let visible = false;
-    btn && btn.addEventListener('click', () => {
+    button.addEventListener('click', () => {
       visible = !visible;
       input.type = visible ? 'text' : 'password';
       if (icon) icon.innerHTML = visible ? EYE_SHUT : EYE_OPEN;
-      btn.setAttribute('aria-label', visible ? 'Ocultar contraseña' : 'Mostrar contraseña');
+      button.setAttribute('aria-label', visible ? 'Ocultar contraseña' : 'Mostrar contraseña');
     });
   }
 
   makeEyeToggle('togglePassword', 'password', 'eyeIcon');
   makeEyeToggle('toggleConfirm', 'confirmPassword', 'eyeIconConfirm');
 
-  // Reglas de contraseña
-  const passwordInput = document.getElementById('password');
-  const rulesDef = {
-    upper:   { el: document.getElementById('rule-upper'),   test: v => /[A-Z]/.test(v),      label: 'Al menos 1 mayúscula' },
-    number:  { el: document.getElementById('rule-number'),  test: v => /[0-9]/.test(v),      label: 'Al menos 1 número' },
-    special: { el: document.getElementById('rule-special'), test: v => /[^A-Za-z0-9]/.test(v), label: 'Al menos 1 carácter especial' },
-    length:  { el: document.getElementById('rule-length'),  test: v => v.length >= 8,         label: 'Mínimo 8 caracteres' },
+  const passwordInput = getInput('password');
+  const rulesDef: Record<string, Rule> = {
+    upper: { el: document.getElementById('rule-upper'), test: (value: string) => /[A-Z]/.test(value), label: 'Al menos 1 mayúscula' },
+    number: { el: document.getElementById('rule-number'), test: (value: string) => /[0-9]/.test(value), label: 'Al menos 1 número' },
+    special: { el: document.getElementById('rule-special'), test: (value: string) => /[^A-Za-z0-9]/.test(value), label: 'Al menos 1 carácter especial' },
+    length: { el: document.getElementById('rule-length'), test: (value: string) => value.length >= 8, label: 'Mínimo 8 caracteres' },
   };
 
-  passwordInput && passwordInput.addEventListener('input', () => {
-    const val = passwordInput.value;
+  const updatePasswordRules = (value: string) => {
     for (const rule of Object.values(rulesDef)) {
-      const ok = rule.test(val);
-      rule.el.textContent = (ok ? '✓ ' : '✗ ') + rule.label;
-      rule.el.classList.toggle('ok', ok);
+      const ok = rule.test(value);
+      if (rule.el) {
+        rule.el.textContent = `${ok ? '✓' : '✗'} ${rule.label}`;
+        rule.el.classList.toggle('ok', ok);
+      }
     }
+  };
+
+  passwordInput?.addEventListener('input', () => {
+    updatePasswordRules(passwordInput.value);
   });
 
-  // Validación
-  function showError(id, msg) { const el = document.getElementById(id); if (el) el.textContent = msg; }
-  function clearError(id)     { const el = document.getElementById(id); if (el) el.textContent = ''; }
-  function setValidity(input, valid) {
-    input.classList.toggle('valid', valid);
-    input.classList.toggle('invalid', !valid);
+  function showError(id: string, msg: string) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = msg;
   }
 
-  const form = document.getElementById('registerForm');
-  form && form.addEventListener('submit', e => {
-    e.preventDefault();
-    let ok = true;
+  function clearError(id: string) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '';
+  }
 
-    const nombre    = document.getElementById('nombre');
-    const apellidos = document.getElementById('apellidos');
-    const telefono  = document.getElementById('telefono');
-    const correo    = document.getElementById('correo');
-    const password  = document.getElementById('password');
-    const confirm   = document.getElementById('confirmPassword');
+  function setValidity(input: HTMLInputElement | null, valid: boolean) {
+    if (!input) return;
+    input.classList.toggle('valid', valid);
+    input.classList.toggle('invalid', !valid);
+    input.setAttribute('aria-invalid', String(!valid));
+  }
 
-    if (!nombre.value.trim()) {
-      showError('error-nombre', 'El nombre es obligatorio.'); setValidity(nombre, false); ok = false;
-    } else { clearError('error-nombre'); setValidity(nombre, true); }
+  const form = document.getElementById('registerForm') as HTMLFormElement | null;
+  const errorBanner = document.getElementById('errorBanner') as HTMLDivElement | null;
+  const successBanner = document.getElementById('successBanner') as HTMLDivElement | null;
+  const submitButton = document.getElementById('submitBtn') as HTMLButtonElement | null;
 
-    if (!apellidos.value.trim()) {
-      showError('error-apellidos', 'Los apellidos son obligatorios.'); setValidity(apellidos, false); ok = false;
-    } else { clearError('error-apellidos'); setValidity(apellidos, true); }
+  function isValidName(value: string): boolean {
+    return /^[A-Za-zÁÉÍÓÚáéíóúÜüÑñ\s]+$/.test(value.trim()) && value.trim().length >= 2;
+  }
 
-    if (!/^\d{10}$/.test(telefono.value.trim())) {
-      showError('error-telefono', 'Ingresa un número de 10 dígitos.'); setValidity(telefono, false); ok = false;
-    } else { clearError('error-telefono'); setValidity(telefono, true); }
+  function setSubmitState(disabled: boolean, html: string) {
+    if (!submitButton) return;
+    submitButton.disabled = disabled;
+    submitButton.innerHTML = html;
+  }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo.value.trim())) {
-      showError('error-correo', 'Ingresa un correo válido.'); setValidity(correo, false); ok = false;
-    } else { clearError('error-correo'); setValidity(correo, true); }
+  form?.addEventListener('submit', (event: SubmitEvent) => {
+    event.preventDefault();
 
-    const pwd = password.value;
-    const pwdOk = /[A-Z]/.test(pwd) && /[0-9]/.test(pwd) && /[^A-Za-z0-9]/.test(pwd) && pwd.length >= 8;
-    if (!pwdOk) {
-      showError('error-password', 'La contraseña no cumple los requisitos.'); setValidity(password, false); ok = false;
-    } else { clearError('error-password'); setValidity(password, true); }
+    if (errorBanner) errorBanner.hidden = true;
+    if (successBanner) successBanner.hidden = true;
 
-    if (confirm.value !== password.value) {
-      showError('error-confirm', 'Las contraseñas no coinciden.'); setValidity(confirm, false); ok = false;
-    } else { clearError('error-confirm'); setValidity(confirm, true); }
+    let isValid = true;
 
-    if (ok) {
-      alert('¡Cuenta creada exitosamente! Bienvenido a SporTenis 🎾');
-      form.reset();
-      document.querySelectorAll('input').forEach(i => i.classList.remove('valid', 'invalid'));
-      Object.values(rulesDef).forEach(r => { r.el.classList.remove('ok'); r.el.textContent = '✗ ' + r.label; });
+    const nombre = getInput('nombre');
+    const apellidos = getInput('apellidos');
+    const telefono = getInput('telefono');
+    const correo = getInput('correo');
+    const password = getInput('password');
+    const confirm = getInput('confirmPassword');
+
+    if (!nombre || !isValidName(nombre.value)) {
+      showError('error-nombre', 'El nombre solo puede contener letras y espacios.');
+      setValidity(nombre, false);
+      isValid = false;
+    } else {
+      clearError('error-nombre');
+      setValidity(nombre, true);
+    }
+
+    if (!apellidos || !isValidName(apellidos.value)) {
+      showError('error-apellidos', 'Los apellidos solo pueden contener letras y espacios.');
+      setValidity(apellidos, false);
+      isValid = false;
+    } else {
+      clearError('error-apellidos');
+      setValidity(apellidos, true);
+    }
+
+    if (!telefono || !/^\d{10}$/.test(telefono.value.trim())) {
+      showError('error-telefono', 'Ingresa un número de 10 dígitos.');
+      setValidity(telefono, false);
+      isValid = false;
+    } else {
+      clearError('error-telefono');
+      setValidity(telefono, true);
+    }
+
+    if (!correo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo.value.trim())) {
+      showError('error-correo', 'Ingresa un correo válido.');
+      setValidity(correo, false);
+      isValid = false;
+    } else {
+      clearError('error-correo');
+      setValidity(correo, true);
+    }
+
+    const pwd = password?.value ?? '';
+    const passwordValid = /[A-Z]/.test(pwd) && /[0-9]/.test(pwd) && /[^A-Za-z0-9]/.test(pwd) && pwd.length >= 8;
+
+    if (!password || !passwordValid) {
+      showError('error-password', 'La contraseña debe tener 8+ caracteres, mayúscula, número y símbolo.');
+      setValidity(password, false);
+      isValid = false;
+    } else {
+      clearError('error-password');
+      setValidity(password, true);
+    }
+
+    const confirmValue = confirm?.value ?? '';
+    if (!confirm || confirmValue.length === 0 || confirmValue !== pwd) {
+      showError('error-confirm', 'Las contraseñas no coinciden.');
+      setValidity(confirm, false);
+      isValid = false;
+    } else {
+      clearError('error-confirm');
+      setValidity(confirm, true);
+    }
+
+    if (!isValid) {
+      if (errorBanner) {
+        errorBanner.textContent = 'Revisa los campos marcados antes de continuar.';
+        errorBanner.hidden = false;
+      }
+      return;
+    }
+
+    if (submitButton) {
+      setSubmitState(true, 'Creando cuenta...');
+    }
+
+    if (successBanner) {
+      successBanner.textContent = '¡Cuenta creada exitosamente! Bienvenido a SporTenis.';
+      successBanner.hidden = false;
+    }
+
+    form?.reset();
+    updatePasswordRules('');
+
+    document.querySelectorAll<HTMLInputElement>('input').forEach((input) => {
+      input.classList.remove('valid', 'invalid');
+      input.setAttribute('aria-invalid', 'false');
+    });
+
+    if (submitButton) {
+      setSubmitState(false, 'Crear cuenta <span>↗</span>');
     }
   });
 </script>
