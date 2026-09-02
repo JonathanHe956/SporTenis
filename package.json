@@ -12,9 +12,11 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/db": "^0.21.3",
     "@astrojs/node": "^11.1.4",
-    "astro": "^7.2.7"
+    "astro": "^7.2.7",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "mysql2": "^3.24.3"
   },
   "allowScripts": {
     "esbuild": true

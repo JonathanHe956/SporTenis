@@ -1,6 +1,8 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
-import { db, Interacciones, Clientes, TiposInteraccion, eq, desc, and, gte, lte } from 'astro:db';
+import { db } from '../../db/db';
+import { Interacciones, Clientes, TiposInteraccion } from '../../db/schema';
+import { eq, desc, and, gte, lte } from 'drizzle-orm';
 
 // En un sistema real, este ID vendría de la sesión autenticada.
 const usuarioActualId = 1; 

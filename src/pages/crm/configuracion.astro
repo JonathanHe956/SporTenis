@@ -1,6 +1,8 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
-import { db, EtapasCrm, TiposInteraccion, Clientes, Interacciones, eq } from 'astro:db';
+import { db } from '../../db/db';
+import { EtapasCrm, TiposInteraccion, Clientes, Interacciones } from '../../db/schema';
+import { eq } from 'drizzle-orm';
 
 if (Astro.request.method === 'POST') {
   const formData = await Astro.request.formData();

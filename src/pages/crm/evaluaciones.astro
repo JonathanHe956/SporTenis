@@ -1,6 +1,8 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
-import { db, Evaluaciones, Clientes, Usuarios, eq, desc } from 'astro:db';
+import { db } from '../../db/db';
+import { Evaluaciones, Clientes, Usuarios } from '../../db/schema';
+import { eq, desc } from 'drizzle-orm';
 
 const todasLasEvaluaciones = await db
   .select({

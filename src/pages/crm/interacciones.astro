@@ -1,6 +1,8 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
-import { db, Interacciones, Clientes, TiposInteraccion, Usuarios, eq, desc, and, gte, lte } from 'astro:db';
+import { db } from '../../db/db';
+import { Interacciones, Clientes, TiposInteraccion, Usuarios } from '../../db/schema';
+import { eq, desc, and, gte, lte } from 'drizzle-orm';
 
 const searchParams = Astro.url.searchParams;
 const startDateParam = searchParams.get('start_date');

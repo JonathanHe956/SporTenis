@@ -1,6 +1,8 @@
 ---
 import CrmLayout from '../../../layouts/CrmLayout.astro';
-import { db, Clientes, Interacciones, EtapasCrm, TiposInteraccion, Usuarios, Evaluaciones, eq, desc } from 'astro:db';
+import { db } from '../../../db/db';
+import { Clientes, Interacciones, EtapasCrm, TiposInteraccion, Usuarios, Evaluaciones } from '../../../db/schema';
+import { eq, desc } from 'drizzle-orm';
 
 const { id } = Astro.params;
 if (!id) return Astro.redirect('/crm/clientes');

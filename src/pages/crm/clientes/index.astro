@@ -1,6 +1,8 @@
 ---
 import CrmLayout from '../../../layouts/CrmLayout.astro';
-import { db, Clientes, EtapasCrm, Interacciones, eq, like, or } from 'astro:db';
+import { db } from '../../../db/db';
+import { Clientes, EtapasCrm, Interacciones } from '../../../db/schema';
+import { eq, like, or } from 'drizzle-orm';
 
 // Manejo de peticiones POST (CRUD)
 if (Astro.request.method === 'POST') {

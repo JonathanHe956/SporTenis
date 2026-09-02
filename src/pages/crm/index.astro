@@ -1,6 +1,7 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
-import { db, Clientes, Interacciones } from 'astro:db';
+import { db } from '../../db/db';
+import { Clientes, Interacciones } from '../../db/schema';
 
 // Obtener datos reales de la DB
 const todosLosClientes = await db.select().from(Clientes);

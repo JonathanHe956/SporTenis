@@ -1,5 +1,7 @@
 import { defineMiddleware } from 'astro:middleware';
-import { db, Usuarios, eq } from 'astro:db';
+import { db } from './db/db';
+import { Usuarios } from './db/schema';
+import { eq } from 'drizzle-orm';
 
 export const onRequest = defineMiddleware(async (context, next) => {
   const pathname = context.url.pathname;

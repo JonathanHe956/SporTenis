@@ -1,37 +1,39 @@
-import { db, Categorias, Marcas, Modelos, Productos, Roles, Usuarios, EtapasCrm, Clientes, TiposInteraccion, Interacciones } from 'astro:db';
+import { db } from '../src/db/db.js';
+import { Categorias, Marcas, Modelos, Productos, Roles, Usuarios, EtapasCrm, Clientes, TiposInteraccion, Interacciones } from '../src/db/schema.js';
 
-export default async function () {
+async function main() {
+  console.log('Iniciando seed...');
   // ==============================
   // 1. INVENTARIO Y CATÁLOGOS E-COMMERCE
   // ==============================
 
-  const categorias = await db.insert(Categorias).values([
+  await db.insert(Categorias).values([
     { id: 1, nombre: 'Tenis' },
     { id: 2, nombre: 'Pádel' },
     { id: 3, nombre: 'Running' },
     { id: 4, nombre: 'Ropa' },
     { id: 5, nombre: 'Accesorios' },
     { id: 6, nombre: 'Novedades' }
-  ]).returning();
+  ]);
 
-  const marcas = await db.insert(Marcas).values([
+  await db.insert(Marcas).values([
     { id: 1, nombre: 'SporTenis Original' },
     { id: 2, nombre: 'ProGear' },
     { id: 3, nombre: 'AeroCourt' }
-  ]).returning();
+  ]);
 
-  const modelos = await db.insert(Modelos).values([
-    { id: 1, id_marca: 2, id_categoria: 2, nombre: 'Pala Pro Carbon', descripcion: 'Potencia y control para elevar tu juego.', precio_base: 2499 },
-    { id: 2, id_marca: 3, id_categoria: 1, nombre: 'Court Air 2.0', descripcion: 'Amortiguación ligera y estabilidad.', precio_base: 1899 },
-    { id: 3, id_marca: 1, id_categoria: 4, nombre: 'Player Tee', descripcion: 'Tela transpirable para el partido.', precio_base: 699 }
-  ]).returning();
+  await db.insert(Modelos).values([
+    { id: 1, id_marca: 2, id_categoria: 2, nombre: 'Pala Pro Carbon', descripcion: 'Potencia y control para elevar tu juego.', precio_base: '2499.00' },
+    { id: 2, id_marca: 3, id_categoria: 1, nombre: 'Court Air 2.0', descripcion: 'Amortiguación ligera y estabilidad.', precio_base: '1899.00' },
+    { id: 3, id_marca: 1, id_categoria: 4, nombre: 'Player Tee', descripcion: 'Tela transpirable para el partido.', precio_base: '699.00' }
+  ]);
 
   await db.insert(Productos).values([
-    { id: 1, id_modelo: 1, sku: 'PAL-PRO-C-NG-AM', color: 'Negro / Amarillo', precio_venta: 2499, costo: 1200, stock: 15, estado: 'activo', badge: 'Oferta', theme_class: 'product-padel' },
-    { id: 2, id_modelo: 1, sku: 'PAL-PRO-C-CB-RJ', color: 'Carbono / Rojo', precio_venta: 2499, costo: 1200, stock: 8, estado: 'activo', badge: 'Oferta', theme_class: 'product-padel' },
-    { id: 3, id_modelo: 2, sku: 'SHO-CA2-BL-RJ-27', talla_cm: '27.5', color: 'Blanco / Rojo', precio_venta: 1899, costo: 900, stock: 22, estado: 'activo', badge: 'Top ventas', theme_class: 'product-shoe' },
-    { id: 4, id_modelo: 2, sku: 'SHO-CA2-NG-AM-28', talla_cm: '28.5', color: 'Negro / Amarillo', precio_venta: 1899, costo: 900, stock: 10, estado: 'activo', badge: 'Top ventas', theme_class: 'product-shoe' },
-    { id: 5, id_modelo: 3, sku: 'TSH-PLY-BL-M', talla_cm: 'M', color: 'Blanco', precio_venta: 699, costo: 300, stock: 50, estado: 'activo', badge: 'Nuevo', theme_class: 'product-shirt' }
+    { id: 1, id_modelo: 1, sku: 'PAL-PRO-C-NG-AM', color: 'Negro / Amarillo', precio_venta: '2499.00', costo: '1200.00', stock: 15, estado: 'activo', badge: 'Oferta', theme_class: 'product-padel' },
+    { id: 2, id_modelo: 1, sku: 'PAL-PRO-C-CB-RJ', color: 'Carbono / Rojo', precio_venta: '2499.00', costo: '1200.00', stock: 8, estado: 'activo', badge: 'Oferta', theme_class: 'product-padel' },
+    { id: 3, id_modelo: 2, sku: 'SHO-CA2-BL-RJ-27', talla_cm: '27.5', color: 'Blanco / Rojo', precio_venta: '1899.00', costo: '900.00', stock: 22, estado: 'activo', badge: 'Top ventas', theme_class: 'product-shoe' },
+    { id: 4, id_modelo: 2, sku: 'SHO-CA2-NG-AM-28', talla_cm: '28.5', color: 'Negro / Amarillo', precio_venta: '1899.00', costo: '900.00', stock: 10, estado: 'activo', badge: 'Top ventas', theme_class: 'product-shoe' },
+    { id: 5, id_modelo: 3, sku: 'TSH-PLY-BL-M', talla_cm: 'M', color: 'Blanco', precio_venta: '699.00', costo: '300.00', stock: 50, estado: 'activo', badge: 'Nuevo', theme_class: 'product-shirt' }
   ]);
 
   // ==============================
@@ -81,4 +83,10 @@ export default async function () {
   ]);
 
   console.log('Base de datos inicializada con éxito (E-Commerce + CRM).');
+  process.exit(0);
 }
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -1,6 +1,8 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { db, Usuarios, eq } from 'astro:db';
+import { db } from '../db/db';
+import { Usuarios } from '../db/schema';
+import { eq } from 'drizzle-orm';
 
 const sessionId = Astro.cookies.get('sportenis_session')?.value;
 
