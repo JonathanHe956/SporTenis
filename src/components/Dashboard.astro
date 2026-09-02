@@ -5,6 +5,8 @@ const products = [
   { name: 'Court Air 2.0', type: 'Tenis', price: '$1,899', badge: 'Top ventas', className: 'product-shoe', description: 'Amortiguación ligera y estabilidad para moverte con confianza.', options: ['Blanco / Rojo', 'Negro / Amarillo'] },
   { name: 'Player Tee', type: 'Ropa deportiva', price: '$699', badge: 'Nuevo', className: 'product-shirt', description: 'Tela transpirable para mantenerte cómodo durante todo el partido.', options: ['Blanco', 'Amarillo', 'Negro'] },
 ];
+const sessionId = Astro.cookies.get('sportenis_session')?.value;
+const isLoggedIn = Boolean(sessionId);
 ---
 
 <div class="storefront">
@@ -20,29 +22,36 @@ const products = [
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         </button>
         <div class="account-dropdown" id="accountDropdown" role="menu">
-          <a href="/cuenta" class="dropdown-item" role="menuitem">
-            <span class="dropdown-icon">Perfil</span>
-            <span>
-              <strong>Mi perfil</strong>
-              <small>Ver y editar datos</small>
-            </span>
-          </a>
-          <div class="dropdown-divider"></div>
-          <a href="/login" class="dropdown-item" role="menuitem">
-            <span class="dropdown-icon">Cuenta</span>
-            <span>
-              <strong>Ya tengo cuenta</strong>
-              <small>Inicia sesión</small>
-            </span>
-          </a>
-          <div class="dropdown-divider"></div>
-          <a href="/registro" class="dropdown-item dropdown-item--highlight" role="menuitem">
-            <span class="dropdown-icon">Registro</span>
-            <span>
-              <strong>Crear cuenta nueva</strong>
-              <small>Es gratis, únete ahora</small>
-            </span>
-          </a>
+          {isLoggedIn ? (
+            <>
+              <a href="/cuenta" class="dropdown-item" role="menuitem">
+                <span class="dropdown-icon">◉</span>
+                <span>
+                  <strong>Cuenta</strong>
+                  <small>Ver y editar tu perfil</small>
+                </span>
+              </a>
+              <div class="dropdown-divider"></div>
+              <form method="POST" action="/login" class="logout-form">
+                <input type="hidden" name="action" value="logout" />
+                <button type="submit" class="dropdown-item dropdown-item--logout" role="menuitem">
+                  <span class="dropdown-icon">↩</span>
+                  <span>
+                    <strong>Cerrar sesión</strong>
+                    <small>Salir de tu cuenta</small>
+                  </span>
+                </button>
+              </form>
+            </>
+          ) : (
+            <a href="/login" class="dropdown-item dropdown-item--highlight" role="menuitem">
+              <span class="dropdown-icon">↗</span>
+              <span>
+                <strong>Registrarse / Iniciar sesión</strong>
+                <small>Accede a tu cuenta</small>
+              </span>
+            </a>
+          )}
         </div>
       </div>
       <button class="icon-button" type="button" aria-label="Favoritos">
@@ -162,6 +171,17 @@ const products = [
   .dropdown-item:hover { background: #f6f4ed; }
   .dropdown-item--highlight { color: #d93e2e; }
   .dropdown-item--highlight:hover { background: #fff1ef; }
+
+  .logout-form { margin: 0; }
+  .dropdown-item--logout {
+    background: transparent;
+    border: 0;
+    color: #171717;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    width: 100%;
+  }
 
   .dropdown-icon { font-size: 20px; line-height: 1; }
 
