@@ -1,9 +1,60 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import { db } from '../db/db';
+import { Usuarios, Clientes } from '../db/schema';
+import { eq } from 'drizzle-orm';
 
 const session = Astro.cookies.get('sportenis_session');
 if (session) {
   return Astro.redirect('/');
+}
+
+let errorMsg = '';
+if (Astro.request.method === 'POST') {
+  try {
+    const data = await Astro.request.formData();
+    const nombre = data.get('nombre')?.toString() || '';
+    const apellidos = data.get('apellidos')?.toString() || '';
+    const telefono = data.get('telefono')?.toString() || '';
+    const correo = data.get('correo')?.toString() || '';
+    const password = data.get('password')?.toString() || '';
+
+    const existing = await db.select().from(Usuarios).where(eq(Usuarios.correo, correo));
+    if (existing.length > 0) {
+      errorMsg = 'Este correo electrónico ya está registrado.';
+    } else {
+      const fullName = `${nombre} ${apellidos}`.trim();
+      const now = new Date();
+      
+      await db.insert(Usuarios).values({
+        id_rol: 3, // Cliente
+        nombre: fullName,
+        correo: correo,
+        password_hash: password,
+        estado: 'activo',
+        fecha_creacion: now
+      });
+      
+      const newUser = await db.select().from(Usuarios).where(eq(Usuarios.correo, correo));
+      const userId = newUser[0].id;
+      
+      await db.insert(Clientes).values({
+        id_usuario: userId,
+        id_etapa_crm: 1, // Prospecto
+        nombre: fullName,
+        correo: correo,
+        telefono: telefono,
+        estado: 'Activo',
+        fecha_registro: now
+      });
+
+      Astro.cookies.set('sportenis_session', userId.toString(), { path: '/' });
+      return Astro.redirect('/cuenta');
+    }
+  } catch (e) {
+    console.error(e);
+    errorMsg = 'Hubo un error al procesar tu registro. Por favor intenta nuevamente.';
+  }
 }
 ---
 
@@ -25,9 +76,15 @@ if (session) {
           <p class="subtitle">Completa tus datos para disfrutar de ofertas exclusivas, historial de compras y pagos rápidos.</p>
         </div>
 
-        <form id="registerForm" class="auth-form" novalidate>
+        <form id="registerForm" class="auth-form" method="POST" novalidate>
           <div id="errorBanner" class="error-banner" role="alert" aria-live="polite" hidden></div>
           <div id="successBanner" class="success-banner" role="status" aria-live="polite" hidden></div>
+          
+          {errorMsg && (
+            <div class="error-banner" role="alert">
+              {errorMsg}
+            </div>
+          )}
 
           <div class="form-row">
             <div class="field-group">
@@ -456,8 +513,6 @@ if (session) {
   }
 
   form?.addEventListener('submit', (event: SubmitEvent) => {
-    event.preventDefault();
-
     if (errorBanner) errorBanner.hidden = true;
     if (successBanner) successBanner.hidden = true;
 
@@ -529,6 +584,7 @@ if (session) {
     }
 
     if (!isValid) {
+      event.preventDefault();
       if (errorBanner) {
         errorBanner.textContent = 'Revisa los campos marcados antes de continuar.';
         errorBanner.hidden = false;
@@ -538,23 +594,6 @@ if (session) {
 
     if (submitButton) {
       setSubmitState(true, 'Creando cuenta...');
-    }
-
-    if (successBanner) {
-      successBanner.textContent = '¡Cuenta creada exitosamente! Bienvenido a SporTenis.';
-      successBanner.hidden = false;
-    }
-
-    form?.reset();
-    updatePasswordRules('');
-
-    document.querySelectorAll<HTMLInputElement>('input').forEach((input) => {
-      input.classList.remove('valid', 'invalid');
-      input.setAttribute('aria-invalid', 'false');
-    });
-
-    if (submitButton) {
-      setSubmitState(false, 'Crear cuenta <span>↗</span>');
     }
   });
 </script>
