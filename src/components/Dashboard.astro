@@ -1,12 +1,15 @@
 ---
+import { canAccessCrm } from '../lib/auth';
+
 const categories = ['Novedades', 'Tenis', 'Pádel', 'Running', 'Ropa', 'Accesorios'];
 const products = [
   { name: 'Pala Pro Carbon', type: 'Pádel', price: '$2,499', badge: 'Oferta', className: 'product-padel', description: 'Potencia y control para elevar tu juego en cada punto.', options: ['Negro / Amarillo', 'Carbono / Rojo'] },
   { name: 'Court Air 2.0', type: 'Tenis', price: '$1,899', badge: 'Top ventas', className: 'product-shoe', description: 'Amortiguación ligera y estabilidad para moverte con confianza.', options: ['Blanco / Rojo', 'Negro / Amarillo'] },
   { name: 'Player Tee', type: 'Ropa deportiva', price: '$699', badge: 'Nuevo', className: 'product-shirt', description: 'Tela transpirable para mantenerte cómodo durante todo el partido.', options: ['Blanco', 'Amarillo', 'Negro'] },
 ];
-const sessionId = Astro.cookies.get('sportenis_session')?.value;
-const isLoggedIn = Boolean(sessionId);
+const user = Astro.locals.user;
+const isLoggedIn = user !== null;
+const canViewCrm = canAccessCrm(user?.role);
 ---
 
 <div class="storefront">
@@ -14,6 +17,7 @@ const isLoggedIn = Boolean(sessionId);
     <a class="brand" href="/" aria-label="SporTenis, inicio"><span class="brand-mark">S</span><span>Spor<span>Tenis</span></span></a>
     <nav aria-label="Navegación principal">
       {categories.map((category) => <a href={`#${category.toLowerCase()}`}>{category}</a>)}
+      {canViewCrm && <a class="crm-link" href="/crm">CRM <span aria-hidden="true">↗</span></a>}
     </nav>
     <div class="actions">
       <label class="search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Buscar productos" aria-label="Buscar productos" /></label>
