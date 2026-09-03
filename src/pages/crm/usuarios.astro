@@ -4,6 +4,14 @@ import { db } from '../../db/db';
 import { Usuarios, Roles, Interacciones } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 
+const session = Astro.cookies.get('sportenis_session')?.value;
+if (!session) return Astro.redirect('/login');
+
+const currentUser = await db.select().from(Usuarios).where(eq(Usuarios.id, Number(session)));
+if (currentUser.length === 0 || currentUser[0].id_rol !== 1) {
+  return Astro.redirect('/crm');
+}
+
 if (Astro.request.method === 'POST') {
   const formData = await Astro.request.formData();
   const action = formData.get('action');
