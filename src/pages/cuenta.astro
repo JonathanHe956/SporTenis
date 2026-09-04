@@ -132,9 +132,49 @@ if (user.length > 0) {
               <button type="button" class="btn-logout" id="logoutBtn">Cerrar sesión</button>
             </div>
           </form>
+
+          <!-- Zona de peligro -->
+          <div class="danger-zone">
+            <div class="danger-zone-info">
+              <h3>Zona de peligro</h3>
+              <p>Eliminar tu cuenta es una acción permanente. Se borrarán todos tus datos, favoritos, direcciones y preferencias.</p>
+            </div>
+            <button type="button" class="btn-delete-account" id="deleteAccountBtn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+              Borrar mi cuenta
+            </button>
+          </div>
         </div>
       </div>
     </main>
+
+    <!-- Modal de confirmación para borrar cuenta -->
+    <div class="modal-overlay" id="deleteModal">
+      <div class="modal-card">
+        <div class="modal-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <h2>¿Estás seguro?</h2>
+        <p class="modal-desc">Esta acción <strong>no se puede deshacer</strong>. Se eliminarán permanentemente todos tus datos, incluyendo:</p>
+        <ul class="modal-list">
+          <li>Tu perfil e información personal</li>
+          <li>Tus direcciones guardadas</li>
+          <li>Tus favoritos y preferencias</li>
+          <li>Tu carrito de compras</li>
+        </ul>
+        <p class="modal-confirm-text">Escribe <strong>ELIMINAR</strong> para confirmar:</p>
+        <input type="text" id="confirmInput" class="confirm-input" placeholder="Escribe ELIMINAR" autocomplete="off" />
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" id="cancelDeleteBtn">Cancelar</button>
+          <button type="button" class="btn-confirm-delete" id="confirmDeleteBtn" disabled>Eliminar mi cuenta</button>
+        </div>
+        <div class="modal-loading" id="deleteLoading" style="display:none;">
+          <div class="spinner"></div>
+          <span>Eliminando cuenta...</span>
+        </div>
+        <div class="modal-error" id="deleteError" style="display:none;">Ocurrió un error al eliminar tu cuenta. Intenta de nuevo.</div>
+      </div>
+    </div>
   </div>
 </Layout>
 
@@ -409,11 +449,235 @@ if (user.length > 0) {
     color: #171717;
   }
 
+  /* Zona de peligro */
+  .danger-zone {
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1.5px dashed #e7442e40;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .danger-zone-info h3 {
+    color: #e7442e;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    margin: 0 0 6px;
+  }
+  .danger-zone-info p {
+    color: #716e67;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    line-height: 1.6;
+    margin: 0;
+    max-width: 300px;
+  }
+  .btn-delete-account {
+    align-items: center;
+    background: transparent;
+    border: 1.5px solid #e7442e;
+    border-radius: 8px;
+    color: #e7442e;
+    cursor: pointer;
+    display: inline-flex;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    gap: 6px;
+    letter-spacing: .3px;
+    padding: 10px 18px;
+    text-transform: uppercase;
+    transition: all .2s;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .btn-delete-account:hover {
+    background: #e7442e;
+    color: #fff;
+  }
+
+  /* Modal */
+  .modal-overlay {
+    align-items: center;
+    background: rgba(23, 23, 23, 0.55);
+    backdrop-filter: blur(4px);
+    display: none;
+    inset: 0;
+    justify-content: center;
+    position: fixed;
+    z-index: 9999;
+  }
+  .modal-overlay.active {
+    display: flex;
+    animation: fadeIn .2s ease;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  .modal-card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 24px 80px rgba(23,23,23,0.25);
+    max-width: 420px;
+    padding: 36px 32px 28px;
+    text-align: center;
+    width: 90vw;
+    animation: slideUp .25s ease;
+  }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .modal-icon {
+    color: #e7442e;
+    margin-bottom: 16px;
+  }
+  .modal-card h2 {
+    font-size: 22px;
+    font-weight: 400;
+    letter-spacing: -1px;
+    margin: 0 0 10px;
+  }
+  .modal-desc {
+    color: #716e67;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    line-height: 1.7;
+    margin: 0 0 12px;
+  }
+  .modal-desc strong { color: #e7442e; }
+  .modal-list {
+    color: #716e67;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    line-height: 1.9;
+    list-style: none;
+    margin: 0 0 18px;
+    padding: 0;
+    text-align: left;
+    padding-left: 20px;
+  }
+  .modal-list li::before {
+    content: '×';
+    color: #e7442e;
+    font-weight: 700;
+    margin-right: 8px;
+  }
+  .modal-confirm-text {
+    color: #171717;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    margin: 0 0 8px;
+    text-align: left;
+  }
+  .confirm-input {
+    background: #f6f4ed;
+    border: 1.5px solid #d8d3c3;
+    border-radius: 8px;
+    color: #171717;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    outline: none;
+    padding: 10px 14px;
+    text-align: center;
+    transition: border-color .2s;
+    width: 100%;
+  }
+  .confirm-input:focus {
+    border-color: #e7442e;
+  }
+  .modal-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .btn-cancel {
+    background: transparent;
+    border: 1.5px solid #d8d3c3;
+    border-radius: 8px;
+    color: #716e67;
+    cursor: pointer;
+    flex: 1;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 12px;
+    text-transform: uppercase;
+    transition: all .2s;
+  }
+  .btn-cancel:hover {
+    border-color: #171717;
+    color: #171717;
+  }
+  .btn-confirm-delete {
+    background: #e7442e;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    cursor: pointer;
+    flex: 1;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 12px;
+    text-transform: uppercase;
+    transition: all .2s;
+  }
+  .btn-confirm-delete:disabled {
+    background: #d8d3c3;
+    color: #a09d96;
+    cursor: not-allowed;
+  }
+  .btn-confirm-delete:not(:disabled):hover {
+    background: #c73822;
+  }
+  .modal-loading {
+    align-items: center;
+    color: #716e67;
+    display: flex;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 16px;
+  }
+  .spinner {
+    animation: spin .7s linear infinite;
+    border: 2px solid #d8d3c3;
+    border-radius: 50%;
+    border-top-color: #e7442e;
+    height: 18px;
+    width: 18px;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .modal-error {
+    background: #fef2f2;
+    border: 1px solid #e7442e;
+    border-radius: 8px;
+    color: #e7442e;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    margin-top: 12px;
+    padding: 10px;
+  }
+
   @media (max-width: 680px) {
     .cuenta-card { grid-template-columns: 1fr; }
     .cuenta-card-left { display: none; }
     .cuenta-card-right { padding: 36px 24px; }
     .form-row { grid-template-columns: 1fr; }
+    .danger-zone { flex-direction: column; align-items: stretch; text-align: center; }
+    .danger-zone-info p { max-width: 100%; }
+    .btn-delete-account { justify-content: center; }
   }
 </style>
 
@@ -460,5 +724,63 @@ if (user.length > 0) {
     // En una app real esto llamaría al endpoint de logout o limpiaría cookies
     document.cookie = "sportenis_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
     window.location.href = '/login';
+  });
+
+  // --- Borrar cuenta ---
+  const deleteAccountBtn = document.getElementById('deleteAccountBtn');
+  const deleteModal = document.getElementById('deleteModal');
+  const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+  const confirmDeleteBtn = document.getElementById('confirmDeleteBtn') as HTMLButtonElement | null;
+  const confirmInput = document.getElementById('confirmInput') as HTMLInputElement | null;
+  const deleteLoading = document.getElementById('deleteLoading');
+  const deleteError = document.getElementById('deleteError');
+
+  deleteAccountBtn && deleteAccountBtn.addEventListener('click', () => {
+    if (deleteModal) deleteModal.classList.add('active');
+    if (confirmInput) { confirmInput.value = ''; confirmInput.focus(); }
+    if (confirmDeleteBtn) confirmDeleteBtn.disabled = true;
+    if (deleteError) deleteError.style.display = 'none';
+  });
+
+  cancelDeleteBtn && cancelDeleteBtn.addEventListener('click', () => {
+    if (deleteModal) deleteModal.classList.remove('active');
+  });
+
+  // Cerrar modal al hacer clic fuera
+  deleteModal && deleteModal.addEventListener('click', (e: Event) => {
+    if (e.target === deleteModal) deleteModal.classList.remove('active');
+  });
+
+  // Habilitar botón solo si se escribe ELIMINAR
+  confirmInput && confirmInput.addEventListener('input', () => {
+    if (confirmDeleteBtn) {
+      confirmDeleteBtn.disabled = confirmInput.value.trim().toUpperCase() !== 'ELIMINAR';
+    }
+  });
+
+  // Ejecutar borrado
+  confirmDeleteBtn && confirmDeleteBtn.addEventListener('click', async () => {
+    if (confirmInput && confirmInput.value.trim().toUpperCase() !== 'ELIMINAR') return;
+
+    // Mostrar loading, ocultar botones
+    if (deleteLoading) deleteLoading.style.display = 'flex';
+    if (deleteError) deleteError.style.display = 'none';
+    if (confirmDeleteBtn) confirmDeleteBtn.disabled = true;
+    if (cancelDeleteBtn) (cancelDeleteBtn as HTMLButtonElement).disabled = true;
+
+    try {
+      const res = await fetch('/api/delete-account', { method: 'POST' });
+      if (res.ok) {
+        document.cookie = "sportenis_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+        window.location.href = '/login';
+      } else {
+        throw new Error('Error del servidor');
+      }
+    } catch {
+      if (deleteLoading) deleteLoading.style.display = 'none';
+      if (deleteError) deleteError.style.display = 'block';
+      if (confirmDeleteBtn) confirmDeleteBtn.disabled = false;
+      if (cancelDeleteBtn) (cancelDeleteBtn as HTMLButtonElement).disabled = false;
+    }
   });
 </script>
