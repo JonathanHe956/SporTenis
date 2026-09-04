@@ -27,7 +27,7 @@ if (Astro.request.method === 'POST') {
       if (userResult[0].id_rol === 1 || userResult[0].id_rol === 2) {
         return Astro.redirect('/crm');
       }
-      return Astro.redirect('/cuenta');
+      return Astro.redirect('/');
     } else {
       errorMsg = 'Correo o contraseña incorrectos.';
     }
@@ -35,7 +35,7 @@ if (Astro.request.method === 'POST') {
 } else {
   // Si es GET y ya hay sesión, redirigir
   if (session) {
-    return Astro.redirect('/cuenta');
+    return Astro.redirect('/');
   }
 }
 ---

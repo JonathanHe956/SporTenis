@@ -24,7 +24,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   if (isCrmRoute || isAccountRoute) {
     if (!context.locals.user) return context.redirect('/login');
     if (isCrmRoute && !canAccessCrm(context.locals.user.role)) {
-      return context.redirect('/cuenta');
+      return context.redirect('/');
     }
   }
 
