@@ -5,7 +5,7 @@ import { Clientes, Interacciones } from '../../db/schema';
 
 // Obtener datos reales de la DB
 const todosLosClientes = await db.select().from(Clientes);
-const todosLosActivos = todosLosClientes.filter(c => c.estado === 'Activo');
+const todosLosActivos = todosLosClientes.filter(c => c.estado.toLowerCase() === 'activo');
 
 const totalClientes = todosLosClientes.length;
 const totalActivos = todosLosActivos.length;
@@ -13,12 +13,29 @@ const porcentajeActivos = totalClientes > 0 ? Math.round((totalActivos / totalCl
 const totalInactivos = totalClientes - totalActivos;
 const porcentajeInactivos = totalClientes > 0 ? 100 - porcentajeActivos : 0;
 
-// Obtener interacciones del mes actual (simplificado para la demo)
 const interacciones = await db.select().from(Interacciones);
-const interaccionesMes = interacciones.length; // En producción, filtrar por fecha_hora
 
-// Simular clientes sin interacción (para UI)
-const sinInteraccion = 2; // Ejemplo
+const now = new Date();
+const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+const interaccionesMes = interacciones.filter(i => new Date(i.fecha_hora) >= thirtyDaysAgo).length;
+
+const lastInteractions = new Map<number, Date>();
+for (const i of interacciones) {
+  const d = new Date(i.fecha_hora);
+  const existing = lastInteractions.get(i.id_cliente);
+  if (!existing || d > existing) {
+    lastInteractions.set(i.id_cliente, d);
+  }
+}
+
+const clientesEnRiesgoList = todosLosClientes.map(c => {
+  const lastInt = lastInteractions.get(c.id);
+  const daysSince = lastInt ? Math.floor((now.getTime() - lastInt.getTime()) / (1000 * 60 * 60 * 24)) : Infinity;
+  return { ...c, daysSince };
+}).filter(c => c.daysSince >= 30).sort((a, b) => b.daysSince - a.daysSince);
+
+const sinInteraccion = clientesEnRiesgoList.length;
 ---
 
 <CrmLayout title="Dashboard" activePath="/crm">
@@ -71,15 +88,15 @@ const sinInteraccion = 2; // Ejemplo
     <div class="crm-card widget-card">
       <h3>Clientes en riesgo</h3>
       <div class="risk-list">
-        {todosLosClientes.slice(0, 3).map(c => (
+        {clientesEnRiesgoList.length > 0 ? clientesEnRiesgoList.slice(0, 3).map(c => (
           <a href={`/crm/clientes/${c.id}`} class="risk-item">
             <div>
               <strong>{c.nombre}</strong>
-              <p>Sin interacción desde hace 45 días</p>
+              <p>{c.daysSince === Infinity ? 'Sin interacciones registradas' : `Sin interacción por ${c.daysSince} días`}</p>
             </div>
             <span>›</span>
           </a>
-        ))}
+        )) : <p style="color: var(--color-text-muted); font-size: 13px;">No hay clientes en riesgo.</p>}
       </div>
       <a href="/crm/clientes" class="view-all">Ver todos</a>
     </div>

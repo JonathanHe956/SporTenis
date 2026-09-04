@@ -60,15 +60,20 @@ const clientes = await db
   .leftJoin(EtapasCrm, eq(Clientes.id_etapa_crm, EtapasCrm.id));
 
 const q = Astro.url.searchParams.get('q');
+const estadoFiltro = Astro.url.searchParams.get('estado');
 let clientesFiltrados = clientes;
 
 if (q) {
   const searchTerm = q.toLowerCase();
-  clientesFiltrados = clientes.filter(c => 
+  clientesFiltrados = clientesFiltrados.filter(c => 
     c.nombre.toLowerCase().includes(searchTerm) || 
     c.correo.toLowerCase().includes(searchTerm) || 
     (c.empresa && c.empresa.toLowerCase().includes(searchTerm))
   );
+}
+
+if (estadoFiltro && estadoFiltro !== 'todos') {
+  clientesFiltrados = clientesFiltrados.filter(c => c.estado.toLowerCase() === estadoFiltro.toLowerCase());
 }
 
 function getStageBadge(stage: string | null) {
@@ -90,12 +95,14 @@ function getStageBadge(stage: string | null) {
 
   <div class="crm-card">
     <div class="filters">
-      <input type="search" placeholder="Buscar por nombre, correo o empresa..." class="search-input" />
-      <select class="filter-select">
-        <option value="todos">Filtrar por estado: Todos</option>
-        <option value="activo">Activos</option>
-        <option value="inactivo">Inactivos</option>
-      </select>
+      <form method="GET" style="margin: 0;" id="statusFilterForm">
+        {q && <input type="hidden" name="q" value={q} />}
+        <select name="estado" class="filter-select" onchange="document.getElementById('statusFilterForm').submit()">
+          <option value="todos" selected={!estadoFiltro || estadoFiltro === 'todos'}>Filtrar por estado: Todos</option>
+          <option value="activo" selected={estadoFiltro === 'activo'}>Activos</option>
+          <option value="inactivo" selected={estadoFiltro === 'inactivo'}>Inactivos</option>
+        </select>
+      </form>
     </div>
 
     <div class="table-responsive">
