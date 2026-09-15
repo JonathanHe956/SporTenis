@@ -1,41 +1,46 @@
 ---
 // src/pages/login.astro
-import Layout from '../layouts/Layout.astro';
-import { db } from '../db/db';
-import { Usuarios } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import Layout from "../layouts/Layout.astro";
+import { db } from "../db/db";
+import { Usuarios } from "../db/schema";
+import { eq } from "drizzle-orm";
 
-const session = Astro.cookies.get('sportenis_session');
-let errorMsg = '';
+const session = Astro.cookies.get("sportenis_session");
+let errorMsg = "";
 
-if (Astro.request.method === 'POST') {
+if (Astro.request.method === "POST") {
   const formData = await Astro.request.formData();
-  
-  if (formData.get('action') === 'logout') {
-    Astro.cookies.delete('sportenis_session', { path: '/' });
-    return Astro.redirect('/');
+
+  if (formData.get("action") === "logout") {
+    Astro.cookies.delete("sportenis_session", { path: "/" });
+    return Astro.redirect("/");
   }
 
-  const email = formData.get('email')?.toString();
-  const password = formData.get('password')?.toString();
+  const email = formData.get("email")?.toString();
+  const password = formData.get("password")?.toString();
 
   if (email && password) {
-    const userResult = await db.select().from(Usuarios).where(eq(Usuarios.correo, email));
+    const userResult = await db
+      .select()
+      .from(Usuarios)
+      .where(eq(Usuarios.correo, email));
     if (userResult.length > 0 && userResult[0].password_hash === password) {
-      Astro.cookies.set('sportenis_session', userResult[0].id.toString(), { path: '/' });
-      
+      Astro.cookies.set("sportenis_session", userResult[0].id.toString(), {
+        path: "/",
+      });
+
       if (userResult[0].id_rol === 1 || userResult[0].id_rol === 2) {
-        return Astro.redirect('/crm');
+        return Astro.redirect("/crm");
       }
-      return Astro.redirect('/');
+      return Astro.redirect("/");
     } else {
-      errorMsg = 'Correo o contraseña incorrectos.';
+      errorMsg = "Correo o contraseña incorrectos.";
     }
   }
 } else {
   // Si es GET y ya hay sesión, redirigir
   if (session) {
-    return Astro.redirect('/');
+    return Astro.redirect("/");
   }
 }
 ---
@@ -55,35 +60,33 @@ if (Astro.request.method === 'POST') {
         <div class="card-header">
           <p class="eyebrow"><span></span> Acceso a la Tienda</p>
           <h1>Iniciar <em>Sesión</em></h1>
-          <p class="subtitle">Ingresa tus datos para ver tus pedidos y beneficios.</p>
+          <p class="subtitle">
+            Ingresa tus datos para ver tus pedidos y beneficios.
+          </p>
         </div>
 
         <form method="POST" class="auth-form">
-          {errorMsg && (
-            <div class="error-banner">
-              {errorMsg}
-            </div>
-          )}
+          {errorMsg && <div class="error-banner">{errorMsg}</div>}
 
           <div class="field-group">
             <label for="email">Correo electrónico</label>
-            <input 
-              type="email" 
-              id="email" 
-              name="email" 
-              placeholder="tu@email.com" 
-              required 
+            <input
+              type="email"
+              id="email"
+              name="email"
+              placeholder="tu@email.com"
+              required
             />
           </div>
 
           <div class="field-group">
             <label for="password">Contraseña</label>
-            <input 
-              type="password" 
-              id="password" 
-              name="password" 
-              placeholder="••••••••" 
-              required 
+            <input
+              type="password"
+              id="password"
+              name="password"
+              placeholder="••••••••"
+              required
             />
           </div>
 
@@ -92,24 +95,31 @@ if (Astro.request.method === 'POST') {
           </button>
         </form>
 
-        <p class="login-link">No tienes cuenta? <a href="/registro">Regístrate</a></p>
-
-        <div class="mock-credentials">
-          <strong>Credenciales de prueba:</strong>
-          <span>Vendedor: <code>ventas1@sportenis.com</code> / <code>password123</code></span>
-          <span>Admin: <code>admin@sportenis.com</code> / <code>password123</code></span>
-        </div>
+        <p class="login-link">
+          No tienes cuenta? <a href="/registro">Regístrate</a>
+        </p>
       </div>
     </main>
   </div>
 </Layout>
 
 <style>
-  :global(*) { box-sizing: border-box; }
-  :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; margin: 0; }
+  :global(*) {
+    box-sizing: border-box;
+  }
+  :global(body) {
+    background: #f6f4ed;
+    color: #171717;
+    font-family: Georgia, "Times New Roman", serif;
+    margin: 0;
+  }
 
-  .auth-page { min-height: 100vh; display: flex; flex-direction: column; }
-  
+  .auth-page {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
   .topbar {
     align-items: center;
     background: #f7d21c;
@@ -129,7 +139,9 @@ if (Astro.request.method === 'POST') {
     letter-spacing: -1.5px;
     text-decoration: none;
   }
-  .brand span span { font-weight: 400; }
+  .brand span span {
+    font-weight: 400;
+  }
   .brand-mark {
     align-items: center;
     border: 3px solid #171717;
@@ -150,7 +162,9 @@ if (Astro.request.method === 'POST') {
     text-decoration: none;
     text-transform: uppercase;
   }
-  .back-link:hover { text-decoration: underline; }
+  .back-link:hover {
+    text-decoration: underline;
+  }
 
   .auth-main {
     flex: 1;
@@ -255,12 +269,23 @@ if (Astro.request.method === 'POST') {
     padding: 16px 20px;
     text-decoration: none;
     text-transform: uppercase;
-    transition: background-color 0.15s ease, transform 0.15s ease;
+    transition:
+      background-color 0.15s ease,
+      transform 0.15s ease;
   }
-  .primary-button:hover { background: #d93e2e; }
-  .primary-button:active { transform: scale(0.99); }
-  .primary-button:disabled { opacity: 0.6; cursor: not-allowed; }
-  .primary-button span { font-size: 16px; }
+  .primary-button:hover {
+    background: #d93e2e;
+  }
+  .primary-button:active {
+    transform: scale(0.99);
+  }
+  .primary-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .primary-button span {
+    font-size: 16px;
+  }
 
   .login-link {
     color: #716e67;
@@ -274,7 +299,9 @@ if (Astro.request.method === 'POST') {
     font-weight: 700;
     text-decoration: none;
   }
-  .login-link a:hover { text-decoration: underline; }
+  .login-link a:hover {
+    text-decoration: underline;
+  }
 
   .error-banner {
     background: #fee2e2;

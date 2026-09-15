@@ -37,6 +37,7 @@ export const Modelos = mysqlTable('Modelos', {
   nombre: varchar('nombre', { length: 255 }).notNull(),
   descripcion: text('descripcion'),
   precio_base: decimal('precio_base', { precision: 10, scale: 2 }).notNull(),
+  imagen_url: varchar('imagen_url', { length: 255 }),
 });
 
 export const Productos = mysqlTable('Productos', {

@@ -1,0 +1,452 @@
+---
+import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db } from '../../db/db';
+import { Usuarios, Modelos, Marcas, Categorias, Productos } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+const session = Astro.cookies.get('sportenis_session')?.value;
+if (!session) return Astro.redirect('/login');
+
+const currentUser = await db.select().from(Usuarios).where(eq(Usuarios.id, Number(session)));
+if (currentUser.length === 0 || (currentUser[0].id_rol !== 1 && currentUser[0].id_rol !== 2)) {
+  return Astro.redirect('/crm');
+}
+const loggedUser = currentUser[0];
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = formData.get('action');
+
+  if (action === 'create_modelo') {
+    const id_marca = Number(formData.get('id_marca'));
+    const id_categoria = Number(formData.get('id_categoria'));
+    const nombre = formData.get('nombre') as string;
+    const descripcion = formData.get('descripcion') as string;
+    const precio_base = formData.get('precio_base') as string;
+    
+    let imagen_url = '';
+    const imageFile = formData.get('imagen_file') as File;
+    if (imageFile && imageFile.size > 0) {
+      const buffer = Buffer.from(await imageFile.arrayBuffer());
+      const savePath = path.join(process.cwd(), 'public/img/productos', imageFile.name);
+      await fs.writeFile(savePath, buffer);
+      imagen_url = imageFile.name;
+    }
+
+    await db.insert(Modelos).values({
+      id_marca, id_categoria, nombre, descripcion, precio_base, imagen_url
+    });
+  } else if (action === 'create_producto') {
+    const id_modelo = Number(formData.get('id_modelo'));
+    const sku = formData.get('sku') as string;
+    const talla_cm = formData.get('talla_cm') as string;
+    const color = formData.get('color') as string;
+    const precio_venta = formData.get('precio_venta') as string;
+    const costo = formData.get('costo') as string;
+    const stock = Number(formData.get('stock'));
+    const estado = formData.get('estado') as string;
+    const badge = formData.get('badge') as string;
+    const theme_class = formData.get('theme_class') as string;
+
+    await db.insert(Productos).values({
+      id_modelo, sku, talla_cm, color, precio_venta, costo, stock, estado, badge, theme_class
+    });
+  } else if (action === 'delete_modelo') {
+    const id = Number(formData.get('id'));
+    await db.delete(Productos).where(eq(Productos.id_modelo, id));
+    await db.delete(Modelos).where(eq(Modelos.id, id));
+  } else if (action === 'delete_producto') {
+    const id = Number(formData.get('id'));
+    await db.delete(Productos).where(eq(Productos.id, id));
+  } else if (action === 'update_modelo') {
+    const id = Number(formData.get('id'));
+    const updateData: any = {
+      id_marca: Number(formData.get('id_marca')),
+      id_categoria: Number(formData.get('id_categoria')),
+      nombre: formData.get('nombre') as string,
+      descripcion: formData.get('descripcion') as string,
+      precio_base: formData.get('precio_base') as string
+    };
+    
+    const imageFile = formData.get('imagen_file') as File;
+    if (imageFile && imageFile.size > 0) {
+      const buffer = Buffer.from(await imageFile.arrayBuffer());
+      const savePath = path.join(process.cwd(), 'public/img/productos', imageFile.name);
+      await fs.writeFile(savePath, buffer);
+      updateData.imagen_url = imageFile.name;
+    } else {
+      updateData.imagen_url = formData.get('current_imagen_url') as string;
+    }
+
+    await db.update(Modelos).set(updateData).where(eq(Modelos.id, id));
+  } else if (action === 'update_producto') {
+    const id = Number(formData.get('id'));
+    await db.update(Productos).set({
+      id_modelo: Number(formData.get('id_modelo')),
+      sku: formData.get('sku') as string,
+      talla_cm: formData.get('talla_cm') as string,
+      color: formData.get('color') as string,
+      precio_venta: formData.get('precio_venta') as string,
+      costo: formData.get('costo') as string,
+      stock: Number(formData.get('stock')),
+      estado: formData.get('estado') as string,
+      badge: formData.get('badge') as string,
+      theme_class: formData.get('theme_class') as string
+    }).where(eq(Productos.id, id));
+  }
+  return Astro.redirect(Astro.url.pathname);
+}
+
+const marcasList = await db.select().from(Marcas);
+const categoriasList = await db.select().from(Categorias);
+
+const modelosList = await db
+  .select({
+    id: Modelos.id,
+    id_marca: Modelos.id_marca,
+    id_categoria: Modelos.id_categoria,
+    descripcion: Modelos.descripcion,
+    nombre: Modelos.nombre,
+    precio: Modelos.precio_base,
+    imagen: Modelos.imagen_url,
+    marca: Marcas.nombre,
+    categoria: Categorias.nombre
+  })
+  .from(Modelos)
+  .leftJoin(Marcas, eq(Modelos.id_marca, Marcas.id))
+  .leftJoin(Categorias, eq(Modelos.id_categoria, Categorias.id));
+
+const productosList = await db
+  .select({
+    id: Productos.id,
+    id_modelo: Productos.id_modelo,
+    sku: Productos.sku,
+    color: Productos.color,
+    talla: Productos.talla_cm,
+    precio: Productos.precio_venta,
+    costo: Productos.costo,
+    stock: Productos.stock,
+    estado: Productos.estado,
+    badge: Productos.badge,
+    theme_class: Productos.theme_class,
+    modelo: Modelos.nombre
+  })
+  .from(Productos)
+  .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id));
+
+---
+
+<CrmLayout title="Productos" activePath="/crm/productos">
+  <div class="header-actions">
+    <h1 class="crm-title">Gestión de Catálogo</h1>
+    <div style="display: flex; gap: 10px;">
+      <button class="btn-outline" onclick="document.getElementById('modalCreateModelo').showModal()">+ Nuevo Modelo</button>
+      <button class="btn-primary" onclick="document.getElementById('modalCreateProducto').showModal()">+ Nueva Variante de Producto</button>
+    </div>
+  </div>
+
+  <div class="crm-card" style="margin-bottom: 30px;">
+    <h2>Modelos Base</h2>
+    <div class="table-responsive">
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th>Imagen</th>
+            <th>Nombre</th>
+            <th>Marca</th>
+            <th>Categoría</th>
+            <th>Precio Base</th>
+            <th class="text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {modelosList.map(modelo => (
+            <tr>
+              <td>
+                {modelo.imagen ? (
+                  <img src={`/img/productos/${modelo.imagen}`} alt={modelo.nombre} style="width: 50px; height: 50px; object-fit: cover; border-radius: 4px;" />
+                ) : (
+                  <div style="width: 50px; height: 50px; background: #eee; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #999;">Sin img</div>
+                )}
+              </td>
+              <td><strong>{modelo.nombre}</strong></td>
+              <td>{modelo.marca}</td>
+              <td>{modelo.categoria}</td>
+              <td>${modelo.precio}</td>
+              <td class="text-right" style="white-space: nowrap;">
+                <button 
+                  class="action-btn" 
+                  title="Editar" 
+                  onclick={`openEditModelo(${modelo.id}, '${modelo.nombre}', ${modelo.id_marca}, ${modelo.id_categoria}, '${modelo.precio}', '${modelo.imagen || ''}', \`${modelo.descripcion || ''}\`)`}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <form method="POST" style="display:inline;" onsubmit="return confirm('¿Eliminar este modelo? Se borrarán también TODAS sus variantes asociadas.');">
+                  <input type="hidden" name="action" value="delete_modelo" />
+                  <input type="hidden" name="id" value={modelo.id} />
+                  <button type="submit" class="action-btn text-danger" title="Eliminar">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                  </button>
+                </form>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="crm-card">
+    <h2>Inventario Físico (Variantes)</h2>
+    <div class="table-responsive">
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Modelo</th>
+            <th>Color / Talla</th>
+            <th>Stock</th>
+            <th>Precio Venta</th>
+            <th class="text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {productosList.map(producto => (
+            <tr>
+              <td><code>{producto.sku}</code></td>
+              <td><strong>{producto.modelo}</strong></td>
+              <td>{producto.color} {producto.talla ? `- ${producto.talla}cm` : ''}</td>
+              <td><span class={`badge ${producto.stock > 0 ? 'badge-success' : 'badge-danger'}`}>{producto.stock} uds</span></td>
+              <td>${producto.precio}</td>
+              <td class="text-right" style="white-space: nowrap;">
+                <button 
+                  class="action-btn" 
+                  title="Editar" 
+                  onclick={`openEditProducto(${producto.id}, ${producto.id_modelo}, '${producto.sku}', '${producto.color || ''}', '${producto.talla || ''}', '${producto.precio}', '${producto.costo}', ${producto.stock}, '${producto.estado}', '${producto.badge || ''}', '${producto.theme_class || ''}')`}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <form method="POST" style="display:inline;" onsubmit="return confirm('¿Eliminar esta variante permanentemente?');">
+                  <input type="hidden" name="action" value="delete_producto" />
+                  <input type="hidden" name="id" value={producto.id} />
+                  <button type="submit" class="action-btn text-danger" title="Eliminar">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                  </button>
+                </form>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Modal: Crear Modelo -->
+  <dialog id="modalCreateModelo" class="crm-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nuevo Modelo</h2>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalCreateModelo').close()">×</button>
+      </div>
+      <form method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="action" value="create_modelo" />
+        <div class="form-group">
+          <label>Nombre del modelo *</label>
+          <input type="text" name="nombre" required placeholder="Ej. Court Air 2.0" />
+        </div>
+        <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div><label>Marca *</label><select name="id_marca" required>{marcasList.map(m => <option value={m.id}>{m.nombre}</option>)}</select></div>
+          <div><label>Categoría *</label><select name="id_categoria" required>{categoriasList.map(c => <option value={c.id}>{c.nombre}</option>)}</select></div>
+        </div>
+        <div class="form-group">
+          <label>Precio Base *</label>
+          <input type="number" step="0.01" name="precio_base" required placeholder="1599.00" />
+        </div>
+        <div class="form-group">
+          <label>Imagen del modelo (Recomendado)</label>
+          <input type="file" name="imagen_file" accept="image/*" />
+        </div>
+        <div class="form-group">
+          <label>Descripción</label>
+          <textarea name="descripcion" rows="3"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-outline" onclick="document.getElementById('modalCreateModelo').close()">Cancelar</button>
+          <button type="submit" class="btn-primary">Guardar Modelo</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Modal: Editar Modelo -->
+  <dialog id="modalEditModelo" class="crm-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar Modelo</h2>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalEditModelo').close()">×</button>
+      </div>
+      <form method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="action" value="update_modelo" />
+        <input type="hidden" name="id" id="edit_modelo_id" />
+        <div class="form-group">
+          <label>Nombre del modelo *</label>
+          <input type="text" name="nombre" id="edit_modelo_nombre" required />
+        </div>
+        <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div><label>Marca *</label><select name="id_marca" id="edit_modelo_marca" required>{marcasList.map(m => <option value={m.id}>{m.nombre}</option>)}</select></div>
+          <div><label>Categoría *</label><select name="id_categoria" id="edit_modelo_categoria" required>{categoriasList.map(c => <option value={c.id}>{c.nombre}</option>)}</select></div>
+        </div>
+        <div class="form-group">
+          <label>Precio Base *</label>
+          <input type="number" step="0.01" name="precio_base" id="edit_modelo_precio" required />
+        </div>
+        <div class="form-group">
+          <label>Cambiar imagen (deja vacío para mantener la actual)</label>
+          <input type="file" name="imagen_file" accept="image/*" />
+          <input type="hidden" name="current_imagen_url" id="edit_modelo_imagen" />
+        </div>
+        <div class="form-group">
+          <label>Descripción</label>
+          <textarea name="descripcion" id="edit_modelo_descripcion" rows="3"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-outline" onclick="document.getElementById('modalEditModelo').close()">Cancelar</button>
+          <button type="submit" class="btn-primary">Actualizar Modelo</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Modal: Crear Variante de Producto -->
+  <dialog id="modalCreateProducto" class="crm-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nueva Variante de Producto</h2>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalCreateProducto').close()">×</button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="action" value="create_producto" />
+        <div class="form-group">
+          <label>Modelo Base *</label>
+          <select name="id_modelo" required>{modelosList.map(m => <option value={m.id}>{m.nombre}</option>)}</select>
+        </div>
+        <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div><label>SKU (Único) *</label><input type="text" name="sku" required /></div>
+          <div><label>Stock *</label><input type="number" name="stock" required /></div>
+        </div>
+        <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div><label>Color</label><input type="text" name="color" /></div>
+          <div><label>Talla (cm)</label><input type="text" name="talla_cm" /></div>
+        </div>
+        <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div><label>Precio Venta *</label><input type="number" step="0.01" name="precio_venta" required /></div>
+          <div><label>Costo Interno *</label><input type="number" step="0.01" name="costo" required /></div>
+        </div>
+        <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+          <div><label>Estado *</label><select name="estado" required><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option></select></div>
+          <div><label>Badge</label><input type="text" name="badge" /></div>
+          <div><label>Clase CSS Fondo</label><input type="text" name="theme_class" value="product-shoe" /></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-outline" onclick="document.getElementById('modalCreateProducto').close()">Cancelar</button>
+          <button type="submit" class="btn-primary">Guardar Variante</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Modal: Editar Variante de Producto -->
+  <dialog id="modalEditProducto" class="crm-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar Variante de Producto</h2>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalEditProducto').close()">×</button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="action" value="update_producto" />
+        <input type="hidden" name="id" id="edit_producto_id" />
+        <div class="form-group">
+          <label>Modelo Base *</label>
+          <select name="id_modelo" id="edit_producto_modelo" required>{modelosList.map(m => <option value={m.id}>{m.nombre}</option>)}</select>
+        </div>
+        <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div><label>SKU (Único) *</label><input type="text" name="sku" id="edit_producto_sku" required /></div>
+          <div><label>Stock *</label><input type="number" name="stock" id="edit_producto_stock" required /></div>
+        </div>
+        <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div><label>Color</label><input type="text" name="color" id="edit_producto_color" /></div>
+          <div><label>Talla (cm)</label><input type="text" name="talla_cm" id="edit_producto_talla" /></div>
+        </div>
+        <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div><label>Precio Venta *</label><input type="number" step="0.01" name="precio_venta" id="edit_producto_precio" required /></div>
+          <div><label>Costo Interno *</label><input type="number" step="0.01" name="costo" id="edit_producto_costo" required /></div>
+        </div>
+        <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+          <div><label>Estado *</label><select name="estado" id="edit_producto_estado" required><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option></select></div>
+          <div><label>Badge</label><input type="text" name="badge" id="edit_producto_badge" /></div>
+          <div><label>Clase CSS Fondo</label><input type="text" name="theme_class" id="edit_producto_theme" /></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-outline" onclick="document.getElementById('modalEditProducto').close()">Cancelar</button>
+          <button type="submit" class="btn-primary">Actualizar Variante</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+</CrmLayout>
+
+<script is:inline>
+  function openEditModelo(id, nombre, id_marca, id_categoria, precio_base, imagen_url, descripcion) {
+    document.getElementById('edit_modelo_id').value = id;
+    document.getElementById('edit_modelo_nombre').value = nombre;
+    document.getElementById('edit_modelo_marca').value = id_marca;
+    document.getElementById('edit_modelo_categoria').value = id_categoria;
+    document.getElementById('edit_modelo_precio').value = precio_base;
+    document.getElementById('edit_modelo_imagen').value = imagen_url;
+    document.getElementById('edit_modelo_descripcion').value = descripcion;
+    document.getElementById('modalEditModelo').showModal();
+  }
+
+  function openEditProducto(id, id_modelo, sku, color, talla, precio, costo, stock, estado, badge, theme) {
+    document.getElementById('edit_producto_id').value = id;
+    document.getElementById('edit_producto_modelo').value = id_modelo;
+    document.getElementById('edit_producto_sku').value = sku;
+    document.getElementById('edit_producto_color').value = color;
+    document.getElementById('edit_producto_talla').value = talla;
+    document.getElementById('edit_producto_precio').value = precio;
+    document.getElementById('edit_producto_costo').value = costo;
+    document.getElementById('edit_producto_stock').value = stock;
+    document.getElementById('edit_producto_estado').value = estado;
+    document.getElementById('edit_producto_badge').value = badge;
+    document.getElementById('edit_producto_theme').value = theme;
+    document.getElementById('modalEditProducto').showModal();
+  }
+</script>
+
+<style>
+  .header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .crm-title { margin-bottom: 0; }
+  .table-responsive { overflow-x: auto; margin: 0 -24px; }
+  .crm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .crm-table th { text-align: left; padding: 12px 24px; border-bottom: 2px solid var(--color-border); color: var(--color-text-muted); font-weight: 700; }
+  .crm-table td { padding: 16px 24px; border-bottom: 1px solid var(--color-border); }
+  .crm-table tbody tr:hover { background: var(--color-bg); }
+  .text-right { text-align: right; }
+  .action-btn { background: none; border: none; cursor: pointer; font-size: 16px; opacity: 0.6; margin-left: 8px; color: inherit; }
+  .action-btn:hover { opacity: 1; color: var(--color-text); }
+  .action-btn.text-danger:hover { color: var(--color-danger); }
+  .crm-modal { border: none; border-radius: 12px; padding: 0; width: 100%; max-width: 600px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+  .crm-modal::backdrop { background: rgba(0,0,0,0.5); }
+  .modal-content { padding: 24px; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .modal-header h2 { margin: 0; font-size: 20px; }
+  .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: var(--color-text-muted); }
+  .form-group { margin-bottom: 16px; text-align: left; }
+  .form-group label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+  .form-group select, .form-group input, .form-group textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 6px; font-family: inherit; font-size: 14px; }
+  .btn-outline { background: transparent; border: 1px solid var(--color-border); color: var(--color-text); padding: 10px 16px; font-size: 12px; font-weight: 700; text-transform: uppercase; border-radius: 6px; cursor: pointer; }
+  .btn-outline:hover { background: var(--color-bg); }
+  .modal-footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
+</style>
