@@ -723,7 +723,7 @@ if (user.length > 0) {
   logoutBtn && logoutBtn.addEventListener('click', () => {
     // En una app real esto llamaría al endpoint de logout o limpiaría cookies
     document.cookie = "sportenis_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-    window.location.href = '/login';
+    window.location.href = '/';
   });
 
   // --- Borrar cuenta ---
@@ -772,7 +772,7 @@ if (user.length > 0) {
       const res = await fetch('/api/delete-account', { method: 'POST' });
       if (res.ok) {
         document.cookie = "sportenis_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-        window.location.href = '/login';
+        window.location.href = '/';
       } else {
         throw new Error('Error del servidor');
       }

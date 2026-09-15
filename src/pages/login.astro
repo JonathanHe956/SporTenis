@@ -13,7 +13,7 @@ if (Astro.request.method === 'POST') {
   
   if (formData.get('action') === 'logout') {
     Astro.cookies.delete('sportenis_session', { path: '/' });
-    return Astro.redirect('/login');
+    return Astro.redirect('/');
   }
 
   const email = formData.get('email')?.toString();
