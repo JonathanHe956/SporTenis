@@ -18,8 +18,14 @@ let userRolId = 0;
 if (crmUserId) {
   const user = await db.select().from(Usuarios).where(eq(Usuarios.id, Number(crmUserId)));
   if (user.length > 0) {
-    userName = user[0].nombre.split(' ')[0]; // Primer nombre
-    userInitial = userName.charAt(0).toUpperCase();
+    userName = user[0].nombre?.trim() || 'Admin';
+    const initials = userName
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(part => part.charAt(0).toUpperCase())
+      .join('')
+      .slice(0, 2);
+    userInitial = initials || 'A';
     userRolId = user[0].id_rol;
   }
 }
