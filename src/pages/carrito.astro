@@ -71,7 +71,7 @@ const cartItems = [
                 <div class="qty-cell">
                   <div class="counter-control">
                     <button type="button" class="btn-qty dec" aria-label="Disminuir">−</button>
-                    <input type="number" class="qty-field" value={item.quantity} min="1" max="10" readonly />
+                    <input type="number" class="qty-field" value={item.quantity} min="1" max="10" readonly oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
                     <button type="button" class="btn-qty inc" aria-label="Aumentar">+</button>
                   </div>
                 </div>

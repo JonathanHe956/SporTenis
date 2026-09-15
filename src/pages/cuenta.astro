@@ -116,7 +116,7 @@ if (user.length > 0) {
             <!-- Teléfono -->
             <div class="field-group">
               <label for="telefono">Número de teléfono</label>
-              <input type="tel" id="telefono" name="telefono" value={userData.telefono} placeholder="ej. 5512345678" autocomplete="tel" />
+              <input type="tel" id="telefono" name="telefono" value={userData.telefono} placeholder="ej. 5512345678" autocomplete="tel" oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
               <span class="field-error" id="error-telefono"></span>
             </div>
 

@@ -4,29 +4,10 @@ import { db } from '../../db/db';
 import { Interacciones, Clientes, TiposInteraccion } from '../../db/schema';
 import { eq, desc, and, gte, lte } from 'drizzle-orm';
 
-// En un sistema real, este ID vendría de la sesión autenticada.
-const usuarioActualId = 1; 
-
-const searchParams = Astro.url.searchParams;
-const startDateParam = searchParams.get('start_date');
-const endDateParam = searchParams.get('end_date');
-
-// Default a un rango donde sabemos que hay datos en nuestro seed (Mayo 2025)
-const currentStartDate = startDateParam || '2025-05-01'; 
-const currentEndDate = endDateParam || '2025-05-15'; 
+const session = Astro.cookies.get('sportenis_session');
+const usuarioActualId = session ? Number(session.value) : 0;
 
 let queryConditions = [eq(Interacciones.id_usuario, usuarioActualId)];
-
-if (currentStartDate) {
-  // Configurar al inicio del día
-  const start = new Date(`${currentStartDate}T00:00:00Z`);
-  queryConditions.push(gte(Interacciones.fecha_hora, start));
-}
-if (currentEndDate) {
-  // Configurar al final del día
-  const end = new Date(`${currentEndDate}T23:59:59Z`);
-  queryConditions.push(lte(Interacciones.fecha_hora, end));
-}
 
 const actividades = await db
   .select({
@@ -46,16 +27,6 @@ const actividades = await db
 <CrmLayout title="Mi Actividad" activePath="/crm/actividad">
   <div class="header-actions">
     <h1 class="crm-title">Mi Actividad</h1>
-    <form method="GET" class="date-filter-form">
-      <div class="date-filter">
-        <input type="date" name="start_date" value={currentStartDate} required />
-        <span> - </span>
-        <input type="date" name="end_date" value={currentEndDate} required />
-        <button type="submit" class="filter-btn" title="Filtrar por fechas">
-          <svg style="vertical-align: middle;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        </button>
-      </div>
-    </form>
   </div>
 
   <div class="crm-card">
@@ -81,7 +52,7 @@ const actividades = await db
           {actividades.length === 0 && (
             <tr>
               <td colspan="4" class="text-center" style="padding: 32px; color: var(--color-text-muted)">
-                No tienes actividad registrada en este rango de fechas.
+                No tienes actividad registrada.
               </td>
             </tr>
           )}

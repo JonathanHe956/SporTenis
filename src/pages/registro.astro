@@ -102,7 +102,7 @@ if (Astro.request.method === 'POST') {
 
           <div class="field-group">
             <label for="telefono">Número de teléfono</label>
-            <input type="tel" id="telefono" name="telefono" placeholder="5512345678" autocomplete="tel" inputmode="numeric" required />
+            <input type="tel" id="telefono" name="telefono" placeholder="5512345678" autocomplete="tel" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')" required />
             <span class="field-error" id="error-telefono"></span>
           </div>
 

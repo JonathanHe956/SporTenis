@@ -119,7 +119,7 @@ const canViewCrm = canAccessCrm(user?.role);
 <dialog class="product-dialog" id="productDialog" aria-labelledby="dialogTitle">
   <button class="dialog-close" type="button" aria-label="Cerrar detalle">Cerrar</button>
   <div class="dialog-visual" id="dialogVisual"><i></i></div>
-  <div class="dialog-content"><p class="eyebrow" id="dialogType"></p><h2 id="dialogTitle"></h2><strong class="dialog-price" id="dialogPrice"></strong><p class="dialog-description" id="dialogDescription"></p><label for="productOption">Color</label><select id="productOption"></select><label for="productQuantity">Cantidad</label><input id="productQuantity" type="number" min="1" value="1" /><button class="primary-button add-button" type="button" id="addToCart">Añadir al carrito <span>↗</span></button><p class="dialog-feedback" id="dialogFeedback" role="status"></p></div>
+  <div class="dialog-content"><p class="eyebrow" id="dialogType"></p><h2 id="dialogTitle"></h2><strong class="dialog-price" id="dialogPrice"></strong><p class="dialog-description" id="dialogDescription"></p><label for="productOption">Color</label><select id="productOption"></select><label for="productQuantity">Cantidad</label><input id="productQuantity" type="number" min="1" value="1" oninput="this.value = this.value.replace(/[^0-9]/g, '')" /><button class="primary-button add-button" type="button" id="addToCart">Añadir al carrito <span>↗</span></button><p class="dialog-feedback" id="dialogFeedback" role="status"></p></div>
 </dialog>
 
 <style>

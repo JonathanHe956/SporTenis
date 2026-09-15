@@ -15,10 +15,12 @@ if (Astro.request.method === 'POST') {
   if (action === 'new_interaction') {
     const tipoId = Number(formData.get('tipo_id'));
     const desc = formData.get('descripcion') as string;
+    const session = Astro.cookies.get('sportenis_session');
+    const currentUserId = session ? Number(session.value) : 1;
     
     await db.insert(Interacciones).values({
       id_cliente: Number(id),
-      id_usuario: 1, // Hardcoded Admin for demo
+      id_usuario: currentUserId,
       id_tipo_interaccion: tipoId,
       descripcion: desc,
       fecha_hora: new Date()
@@ -285,7 +287,7 @@ const initials = cliente.nombre.substring(0, 2).toUpperCase();
 
         <div class="form-group">
           <label>Teléfono</label>
-          <input type="tel" name="telefono" value={cliente.telefono || ''} />
+          <input type="tel" name="telefono" value={cliente.telefono || ''} oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
         </div>
 
         <div class="modal-footer">
