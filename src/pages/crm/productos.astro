@@ -3,8 +3,6 @@ import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Usuarios, Modelos, Marcas, Categorias, Productos } from '../../db/schema';
 import { eq } from 'drizzle-orm';
-import fs from 'node:fs/promises';
-import path from 'node:path';
 
 const session = Astro.cookies.get('sportenis_session')?.value;
 if (!session) return Astro.redirect('/login');
@@ -25,19 +23,14 @@ if (Astro.request.method === 'POST') {
     const nombre = formData.get('nombre') as string;
     const descripcion = formData.get('descripcion') as string;
     const precio_base = formData.get('precio_base') as string;
-    
-    let imagen_url = '';
-    const imageFile = formData.get('imagen_file') as File;
-    if (imageFile && imageFile.size > 0) {
-      const buffer = Buffer.from(await imageFile.arrayBuffer());
-      const savePath = path.join(process.cwd(), 'public/img/productos', imageFile.name);
-      await fs.writeFile(savePath, buffer);
-      imagen_url = imageFile.name;
-    }
 
     await db.insert(Modelos).values({
-      id_marca, id_categoria, nombre, descripcion, precio_base, imagen_url
+      id_marca, id_categoria, nombre, descripcion, precio_base
     });
+  } else if (action === 'create_marca') {
+    const nombre = formData.get('nombre') as string;
+
+    await db.insert(Marcas).values({ nombre });
   } else if (action === 'create_producto') {
     const id_modelo = Number(formData.get('id_modelo'));
     const sku = formData.get('sku') as string;
@@ -69,16 +62,6 @@ if (Astro.request.method === 'POST') {
       descripcion: formData.get('descripcion') as string,
       precio_base: formData.get('precio_base') as string
     };
-    
-    const imageFile = formData.get('imagen_file') as File;
-    if (imageFile && imageFile.size > 0) {
-      const buffer = Buffer.from(await imageFile.arrayBuffer());
-      const savePath = path.join(process.cwd(), 'public/img/productos', imageFile.name);
-      await fs.writeFile(savePath, buffer);
-      updateData.imagen_url = imageFile.name;
-    } else {
-      updateData.imagen_url = formData.get('current_imagen_url') as string;
-    }
 
     await db.update(Modelos).set(updateData).where(eq(Modelos.id, id));
   } else if (action === 'update_producto') {
@@ -110,7 +93,6 @@ const modelosList = await db
     descripcion: Modelos.descripcion,
     nombre: Modelos.nombre,
     precio: Modelos.precio_base,
-    imagen: Modelos.imagen_url,
     marca: Marcas.nombre,
     categoria: Categorias.nombre
   })
@@ -142,6 +124,7 @@ const productosList = await db
   <div class="header-actions">
     <h1 class="crm-title">Gestión de Catálogo</h1>
     <div style="display: flex; gap: 10px;">
+      <button class="btn-outline" onclick="document.getElementById('modalCreateMarca').showModal()">+ Nueva Marca</button>
       <button class="btn-outline" onclick="document.getElementById('modalCreateModelo').showModal()">+ Nuevo Modelo</button>
       <button class="btn-primary" onclick="document.getElementById('modalCreateProducto').showModal()">+ Nueva Variante de Producto</button>
     </div>
@@ -153,7 +136,6 @@ const productosList = await db
       <table class="crm-table">
         <thead>
           <tr>
-            <th>Imagen</th>
             <th>Nombre</th>
             <th>Marca</th>
             <th>Categoría</th>
@@ -164,13 +146,6 @@ const productosList = await db
         <tbody>
           {modelosList.map(modelo => (
             <tr>
-              <td>
-                {modelo.imagen ? (
-                  <img src={`/img/productos/${modelo.imagen}`} alt={modelo.nombre} style="width: 50px; height: 50px; object-fit: cover; border-radius: 4px;" />
-                ) : (
-                  <div style="width: 50px; height: 50px; background: #eee; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #999;">Sin img</div>
-                )}
-              </td>
               <td><strong>{modelo.nombre}</strong></td>
               <td>{modelo.marca}</td>
               <td>{modelo.categoria}</td>
@@ -179,7 +154,7 @@ const productosList = await db
                 <button 
                   class="action-btn" 
                   title="Editar" 
-                  onclick={`openEditModelo(${modelo.id}, '${modelo.nombre}', ${modelo.id_marca}, ${modelo.id_categoria}, '${modelo.precio}', '${modelo.imagen || ''}', \`${modelo.descripcion || ''}\`)`}
+                  onclick={`openEditModelo(${modelo.id}, '${modelo.nombre}', ${modelo.id_marca}, ${modelo.id_categoria}, '${modelo.precio}', \`${modelo.descripcion || ''}\`)`}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
@@ -244,13 +219,33 @@ const productosList = await db
   </div>
 
   <!-- Modal: Crear Modelo -->
+  <dialog id="modalCreateMarca" class="crm-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nueva Marca</h2>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalCreateMarca').close()">×</button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="action" value="create_marca" />
+        <div class="form-group">
+          <label>Nombre de la marca *</label>
+          <input type="text" name="nombre" required placeholder="Ej. AeroCourt" />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-outline" onclick="document.getElementById('modalCreateMarca').close()">Cancelar</button>
+          <button type="submit" class="btn-primary">Guardar Marca</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
   <dialog id="modalCreateModelo" class="crm-modal">
     <div class="modal-content">
       <div class="modal-header">
         <h2>Nuevo Modelo</h2>
         <button type="button" class="close-btn" onclick="document.getElementById('modalCreateModelo').close()">×</button>
       </div>
-      <form method="POST" enctype="multipart/form-data">
+      <form method="POST">
         <input type="hidden" name="action" value="create_modelo" />
         <div class="form-group">
           <label>Nombre del modelo *</label>
@@ -263,10 +258,6 @@ const productosList = await db
         <div class="form-group">
           <label>Precio Base *</label>
           <input type="number" step="0.01" name="precio_base" required placeholder="1599.00" />
-        </div>
-        <div class="form-group">
-          <label>Imagen del modelo (Recomendado)</label>
-          <input type="file" name="imagen_file" accept="image/*" />
         </div>
         <div class="form-group">
           <label>Descripción</label>
@@ -287,7 +278,7 @@ const productosList = await db
         <h2>Editar Modelo</h2>
         <button type="button" class="close-btn" onclick="document.getElementById('modalEditModelo').close()">×</button>
       </div>
-      <form method="POST" enctype="multipart/form-data">
+      <form method="POST">
         <input type="hidden" name="action" value="update_modelo" />
         <input type="hidden" name="id" id="edit_modelo_id" />
         <div class="form-group">
@@ -301,11 +292,6 @@ const productosList = await db
         <div class="form-group">
           <label>Precio Base *</label>
           <input type="number" step="0.01" name="precio_base" id="edit_modelo_precio" required />
-        </div>
-        <div class="form-group">
-          <label>Cambiar imagen (deja vacío para mantener la actual)</label>
-          <input type="file" name="imagen_file" accept="image/*" />
-          <input type="hidden" name="current_imagen_url" id="edit_modelo_imagen" />
         </div>
         <div class="form-group">
           <label>Descripción</label>
@@ -398,13 +384,12 @@ const productosList = await db
 </CrmLayout>
 
 <script is:inline>
-  function openEditModelo(id, nombre, id_marca, id_categoria, precio_base, imagen_url, descripcion) {
+  function openEditModelo(id, nombre, id_marca, id_categoria, precio_base, descripcion) {
     document.getElementById('edit_modelo_id').value = id;
     document.getElementById('edit_modelo_nombre').value = nombre;
     document.getElementById('edit_modelo_marca').value = id_marca;
     document.getElementById('edit_modelo_categoria').value = id_categoria;
     document.getElementById('edit_modelo_precio').value = precio_base;
-    document.getElementById('edit_modelo_imagen').value = imagen_url;
     document.getElementById('edit_modelo_descripcion').value = descripcion;
     document.getElementById('modalEditModelo').showModal();
   }
