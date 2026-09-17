@@ -1,5 +1,5 @@
 ---
-import CrmLayout from '../../layouts/CrmLayout.astro';
+import AdminLayout from '../../layouts/AdminLayout.astro';
 import { db } from '../../db/db';
 import { Interacciones, Clientes, TiposInteraccion } from '../../db/schema';
 import { eq, desc, and, gte, lte } from 'drizzle-orm';
@@ -24,7 +24,7 @@ const actividades = await db
   .orderBy(desc(Interacciones.fecha_hora));
 ---
 
-<CrmLayout title="Mi Actividad" activePath="/crm/actividad">
+<AdminLayout title="Mi Actividad" activePath="/crm/actividad">
   <div class="header-actions">
     <h1 class="crm-title">Mi Actividad</h1>
   </div>
@@ -64,7 +64,7 @@ const actividades = await db
       <span>Mostrando {actividades.length} actividades encontradas</span>
     </div>
   </div>
-</CrmLayout>
+</AdminLayout>
 
 <style>
   .header-actions {

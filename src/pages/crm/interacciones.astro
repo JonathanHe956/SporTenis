@@ -1,5 +1,5 @@
 ---
-import CrmLayout from '../../layouts/CrmLayout.astro';
+import AdminLayout from '../../layouts/AdminLayout.astro';
 import { db } from '../../db/db';
 import { Interacciones, Clientes, TiposInteraccion, Usuarios } from '../../db/schema';
 import { eq, desc, and, gte, lte } from 'drizzle-orm';
@@ -8,10 +8,6 @@ const session = Astro.cookies.get('sportenis_session');
 const currentUserId = session ? Number(session.value) : 0;
 
 let queryConditions = [];
-
-if (currentUserId > 0) {
-  queryConditions.push(eq(Interacciones.id_usuario, currentUserId));
-}
 
 const todasLasInteracciones = await db
   .select({
@@ -31,7 +27,7 @@ const todasLasInteracciones = await db
   .orderBy(desc(Interacciones.fecha_hora));
 ---
 
-<CrmLayout title="Interacciones Globales" activePath="/crm/interacciones">
+<AdminLayout title="Interacciones Globales" activePath="/crm/interacciones">
   <div class="header-actions">
     <h1 class="crm-title">Bitácora Global de Interacciones</h1>
   </div>
@@ -73,7 +69,7 @@ const todasLasInteracciones = await db
       <span>Mostrando {todasLasInteracciones.length} interacciones en total</span>
     </div>
   </div>
-</CrmLayout>
+</AdminLayout>
 
 <style>
   .header-actions {

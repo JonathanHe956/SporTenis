@@ -1,5 +1,5 @@
 ---
-import CrmLayout from '../../layouts/CrmLayout.astro';
+import AdminLayout from '../../layouts/AdminLayout.astro';
 import { db } from '../../db/db';
 import { Clientes, Interacciones } from '../../db/schema';
 
@@ -38,7 +38,7 @@ const clientesEnRiesgoList = todosLosClientes.map(c => {
 const sinInteraccion = clientesEnRiesgoList.length;
 ---
 
-<CrmLayout title="Dashboard" activePath="/crm">
+<AdminLayout title="Dashboard" activePath="/crm">
   <h1 class="crm-title">Resumen CRM</h1>
 
   <div class="metrics-grid">
@@ -101,7 +101,7 @@ const sinInteraccion = clientesEnRiesgoList.length;
       <a href="/crm/clientes" class="view-all">Ver todos</a>
     </div>
   </div>
-</CrmLayout>
+</AdminLayout>
 
 <style>
   .metrics-grid {

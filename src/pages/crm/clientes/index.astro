@@ -1,5 +1,5 @@
 ---
-import CrmLayout from '../../../layouts/CrmLayout.astro';
+import AdminLayout from '../../../layouts/AdminLayout.astro';
 import { db } from '../../../db/db';
 import { Clientes, EtapasCrm, Interacciones } from '../../../db/schema';
 import { eq, like, or } from 'drizzle-orm';
@@ -87,7 +87,7 @@ function getStageBadge(stage: string | null) {
 }
 ---
 
-<CrmLayout title="Clientes" activePath="/crm/clientes">
+<AdminLayout title="Clientes" activePath="/crm/clientes">
   <div class="header-actions">
     <h1 class="crm-title">Clientes</h1>
     <button class="btn-primary" onclick="document.getElementById('modalCreate').showModal()">+ Nuevo cliente</button>
@@ -263,7 +263,7 @@ function getStageBadge(stage: string | null) {
       </form>
     </div>
   </dialog>
-</CrmLayout>
+</AdminLayout>
 
 <script is:inline>
   function openEditModal(id, nombre, empresa, correo, telefono, etapaId) {

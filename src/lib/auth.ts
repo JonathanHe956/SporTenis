@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/db';
 import { Usuarios } from '../db/schema';
 
-export const userRoles = ['administrador', 'vendedor', 'cliente'] as const;
+export const userRoles = ['administrador', 'vendedor', 'cliente', 'logistica'] as const;
 export type UserRole = (typeof userRoles)[number];
 
 export interface AuthenticatedUser {
@@ -14,10 +14,14 @@ const roleById: Readonly<Record<number, UserRole>> = {
   1: 'administrador',
   2: 'vendedor',
   3: 'cliente',
+  4: 'logistica',
 };
 
 export const canAccessCrm = (role: UserRole | null | undefined): boolean =>
   role === 'administrador' || role === 'vendedor';
+
+export const canAccessScm = (role: UserRole | null | undefined): boolean =>
+  role === 'administrador' || role === 'logistica';
 
 export const getAuthenticatedUser = async (
   sessionId: string | undefined,

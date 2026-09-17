@@ -1,5 +1,5 @@
 ---
-import CrmLayout from '../../layouts/CrmLayout.astro';
+import AdminLayout from '../../layouts/AdminLayout.astro';
 import { db } from '../../db/db';
 import { Evaluaciones, Clientes, Usuarios } from '../../db/schema';
 import { eq, desc } from 'drizzle-orm';
@@ -39,7 +39,7 @@ function getScoreColor(score: number) {
 }
 ---
 
-<CrmLayout title="Evaluaciones de Clientes" activePath="/crm/evaluaciones">
+<AdminLayout title="Evaluaciones de Clientes" activePath="/crm/evaluaciones">
   <div class="header-actions">
     <h1 class="crm-title">Evaluaciones de Clientes</h1>
   </div>
@@ -121,7 +121,7 @@ function getScoreColor(score: number) {
       </table>
     </div>
   </div>
-</CrmLayout>
+</AdminLayout>
 
 <style>
   .header-actions {
