@@ -4,12 +4,15 @@ import { db } from '../../db/db';
 import { Usuarios, Modelos, Marcas, Categorias, Productos } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 
+const isScm = Astro.url.pathname.startsWith('/scm');
+if (!isScm) return Astro.redirect('/scm/productos');
+
 const session = Astro.cookies.get('sportenis_session')?.value;
 if (!session) return Astro.redirect('/login');
 
 const currentUser = await db.select().from(Usuarios).where(eq(Usuarios.id, Number(session)));
 if (currentUser.length === 0 || (currentUser[0].id_rol !== 1 && currentUser[0].id_rol !== 2)) {
-  return Astro.redirect('/crm');
+  return Astro.redirect('/scm');
 }
 const loggedUser = currentUser[0];
 
@@ -120,7 +123,7 @@ const productosList = await db
 
 ---
 
-<CrmLayout title="Productos" activePath="/crm/productos">
+<CrmLayout title="Productos" activePath="/scm/productos">
   <div class="header-actions">
     <h1 class="crm-title">Gestión de Catálogo</h1>
     <div style="display: flex; gap: 10px;">
