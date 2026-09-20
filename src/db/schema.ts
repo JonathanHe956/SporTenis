@@ -25,6 +25,11 @@ export const Marcas = mysqlTable('Marcas', {
   nombre: varchar('nombre', { length: 255 }).notNull(),
 });
 
+export const Proveedores = mysqlTable('Proveedores', {
+  id: int('id').autoincrement().primaryKey(),
+  nombre: varchar('nombre', { length: 255 }).notNull(),
+});
+
 export const Categorias = mysqlTable('Categorias', {
   id: int('id').autoincrement().primaryKey(),
   nombre: varchar('nombre', { length: 255 }).notNull(),
@@ -43,12 +48,15 @@ export const Modelos = mysqlTable('Modelos', {
 export const Productos = mysqlTable('Productos', {
   id: int('id').autoincrement().primaryKey(),
   id_modelo: int('id_modelo').references(() => Modelos.id).notNull(),
+  id_proveedor: int('id_proveedor').references(() => Proveedores.id),
   sku: varchar('sku', { length: 100 }).unique().notNull(),
   talla_cm: varchar('talla_cm', { length: 50 }),
   color: varchar('color', { length: 50 }),
   precio_venta: decimal('precio_venta', { precision: 10, scale: 2 }).notNull(),
   costo: decimal('costo', { precision: 10, scale: 2 }).notNull(),
   stock: int('stock').notNull(),
+  stock_minimo: int('stock_minimo').default(0).notNull(),
+  estrategia_logistica: varchar('estrategia_logistica', { length: 50 }),
   estado: varchar('estado', { length: 100 }).notNull(),
   badge: varchar('badge', { length: 100 }),
   theme_class: varchar('theme_class', { length: 100 }),

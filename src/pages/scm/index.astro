@@ -1,14 +1,206 @@
-﻿---
+---
 import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db } from '../../db/db';
+import { Productos, Proveedores, Modelos } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+
+// Fetch required data for SCM metrics
+const todosLosProductos = await db
+  .select({
+    id: Productos.id,
+    nombre: Modelos.nombre,
+    stock: Productos.stock,
+    stock_minimo: Productos.stock_minimo,
+    costo: Productos.costo,
+  })
+  .from(Productos)
+  .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id));
+
+const todosLosProveedores = await db.select().from(Proveedores);
+
+// Calculate metrics
+const totalProveedores = todosLosProveedores.length;
+const totalProductos = todosLosProductos.length;
+
+let inventarioTotal = 0;
+let valorInventario = 0;
+const productosBajoStock: any[] = [];
+
+for (const p of todosLosProductos) {
+  inventarioTotal += p.stock;
+  valorInventario += (p.stock * Number(p.costo));
+  
+  if (p.stock <= p.stock_minimo) {
+    productosBajoStock.push(p);
+  }
+}
+
+// Formatting currency
+const formatter = new Intl.NumberFormat('es-MX', {
+  style: 'currency',
+  currency: 'MXN',
+});
 ---
 
-<CrmLayout title="Inicio" activePath="/scm">
+<CrmLayout title="Inicio SCM" activePath="/scm">
   <div class="header-actions">
-    <h1 class="crm-title">Inicio</h1>
+    <h1 class="crm-title">Resumen de Cadena de Suministros</h1>
   </div>
 
-  <div class="crm-card">
-    <p>Esta es la página de Inicio para el módulo de Cadena de Suministros (SCM).</p>
+  <div class="metrics-grid">
+    <div class="crm-card metric-card">
+      <h3>Total de Proveedores</h3>
+      <div class="metric-value">{totalProveedores}</div>
+      <p class="metric-desc">Registrados en el sistema</p>
+    </div>
+    
+    <div class="crm-card metric-card">
+      <h3>Total de Productos</h3>
+      <div class="metric-value">{totalProductos}</div>
+      <p class="metric-desc">Referencias en catálogo</p>
+    </div>
+
+    <div class="crm-card metric-card">
+      <h3>Inventario Físico</h3>
+      <div class="metric-value text-success">{inventarioTotal}</div>
+      <p class="metric-desc">Unidades totales disponibles</p>
+    </div>
+
+    <div class="crm-card metric-card">
+      <h3>Valor del Inventario</h3>
+      <div class="metric-value" style="font-size: 32px;">{formatter.format(valorInventario)}</div>
+      <p class="metric-desc">Costo total almacenado</p>
+    </div>
+  </div>
+
+  <div class="dashboard-widgets">
+    <!-- Widget: Alertas de Stock -->
+    <div class="crm-card widget-card">
+      <h3>Alertas de Stock</h3>
+      <div class="risk-list">
+        {productosBajoStock.length > 0 ? (
+          productosBajoStock.slice(0, 5).map(p => (
+            <a href="/scm/productos" class="risk-item">
+              <div>
+                <strong>{p.nombre}</strong>
+                <p>Stock actual: {p.stock} (Min: {p.stock_minimo})</p>
+              </div>
+              <span class="text-danger" style="font-size: 14px; font-weight: bold;">Requiere reabastecer</span>
+            </a>
+          ))
+        ) : (
+          <p style="color: var(--color-text-muted); font-size: 13px;">Todos los productos tienen niveles de stock saludables.</p>
+        )}
+      </div>
+      {productosBajoStock.length > 5 && (
+        <a href="/scm/productos" class="view-all">Ver todos los {productosBajoStock.length} productos</a>
+      )}
+    </div>
+
+    <!-- Widget: Estado General -->
+    <div class="crm-card widget-card">
+      <h3>Salud del Inventario</h3>
+      <div class="chart-container" style="display: flex; flex-direction: column; align-items: flex-start; gap: 24px;">
+        <div style="width: 100%;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="font-size: 14px; font-weight: bold;">Productos Saludables</span>
+            <span style="font-size: 14px; color: var(--color-text-muted);">{totalProductos - productosBajoStock.length} / {totalProductos}</span>
+          </div>
+          <div style="width: 100%; height: 8px; background: var(--color-border); border-radius: 4px; overflow: hidden;">
+            <div style={`width: ${totalProductos > 0 ? ((totalProductos - productosBajoStock.length) / totalProductos) * 100 : 0}%; height: 100%; background: var(--color-success);`}></div>
+          </div>
+        </div>
+        
+        <div style="width: 100%;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="font-size: 14px; font-weight: bold;">Bajo Stock</span>
+            <span style="font-size: 14px; color: var(--color-text-muted);">{productosBajoStock.length} / {totalProductos}</span>
+          </div>
+          <div style="width: 100%; height: 8px; background: var(--color-border); border-radius: 4px; overflow: hidden;">
+            <div style={`width: ${totalProductos > 0 ? (productosBajoStock.length / totalProductos) * 100 : 0}%; height: 100%; background: var(--color-danger);`}></div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </CrmLayout>
 
+<style>
+  .header-actions { margin-bottom: 24px; }
+  .crm-title { margin-bottom: 0; }
+  
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+  .metric-card {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .metric-card h3 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    color: var(--color-text-muted);
+    font-weight: 700;
+  }
+  .metric-value {
+    font-size: 42px;
+    font-weight: 900;
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+  .metric-desc {
+    margin: 0;
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+  .text-success { color: var(--color-success); }
+  .text-danger { color: var(--color-danger); }
+
+  .dashboard-widgets {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  .widget-card {
+    padding: 24px;
+  }
+  .widget-card h3 {
+    margin: 0 0 24px 0;
+    font-size: 16px;
+  }
+
+  /* Risk List */
+  .risk-list {
+    display: flex;
+    flex-direction: column;
+  }
+  .risk-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--color-border);
+    text-decoration: none;
+    color: inherit;
+  }
+  .risk-item:last-child { border-bottom: none; }
+  .risk-item:hover { background: var(--color-bg); margin: 0 -16px; padding: 16px; border-radius: 8px; border-bottom-color: transparent; }
+  .risk-item strong { font-size: 14px; display: block; margin-bottom: 4px; }
+  .risk-item p { margin: 0; font-size: 12px; color: var(--color-text-muted); }
+  
+  .view-all {
+    display: block;
+    text-align: right;
+    margin-top: 16px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-text);
+    text-decoration: none;
+  }
+  .view-all:hover { text-decoration: underline; }
+</style>

@@ -12,7 +12,7 @@ if (currentUser.length === 0) {
   return Astro.redirect('/crm');
 }
 const loggedUser = currentUser[0];
-if (loggedUser.id_rol !== 1 && loggedUser.id_rol !== 2) {
+if (loggedUser.id_rol !== 1) {
   return Astro.redirect('/crm');
 }
 
