@@ -1,14 +1,497 @@
-﻿---
-import CrmLayout from '../../layouts/CrmLayout.astro';
+---
+import CrmLayout from "../../layouts/CrmLayout.astro";
+import { db } from "../../db/db";
+import { Proveedores } from "../../db/schema";
+import { eq } from "drizzle-orm";
+
+const session = Astro.cookies.get("sportenis_session")?.value;
+if (!session) return Astro.redirect("/login");
+
+if (Astro.request.method === "POST") {
+  const formData = await Astro.request.formData();
+  const action = formData.get("action");
+
+  if (action === "create_proveedor") {
+    const nombre = formData.get("nombre") as string;
+    const contacto = formData.get("contacto") as string;
+    const correo = formData.get("correo") as string;
+    const telefono = formData.get("telefono") as string;
+    const direccion = formData.get("direccion") as string;
+    await db
+      .insert(Proveedores)
+      .values({ nombre, contacto, correo, telefono, direccion });
+    return Astro.redirect(Astro.url.pathname);
+  } else if (action === "update_proveedor") {
+    const id = Number(formData.get("id"));
+    const nombre = formData.get("nombre") as string;
+    const contacto = formData.get("contacto") as string;
+    const correo = formData.get("correo") as string;
+    const telefono = formData.get("telefono") as string;
+    const direccion = formData.get("direccion") as string;
+    await db
+      .update(Proveedores)
+      .set({ nombre, contacto, correo, telefono, direccion })
+      .where(eq(Proveedores.id, id));
+    return Astro.redirect(Astro.url.pathname);
+  } else if (action === "delete_proveedor") {
+    const id = Number(formData.get("id"));
+    // Note: Would need to handle foreign key constraints if deleting a supplier that has products
+    await db.delete(Proveedores).where(eq(Proveedores.id, id));
+    return Astro.redirect(Astro.url.pathname);
+  }
+}
+
+const proveedoresList = await db.select().from(Proveedores);
 ---
 
-<CrmLayout title="Proveedores" activePath="/scm/proveedores">
+<CrmLayout title="Proveedores SCM" activePath="/scm/proveedores">
   <div class="header-actions">
     <h1 class="crm-title">Proveedores</h1>
+    <div style="display: flex; gap: 10px;">
+      <button
+        class="btn-primary"
+        onclick="document.getElementById('modalCreateProveedor').showModal()"
+        >+ NUEVO PROVEEDOR</button
+      >
+    </div>
   </div>
 
   <div class="crm-card">
-    <p>Esta es la página de Proveedores para el módulo de Cadena de Suministros (SCM).</p>
+    <div class="table-responsive">
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Contacto</th>
+            <th>Correo</th>
+            <th>Teléfono</th>
+            <th class="text-center">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            proveedoresList.map((proveedor) => (
+              <tr>
+                <td>
+                  <strong>{proveedor.nombre}</strong>
+                </td>
+                <td>{proveedor.contacto}</td>
+                <td>{proveedor.correo}</td>
+                <td>{proveedor.telefono}</td>
+                <td class="text-center" style="white-space: nowrap;">
+                  <button
+                    type="button"
+                    class="action-btn"
+                    title="Editar"
+                    onclick={`openEditProveedor(${proveedor.id}, '${proveedor.nombre}', '${proveedor.contacto || ""}', '${proveedor.correo || ""}', '${proveedor.telefono || ""}', \`${proveedor.direccion || ""}\`)`}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <>
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </>
+                    </svg>
+                  </button>
+                  <form
+                    method="POST"
+                    style="display:inline;"
+                    onsubmit="return confirm('¿Eliminar este proveedor permanentemente?');"
+                  >
+                    <input
+                      type="hidden"
+                      name="action"
+                      value="delete_proveedor"
+                    />
+                    <input type="hidden" name="id" value={proveedor.id} />
+                    <button
+                      type="submit"
+                      class="action-btn text-danger"
+                      title="Eliminar"
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <>
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          <line x1="10" y1="11" x2="10" y2="17" />
+                          <line x1="14" y1="11" x2="14" y2="17" />
+                        </>
+                      </svg>
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            ))
+          }
+          {
+            proveedoresList.length === 0 && (
+              <tr>
+                <td
+                  colspan="5"
+                  style="text-align: center; color: var(--color-text-muted);"
+                >
+                  No hay proveedores registrados.
+                </td>
+              </tr>
+            )
+          }
+        </tbody>
+      </table>
+    </div>
   </div>
+
+  <!-- Modal: Crear Proveedor -->
+  <dialog id="modalCreateProveedor" class="crm-modal scm-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nuevo proveedor</h2>
+        <button
+          type="button"
+          class="close-btn"
+          onclick="document.getElementById('modalCreateProveedor').close()"
+          >×</button
+        >
+      </div>
+      <form method="POST" class="scm-form">
+        <input type="hidden" name="action" value="create_proveedor" />
+
+        <div class="form-row">
+          <label>Nombre</label>
+          <input
+            type="text"
+            name="nombre"
+            placeholder="Nombre del proveedor"
+            required
+          />
+        </div>
+
+        <div class="form-row">
+          <label>Contacto</label>
+          <input
+            type="text"
+            name="contacto"
+            placeholder="Nombre de contacto"
+            required
+          />
+        </div>
+
+        <div class="form-row">
+          <label>Correo</label>
+          <input
+            type="email"
+            name="correo"
+            placeholder="correo@ejemplo.com"
+            required
+          />
+        </div>
+
+        <div class="form-row">
+          <label>Teléfono</label>
+          <input
+            type="text"
+            name="telefono"
+            placeholder="Teléfono"
+            pattern="[0-9]{10}"
+            maxlength="10"
+            minlength="10"
+            oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+          />
+        </div>
+
+        <div class="form-row">
+          <label>Dirección</label>
+          <textarea
+            name="direccion"
+            placeholder="Dirección..."
+            rows="3"
+            style="width: 100%; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; font-family: inherit; color: #4a5568;"
+          ></textarea>
+        </div>
+
+        <div
+          style="display: flex; justify-content: flex-end; gap: 16px; margin-top: 24px;"
+        >
+          <button
+            type="button"
+            class="btn-cancel"
+            onclick="document.getElementById('modalCreateProveedor').close()"
+            >Cancelar</button
+          >
+          <button type="submit" class="btn-save">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Modal: Editar Proveedor -->
+  <dialog id="modalEditProveedor" class="crm-modal scm-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar proveedor</h2>
+        <button
+          type="button"
+          class="close-btn"
+          onclick="document.getElementById('modalEditProveedor').close()"
+          >×</button
+        >
+      </div>
+      <form method="POST" class="scm-form">
+        <input type="hidden" name="action" value="update_proveedor" />
+        <input type="hidden" name="id" id="edit_proveedor_id" />
+
+        <div class="form-row">
+          <label>Nombre</label>
+          <input
+            type="text"
+            name="nombre"
+            id="edit_proveedor_nombre"
+            placeholder="Nombre del proveedor"
+            required
+          />
+        </div>
+
+        <div class="form-row">
+          <label>Contacto</label>
+          <input
+            type="text"
+            name="contacto"
+            id="edit_proveedor_contacto"
+            placeholder="Nombre de contacto"
+            required
+          />
+        </div>
+
+        <div class="form-row">
+          <label>Correo</label>
+          <input
+            type="email"
+            name="correo"
+            id="edit_proveedor_correo"
+            placeholder="correo@ejemplo.com"
+            required
+          />
+        </div>
+
+        <div class="form-row">
+          <label>Teléfono</label>
+          <input
+            type="text"
+            name="telefono"
+            id="edit_proveedor_telefono"
+            placeholder="Teléfono"
+            pattern="[0-9]{10}"
+            maxlength="10"
+            minlength="10"
+            oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+          />
+        </div>
+
+        <div class="form-row">
+          <label>Dirección</label>
+          <textarea
+            name="direccion"
+            id="edit_proveedor_direccion"
+            placeholder="Dirección..."
+            rows="3"
+            style="width: 100%; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; font-family: inherit; color: #4a5568;"
+          ></textarea>
+        </div>
+
+        <div
+          style="display: flex; justify-content: flex-end; gap: 16px; margin-top: 24px;"
+        >
+          <button
+            type="button"
+            class="btn-cancel"
+            onclick="document.getElementById('modalEditProveedor').close()"
+            >Cancelar</button
+          >
+          <button type="submit" class="btn-save">Guardar Cambios</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
 </CrmLayout>
 
+<script is:inline>
+  function openEditProveedor(
+    id,
+    nombre,
+    contacto,
+    correo,
+    telefono,
+    direccion,
+  ) {
+    document.getElementById("edit_proveedor_id").value = id;
+    document.getElementById("edit_proveedor_nombre").value = nombre;
+    document.getElementById("edit_proveedor_contacto").value = contacto;
+    document.getElementById("edit_proveedor_correo").value = correo;
+    document.getElementById("edit_proveedor_telefono").value = telefono;
+    document.getElementById("edit_proveedor_direccion").value = direccion;
+    document.getElementById("modalEditProveedor").showModal();
+  }
+</script>
+
+<style>
+  .header-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  .crm-title {
+    margin-bottom: 0;
+  }
+
+  .table-responsive {
+    overflow-x: auto;
+    margin: 0 -24px;
+  }
+  .crm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .crm-table th {
+    text-align: left;
+    padding: 12px 24px;
+    border-bottom: 2px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-weight: 700;
+  }
+  .crm-table td {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .crm-table tbody tr:hover {
+    background: var(--color-bg);
+  }
+  .text-right {
+    text-align: right;
+  }
+  .text-center {
+    text-align: center !important;
+  }
+  .action-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    opacity: 0.6;
+    margin-left: 8px;
+    color: inherit;
+  }
+  .action-btn:hover {
+    opacity: 1;
+    color: var(--color-text);
+  }
+  .action-btn.text-danger:hover {
+    color: var(--color-danger);
+  }
+
+  /* SCM Modal Styles */
+  .scm-modal {
+    border: none;
+    border-radius: 12px;
+    padding: 0;
+    width: 100%;
+    max-width: 500px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  }
+  .scm-modal::backdrop {
+    background: rgba(0, 0, 0, 0.4);
+  }
+  .modal-content {
+    padding: 32px;
+    background: #ffffff;
+    border-radius: 12px;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  .modal-header h2 {
+    margin: 0;
+    font-size: 18px;
+    color: #001632;
+    font-weight: 700;
+  }
+  .close-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: #001632;
+    font-weight: bold;
+  }
+
+  .scm-form .form-row {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 16px;
+    gap: 16px;
+  }
+
+  .scm-form label {
+    width: 140px;
+    font-size: 13px;
+    color: #4a5568;
+    padding-top: 10px;
+    flex-shrink: 0;
+  }
+
+  .scm-form input {
+    flex: 1;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    color: #4a5568;
+    background-color: #ffffff;
+    width: 100%;
+  }
+
+  .scm-form input:focus {
+    outline: none;
+    border-color: #a0aec0;
+  }
+
+  .btn-cancel {
+    background: transparent;
+    border: 1px solid #00564d;
+    color: #00564d;
+    padding: 10px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .btn-save {
+    background: #00564d;
+    border: none;
+    color: white;
+    padding: 10px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+</style>

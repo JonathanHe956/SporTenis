@@ -28,6 +28,10 @@ export const Marcas = mysqlTable('Marcas', {
 export const Proveedores = mysqlTable('Proveedores', {
   id: int('id').autoincrement().primaryKey(),
   nombre: varchar('nombre', { length: 255 }).notNull(),
+  contacto: varchar('contacto', { length: 255 }),
+  correo: varchar('correo', { length: 255 }),
+  telefono: varchar('telefono', { length: 50 }),
+  direccion: text('direccion'),
 });
 
 export const Categorias = mysqlTable('Categorias', {
