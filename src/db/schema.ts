@@ -190,3 +190,13 @@ export const LogsActividad = mysqlTable('LogsActividad', {
   id_registro_afectado: int('id_registro_afectado'),
   fecha_hora: datetime('fecha_hora').notNull(),
 });
+
+export const ActividadTienda = mysqlTable('ActividadTienda', {
+  id: int('id').autoincrement().primaryKey(),
+  session_id: varchar('session_id', { length: 255 }),
+  id_usuario: int('id_usuario').references(() => Usuarios.id),
+  accion: varchar('accion', { length: 255 }).notNull(),
+  detalles: text('detalles'),
+  fecha_hora: datetime('fecha_hora').notNull(),
+});
+

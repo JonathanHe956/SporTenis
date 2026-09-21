@@ -42,7 +42,23 @@ for (const p of rawProducts) {
     }
   }
 }
-const products = Array.from(productsMap.values());
+let products = Array.from(productsMap.values());
+
+const categoria = Astro.url.searchParams.get('categoria');
+const query = Astro.url.searchParams.get('q');
+
+if (categoria) {
+  if (categoria.toLowerCase() === 'novedades') {
+    products = products.filter(p => p.badge && p.badge.toLowerCase().includes('nuevo'));
+  } else {
+    products = products.filter(p => p.type && p.type.toLowerCase() === categoria.toLowerCase());
+  }
+}
+
+if (query) {
+  products = products.filter(p => p.name.toLowerCase().includes(query.toLowerCase()) || p.description.toLowerCase().includes(query.toLowerCase()) || p.type.toLowerCase().includes(query.toLowerCase()));
+}
+
 const user = Astro.locals.user;
 const isLoggedIn = user !== null;
 
@@ -59,17 +75,22 @@ if (user?.role === 'administrador') {
   adminMenuLabel = 'SCM';
   adminMenuHref = '/scm';
 }
+
+const isFavoritos = Astro.url.pathname.includes('/favoritos');
 ---
 
 <div class="storefront">
   <header class="topbar">
     <a class="brand" href="/" aria-label="SporTenis, inicio"><span class="brand-mark">S</span><span>Spor<span>Tenis</span></span></a>
     <nav aria-label="Navegación principal">
-      {categories.map((category) => <a href={`#${category.toLowerCase()}`}>{category}</a>)}
+      {categories.map((cat) => <a href={`/?categoria=${encodeURIComponent(cat)}`} class={categoria === cat ? 'active' : ''}>{cat}</a>)}
       {adminMenuLabel && <a class="crm-link" href={adminMenuHref}>{adminMenuLabel} <span aria-hidden="true">↗</span></a>}
     </nav>
     <div class="actions">
-      <label class="search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Buscar productos" aria-label="Buscar productos" /></label>
+      <form action="/" method="GET" class="search">
+        <span aria-hidden="true">⌕</span>
+        <input type="search" name="q" placeholder="Buscar productos" aria-label="Buscar productos" value={query || ''} />
+      </form>
       <div class="account-menu">
         <button class="icon-button" type="button" aria-label="Mi cuenta" aria-haspopup="true" aria-expanded="false" id="accountBtn">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -107,9 +128,9 @@ if (user?.role === 'administrador') {
           )}
         </div>
       </div>
-      <button class="icon-button" type="button" aria-label="Favoritos">
+      <a href="/favoritos" class="icon-button" aria-label="Favoritos">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-      </button>
+      </a>
       <a href="/carrito" class="cart" aria-label="Carrito de compra" style="text-decoration: none; color: inherit; display: flex; align-items: center;">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
         <b>0</b>
@@ -332,6 +353,11 @@ if (user?.role === 'administrador') {
     if (!productDialog?.open) {
       productDialog?.showModal();
     }
+    
+    // Track event: view product
+    if (typeof (window as any).trackEvent === 'function') {
+      (window as any).trackEvent('ver_producto', { producto: selectedProduct, precio: button.dataset.price });
+    }
   };
 
   document.querySelectorAll<HTMLButtonElement>('.detail-button').forEach((button) => {
@@ -353,5 +379,73 @@ if (user?.role === 'administrador') {
     if (dialogFeedback) {
       dialogFeedback.textContent = `${selectedProduct} se añadió al carrito.`;
     }
+    
+    // Track event: add to cart
+    if (typeof (window as any).trackEvent === 'function') {
+      (window as any).trackEvent('agregar_carrito', { producto: selectedProduct, cantidad: qty });
+    }
   });
+</script>
+
+<div id="auth-data" data-user-id={user?.id || 'guest'} style="display: none;"></div>
+
+<script>
+  function trackEvent(accion: string, detalles: any = {}) {
+    fetch('/api/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion, detalles })
+    }).catch(console.error);
+  }
+
+  const isFavoritosPage = window.location.pathname.includes('/favoritos');
+  const favButtons = document.querySelectorAll('.favorite-btn');
+  
+  const userId = document.getElementById('auth-data')?.getAttribute('data-user-id') || 'guest';
+  const storageKey = `sportenis-favoritos-${userId}`;
+  const savedFavs = JSON.parse(localStorage.getItem(storageKey) || '[]');
+
+  favButtons.forEach(btn => {
+    const ariaLabel = btn.getAttribute('aria-label') || '';
+    const productName = ariaLabel.replace('Añadir ', '').replace(' a favoritos', '');
+    const card = btn.closest('.product-card');
+
+    if (savedFavs.includes(productName)) {
+      btn.textContent = '♥';
+      btn.style.color = '#e7442e';
+    } else if (isFavoritosPage && card) {
+      (card as HTMLElement).style.display = 'none';
+    }
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const idx = savedFavs.indexOf(productName);
+      if (idx > -1) {
+        savedFavs.splice(idx, 1);
+        btn.textContent = '♡';
+        btn.style.color = '';
+        if (isFavoritosPage && card) (card as HTMLElement).style.display = 'none';
+        trackEvent('favorito_removido', { producto: productName });
+      } else {
+        savedFavs.push(productName);
+        btn.textContent = '♥';
+        btn.style.color = '#e7442e';
+        trackEvent('favorito_agregado', { producto: productName });
+      }
+      localStorage.setItem(storageKey, JSON.stringify(savedFavs));
+      
+      if (isFavoritosPage && savedFavs.length === 0) {
+        const grid = document.querySelector('.product-grid');
+        if (grid) grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; padding: 40px;">No tienes productos favoritos aún.</p>';
+      }
+    });
+  });
+
+  if (isFavoritosPage && savedFavs.length === 0) {
+    const grid = document.querySelector('.product-grid');
+    if (grid) grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; padding: 40px;">No tienes productos favoritos aún.</p>';
+  }
+
+  // Inject trackEvent into global window object for other scripts to use
+  (window as any).trackEvent = trackEvent;
 </script>

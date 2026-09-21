@@ -1,35 +1,44 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import { db } from '../../db/db';
-import { Interacciones, Clientes, TiposInteraccion, Usuarios } from '../../db/schema';
-import { eq, desc, and, gte, lte } from 'drizzle-orm';
+import { Interacciones, Clientes, TiposInteraccion, Usuarios, ActividadTienda } from '../../db/schema';
+import { eq, desc, and } from 'drizzle-orm';
 
 const session = Astro.cookies.get('sportenis_session');
 const currentUserId = session ? Number(session.value) : 0;
 
-let queryConditions = [];
-
-const todasLasInteracciones = await db
+const actividadTienda = await db
   .select({
-    id: Interacciones.id,
-    fecha: Interacciones.fecha_hora,
-    cliente: Clientes.nombre,
-    clienteId: Clientes.id,
-    tipo: TiposInteraccion.nombre,
-    descripcion: Interacciones.descripcion,
-    usuario: Usuarios.nombre
+    id: ActividadTienda.id,
+    fecha: ActividadTienda.fecha_hora,
+    cliente: Usuarios.nombre, // Using Usuarios name if logged in
+    clienteId: ActividadTienda.id_usuario,
+    tipo: ActividadTienda.accion,
+    descripcion: ActividadTienda.detalles,
+    usuario: ActividadTienda.session_id, // We show session_id for guests
+    esActividad: true
   })
-  .from(Interacciones)
-  .leftJoin(Clientes, eq(Interacciones.id_cliente, Clientes.id))
-  .leftJoin(TiposInteraccion, eq(Interacciones.id_tipo_interaccion, TiposInteraccion.id))
-  .leftJoin(Usuarios, eq(Interacciones.id_usuario, Usuarios.id))
-  .where(queryConditions.length > 0 ? and(...queryConditions) : undefined)
-  .orderBy(desc(Interacciones.fecha_hora));
+  .from(ActividadTienda)
+  .leftJoin(Usuarios, eq(ActividadTienda.id_usuario, Usuarios.id))
+  .orderBy(desc(ActividadTienda.fecha_hora));
+
+const todasLasInteracciones = actividadTienda;
+
+// Formatear tipo de actividad
+function formatAccion(accion: string) {
+  const map: Record<string, string> = {
+    'ver_producto': 'Vio Producto',
+    'agregar_carrito': 'Agregó a Carrito',
+    'favorito_agregado': 'Agregó a Favorito',
+    'favorito_removido': 'Quitó de Favorito'
+  };
+  return map[accion] || accion;
+}
 ---
 
 <AdminLayout title="Interacciones Globales" activePath="/crm/interacciones">
   <div class="header-actions">
-    <h1 class="crm-title">Bitácora Global de Interacciones</h1>
+    <h1 class="crm-title">Bitácora Global de Interacciones y Actividad</h1>
   </div>
 
   <div class="crm-card">
@@ -38,26 +47,53 @@ const todasLasInteracciones = await db
         <thead>
           <tr>
             <th>Fecha</th>
-            <th>Agente / Usuario</th>
-            <th>Cliente</th>
-            <th>Tipo</th>
-            <th>Descripción</th>
+            <th>Agente / Sesión</th>
+            <th>Cliente / Usuario</th>
+            <th>Tipo / Acción</th>
+            <th>Descripción / Detalles</th>
           </tr>
         </thead>
         <tbody>
           {todasLasInteracciones.map(act => (
             <tr>
               <td style="white-space: nowrap">{act.fecha.toLocaleString()}</td>
-              <td><strong>{act.usuario}</strong></td>
-              <td><a href={`/crm/clientes/${act.clienteId}`} class="cliente-link">{act.cliente}</a></td>
-              <td><span class="badge badge-neutral">{act.tipo}</span></td>
-              <td>{act.descripcion}</td>
+              <td>
+                {act.esActividad ? (
+                  <span title="ID de Sesión (Invitado)" style="color: var(--color-text-muted)">{act.usuario ? act.usuario : 'N/A'}</span>
+                ) : (
+                  <strong>{act.usuario}</strong>
+                )}
+              </td>
+              <td>
+                {act.esActividad ? (
+                  act.cliente ? <span class="cliente-link">{act.cliente}</span> : <em>Invitado</em>
+                ) : (
+                  <a href={`/crm/clientes/${act.clienteId}`} class="cliente-link">{act.cliente}</a>
+                )}
+              </td>
+              <td>
+                <span class={act.esActividad ? "badge badge-info" : "badge badge-neutral"}>
+                  {act.esActividad ? formatAccion(act.tipo) : act.tipo}
+                </span>
+              </td>
+              <td>
+                {act.esActividad && act.descripcion ? (
+                  <pre style="margin:0; font-family:inherit; font-size:12px; color: var(--color-text-muted)">{
+                    (() => {
+                      try { return JSON.stringify(JSON.parse(act.descripcion), null, 2); } 
+                      catch(e) { return act.descripcion; }
+                    })()
+                  }</pre>
+                ) : (
+                  act.descripcion
+                )}
+              </td>
             </tr>
           ))}
           {todasLasInteracciones.length === 0 && (
             <tr>
               <td colspan="5" class="text-center" style="padding: 32px; color: var(--color-text-muted)">
-                No hay interacciones registradas.
+                No hay interacciones ni actividad registrada.
               </td>
             </tr>
           )}
@@ -66,12 +102,20 @@ const todasLasInteracciones = await db
     </div>
 
     <div class="pagination">
-      <span>Mostrando {todasLasInteracciones.length} interacciones en total</span>
+      <span>Mostrando {todasLasInteracciones.length} registros en total</span>
     </div>
   </div>
 </AdminLayout>
 
 <style>
+  .badge-info {
+    background: #e0f2fe;
+    color: #0369a1;
+  }
+  .badge-neutral {
+    background: #f1f5f9;
+    color: #475569;
+  }
   .header-actions {
     display: flex;
     justify-content: space-between;
