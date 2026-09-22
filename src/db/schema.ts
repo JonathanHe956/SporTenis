@@ -200,3 +200,24 @@ export const ActividadTienda = mysqlTable('ActividadTienda', {
   fecha_hora: datetime('fecha_hora').notNull(),
 });
 
+export const Notificaciones = mysqlTable('Notificaciones', {
+  id: int('id').autoincrement().primaryKey(),
+  tipo: varchar('tipo', { length: 100 }).notNull(),
+  titulo: varchar('titulo', { length: 255 }).notNull(),
+  mensaje: text('mensaje').notNull(),
+  id_producto: int('id_producto').references(() => Productos.id),
+  leida: boolean('leida').default(false).notNull(),
+  fecha_creacion: datetime('fecha_creacion').notNull(),
+});
+
+export const PedidosCompra = mysqlTable('PedidosCompra', {
+  id: int('id').autoincrement().primaryKey(),
+  id_producto: int('id_producto').references(() => Productos.id).notNull(),
+  id_proveedor: int('id_proveedor').references(() => Proveedores.id),
+  cantidad: int('cantidad').notNull(),
+  tipo: varchar('tipo', { length: 50 }).notNull(),
+  estado: varchar('estado', { length: 100 }).notNull(),
+  fecha_creacion: datetime('fecha_creacion').notNull(),
+  fecha_completado: datetime('fecha_completado'),
+});
+

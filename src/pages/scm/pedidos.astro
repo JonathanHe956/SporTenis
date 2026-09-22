@@ -1,14 +1,432 @@
-﻿---
+---
 import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db } from '../../db/db';
+import { Productos, Modelos, Proveedores, PedidosCompra, Notificaciones } from '../../db/schema';
+import { eq, desc, and } from 'drizzle-orm';
+
+const session = Astro.cookies.get('sportenis_session')?.value;
+if (!session) return Astro.redirect('/login');
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = formData.get('action');
+
+  if (action === 'create_pedido') {
+    const id_producto = Number(formData.get('id_producto'));
+    const cantidad = Number(formData.get('cantidad'));
+
+    // Get product's proveedor
+    const producto = await db.select().from(Productos).where(eq(Productos.id, id_producto));
+    const id_proveedor = producto.length > 0 ? producto[0].id_proveedor : null;
+
+    await db.insert(PedidosCompra).values({
+      id_producto,
+      id_proveedor,
+      cantidad,
+      tipo: 'MANUAL',
+      estado: 'Pendiente',
+      fecha_creacion: new Date(),
+    });
+
+    return Astro.redirect(Astro.url.pathname);
+  }
+
+  if (action === 'completar_pedido') {
+    const id = Number(formData.get('id'));
+    
+    // Get the pedido to know the product and quantity
+    const pedido = await db.select().from(PedidosCompra).where(eq(PedidosCompra.id, id));
+    if (pedido.length > 0) {
+      const p = pedido[0];
+      
+      // Update stock
+      const producto = await db.select().from(Productos).where(eq(Productos.id, p.id_producto));
+      if (producto.length > 0) {
+        const newStock = producto[0].stock + p.cantidad;
+        await db.update(Productos).set({ stock: newStock }).where(eq(Productos.id, p.id_producto));
+      }
+
+      // Mark pedido as complete
+      await db.update(PedidosCompra).set({
+        estado: 'Completado',
+        fecha_completado: new Date(),
+      }).where(eq(PedidosCompra.id, id));
+    }
+
+    return Astro.redirect(Astro.url.pathname);
+  }
+
+  if (action === 'cancelar_pedido') {
+    const id = Number(formData.get('id'));
+    await db.update(PedidosCompra).set({ estado: 'Cancelado' }).where(eq(PedidosCompra.id, id));
+    return Astro.redirect(Astro.url.pathname);
+  }
+}
+
+// Fetch all pedidos with product and proveedor info
+const pedidosList = await db
+  .select({
+    id: PedidosCompra.id,
+    id_producto: PedidosCompra.id_producto,
+    cantidad: PedidosCompra.cantidad,
+    tipo: PedidosCompra.tipo,
+    estado: PedidosCompra.estado,
+    fecha_creacion: PedidosCompra.fecha_creacion,
+    fecha_completado: PedidosCompra.fecha_completado,
+    producto: Modelos.nombre,
+    stock_actual: Productos.stock,
+    stock_minimo: Productos.stock_minimo,
+    proveedor: Proveedores.nombre,
+  })
+  .from(PedidosCompra)
+  .leftJoin(Productos, eq(PedidosCompra.id_producto, Productos.id))
+  .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id))
+  .leftJoin(Proveedores, eq(PedidosCompra.id_proveedor, Proveedores.id))
+  .orderBy(desc(PedidosCompra.fecha_creacion));
+
+// Get products list for the create pedido modal
+const productosList = await db
+  .select({
+    id: Productos.id,
+    nombre: Modelos.nombre,
+    stock: Productos.stock,
+    stock_minimo: Productos.stock_minimo,
+    proveedor: Proveedores.nombre,
+  })
+  .from(Productos)
+  .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id))
+  .leftJoin(Proveedores, eq(Productos.id_proveedor, Proveedores.id));
+
+const pendientes = pedidosList.filter(p => p.estado === 'Pendiente').length;
+const completados = pedidosList.filter(p => p.estado === 'Completado').length;
+const automaticos = pedidosList.filter(p => p.tipo === 'AUTOMATICO').length;
 ---
 
-<CrmLayout title="Pedidos" activePath="/scm/pedidos">
+<CrmLayout title="Pedidos de Compra" activePath="/scm/pedidos">
   <div class="header-actions">
-    <h1 class="crm-title">Pedidos</h1>
+    <div>
+      <h1 class="crm-title">Pedidos de Compra</h1>
+      <p class="subtitle">Gestión de pedidos de reabastecimiento — Pull (automático) y Push (manual)</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <button class="btn-secondary" id="btnCheckStock" title="Revisar niveles de stock y generar alertas/pedidos automáticos">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Verificar Stock
+      </button>
+      <button class="btn-primary" onclick="document.getElementById('modalCreatePedido').showModal()">+ Nuevo Pedido Manual</button>
+    </div>
+  </div>
+
+  <!-- Stats Cards -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-number">{pedidosList.length}</div>
+      <div class="stat-label">Total Pedidos</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-warning">{pendientes}</div>
+      <div class="stat-label">Pendientes</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-success">{completados}</div>
+      <div class="stat-label">Completados</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-auto">{automaticos}</div>
+      <div class="stat-label">Automáticos (Pull)</div>
+    </div>
   </div>
 
   <div class="crm-card">
-    <p>Esta es la página de Pedidos para el módulo de Cadena de Suministros (SCM).</p>
+    <div class="table-responsive">
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Producto</th>
+            <th>Proveedor</th>
+            <th>Cantidad</th>
+            <th>Stock Actual</th>
+            <th>Tipo</th>
+            <th>Estado</th>
+            <th>Fecha</th>
+            <th class="text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pedidosList.map(pedido => (
+            <tr>
+              <td><code>#{pedido.id}</code></td>
+              <td><strong>{pedido.producto || 'N/A'}</strong></td>
+              <td>{pedido.proveedor || 'Sin asignar'}</td>
+              <td><strong>{pedido.cantidad} uds</strong></td>
+              <td>
+                <span class={`badge ${(pedido.stock_actual || 0) > (pedido.stock_minimo || 0) ? 'badge-success' : 'badge-danger'}`}>
+                  {pedido.stock_actual || 0}
+                </span>
+                <span style="font-size: 11px; color: #a3a3a3; display: block; margin-top: 2px;">Min: {pedido.stock_minimo || 0}</span>
+              </td>
+              <td>
+                <span class={`badge ${pedido.tipo === 'AUTOMATICO' ? 'badge-pull' : 'badge-push'}`}>
+                  {pedido.tipo === 'AUTOMATICO' ? '🔄 PULL (Auto)' : '📦 PUSH (Manual)'}
+                </span>
+              </td>
+              <td>
+                <span class={`badge ${pedido.estado === 'Completado' ? 'badge-success' : pedido.estado === 'Cancelado' ? 'badge-danger' : 'badge-warning'}`}>
+                  {pedido.estado}
+                </span>
+              </td>
+              <td style="font-size: 12px; color: var(--color-text-muted);">
+                {new Date(pedido.fecha_creacion).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
+                {pedido.fecha_completado && (
+                  <span style="display: block; font-size: 11px; color: #15803d; margin-top: 2px;">
+                    ✓ {new Date(pedido.fecha_completado).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
+                  </span>
+                )}
+              </td>
+              <td class="text-right" style="white-space: nowrap;">
+                {pedido.estado === 'Pendiente' && (
+                  <>
+                    <form method="POST" style="display:inline;" onsubmit="return confirm('¿Marcar este pedido como completado? Se actualizará el stock del producto.');">
+                      <input type="hidden" name="action" value="completar_pedido" />
+                      <input type="hidden" name="id" value={pedido.id} />
+                      <button type="submit" class="action-btn action-complete" title="Completar pedido (agregar stock)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                      </button>
+                    </form>
+                    <form method="POST" style="display:inline;" onsubmit="return confirm('¿Cancelar este pedido?');">
+                      <input type="hidden" name="action" value="cancelar_pedido" />
+                      <input type="hidden" name="id" value={pedido.id} />
+                      <button type="submit" class="action-btn text-danger" title="Cancelar pedido">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      </button>
+                    </form>
+                  </>
+                )}
+                {pedido.estado !== 'Pendiente' && (
+                  <span style="font-size: 11px; color: #a3a3a3;">—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+          {pedidosList.length === 0 && (
+            <tr>
+              <td colspan="9" style="text-align: center; color: var(--color-text-muted); padding: 40px;">
+                No hay pedidos registrados. Los pedidos automáticos (PULL) se crean cuando el stock baja al mínimo.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
   </div>
+
+  <!-- Modal: Crear Pedido Manual -->
+  <dialog id="modalCreatePedido" class="crm-modal scm-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nuevo Pedido Manual (Push)</h2>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalCreatePedido').close()">×</button>
+      </div>
+      <form method="POST" class="scm-form">
+        <input type="hidden" name="action" value="create_pedido" />
+        
+        <div class="form-row">
+          <label>Producto</label>
+          <div class="select-wrapper">
+            <select name="id_producto" required>
+              <option value="" disabled selected>Selecciona un producto</option>
+              {productosList.map(p => (
+                <option value={p.id}>{p.nombre} (Stock: {p.stock}, Min: {p.stock_minimo})</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <label>Cantidad a pedir</label>
+          <input type="number" name="cantidad" min="1" value="10" required />
+        </div>
+        
+        <div class="modal-footer" style="justify-content: center; gap: 16px; margin-top: 32px;">
+          <button type="button" class="btn-cancel" onclick="document.getElementById('modalCreatePedido').close()">Cancelar</button>
+          <button type="submit" class="btn-save">Crear Pedido</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Toast for stock check result -->
+  <div id="stockToast" class="stock-toast"></div>
 </CrmLayout>
 
+<script is:inline>
+  document.addEventListener('DOMContentLoaded', () => {
+    const checkBtn = document.getElementById('btnCheckStock');
+    const toast = document.getElementById('stockToast');
+
+    if (checkBtn) {
+      checkBtn.addEventListener('click', async () => {
+        checkBtn.disabled = true;
+        checkBtn.textContent = 'Verificando...';
+        
+        try {
+          const res = await fetch('/api/check-stock');
+          const data = await res.json();
+          
+          if (data.ok) {
+            let msg = `✅ Revisados: ${data.productosRevisados} productos. `;
+            msg += `Bajo stock: ${data.productosBajoStock}. `;
+            if (data.pedidosCreados > 0) msg += `Pedidos automáticos creados: ${data.pedidosCreados}. `;
+            if (data.notificacionesCreadas > 0) msg += `Alertas generadas: ${data.notificacionesCreadas}.`;
+            if (data.productosBajoStock === 0) msg += `Todo el inventario está saludable.`;
+            
+            showToast(msg, 'success');
+            
+            if (data.pedidosCreados > 0 || data.notificacionesCreadas > 0) {
+              setTimeout(() => location.reload(), 2000);
+            }
+          } else {
+            showToast('❌ Error: ' + data.error, 'error');
+          }
+        } catch (e) {
+          showToast('❌ Error de conexión', 'error');
+        }
+        
+        checkBtn.disabled = false;
+        checkBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Verificar Stock';
+      });
+    }
+
+    function showToast(msg, type) {
+      if (!toast) return;
+      toast.textContent = msg;
+      toast.className = 'stock-toast show ' + type;
+      setTimeout(() => { toast.className = 'stock-toast'; }, 5000);
+    }
+  });
+</script>
+
+<style>
+  .header-actions { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+  .crm-title { margin-bottom: 4px; }
+  .subtitle { margin: 0; font-size: 13px; color: var(--color-text-muted); }
+  
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+  }
+  .stat-number {
+    font-size: 32px;
+    font-weight: 900;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .stat-warning { color: #d97706; }
+  .stat-success { color: var(--color-success); }
+  .stat-auto { color: #2563eb; }
+  .stat-label {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .table-responsive { overflow-x: auto; margin: 0 -24px; }
+  .crm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .crm-table th { text-align: left; padding: 12px 24px; border-bottom: 2px solid var(--color-border); color: var(--color-text-muted); font-weight: 700; }
+  .crm-table td { padding: 14px 24px; border-bottom: 1px solid var(--color-border); }
+  .crm-table tbody tr:hover { background: var(--color-bg); }
+  .text-right { text-align: right; }
+  .action-btn { background: none; border: none; cursor: pointer; font-size: 16px; opacity: 0.6; margin-left: 8px; color: inherit; }
+  .action-btn:hover { opacity: 1; color: var(--color-text); }
+  .action-btn.text-danger:hover { color: var(--color-danger); }
+  .action-complete:hover { color: var(--color-success) !important; opacity: 1; }
+
+  .badge-pull {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+  .badge-push {
+    background: #fef3c7;
+    color: #92400e;
+  }
+  .badge-warning {
+    background: #fef3c7;
+    color: #d97706;
+  }
+
+  /* Modal styles */
+  .scm-modal { border: none; border-radius: 12px; padding: 0; width: 100%; max-width: 500px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+  .scm-modal::backdrop { background: rgba(0,0,0,0.4); }
+  .modal-content { padding: 32px; background: #ffffff; border-radius: 12px; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .modal-header h2 { margin: 0; font-size: 18px; color: #001632; font-weight: 700; }
+  .close-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: #001632; font-weight: bold; }
+  
+  .scm-form .form-row { display: flex; align-items: flex-start; margin-bottom: 16px; gap: 16px; }
+  .scm-form label { width: 140px; font-size: 13px; color: #4a5568; padding-top: 10px; flex-shrink: 0; }
+  .scm-form input, .scm-form select { flex: 1; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-family: inherit; font-size: 14px; color: #4a5568; background-color: #ffffff; width: 100%; }
+  .scm-form input:focus, .scm-form select:focus { outline: none; border-color: #a0aec0; }
+  .select-wrapper { flex: 1; position: relative; }
+  .select-wrapper::after { content: "▼"; font-size: 10px; color: #4a5568; position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+  .scm-form select { appearance: none; padding-right: 30px; }
+  
+  .btn-cancel { background: transparent; border: 1px solid #00564d; color: #00564d; padding: 10px 24px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; }
+  .btn-save { background: #00564d; border: none; color: white; padding: 10px 24px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; }
+  .btn-secondary {
+    background: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    padding: 10px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-secondary:hover { background: var(--color-bg); border-color: var(--color-text); }
+
+  /* Toast notification */
+  .stock-toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    padding: 16px 24px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    max-width: 480px;
+    z-index: 9999;
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.3s ease;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  }
+  .stock-toast.show {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  .stock-toast.success {
+    background: #dcfce7;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+  }
+  .stock-toast.error {
+    background: #fff1ef;
+    color: #d93e2e;
+    border: 1px solid #fecaca;
+  }
+</style>
