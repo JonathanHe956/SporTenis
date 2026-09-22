@@ -1,15 +1,19 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
-import { EtapasCrm, TiposInteraccion, Clientes, Interacciones, Usuarios } from '../../db/schema';
+import { Configuraciones, Usuarios, EtapasCrm, TiposInteraccion } from '../../db/schema';
 import { eq } from 'drizzle-orm';
+const { module } = Astro.params;
+if (module !== 'crm' && module !== 'scm') return Astro.redirect('/404');
+const activePath = `/${module}/configuracion`;
+
 
 const session = Astro.cookies.get('sportenis_session')?.value;
 if (!session) return Astro.redirect('/login');
 
 const currentUser = await db.select().from(Usuarios).where(eq(Usuarios.id, Number(session)));
 if (currentUser.length === 0 || currentUser[0].id_rol !== 1) {
-  return Astro.redirect('/crm');
+  return Astro.redirect('/scm');
 }
 
 if (Astro.request.method === 'POST') {
@@ -20,13 +24,17 @@ if (Astro.request.method === 'POST') {
     await db.insert(EtapasCrm).values({ nombre: formData.get('nombre') as string });
   } else if (action === 'delete_etapa') {
     const id = Number(formData.get('id'));
-    // En produccion se validaría que no haya clientes usando esta etapa
     await db.delete(EtapasCrm).where(eq(EtapasCrm.id, id));
   } else if (action === 'create_tipo') {
     await db.insert(TiposInteraccion).values({ nombre: formData.get('nombre') as string });
-  } else if (action === 'delete_tipo') {
-    const id = Number(formData.get('id'));
-    await db.delete(TiposInteraccion).where(eq(TiposInteraccion.id, id));
+  } else if (action === 'save_scm_config') {
+    const reorden = formData.get('STOCK_REORDEN_CANTIDAD') as string;
+    const existing = await db.select().from(Configuraciones).where(eq(Configuraciones.clave, 'STOCK_REORDEN_CANTIDAD'));
+    if (existing.length > 0) {
+      await db.update(Configuraciones).set({ valor: reorden }).where(eq(Configuraciones.clave, 'STOCK_REORDEN_CANTIDAD'));
+    } else {
+      await db.insert(Configuraciones).values({ clave: 'STOCK_REORDEN_CANTIDAD', valor: reorden, descripcion: 'Cantidad a pedir automáticamente cuando el stock es bajo' });
+    }
   }
   
   return Astro.redirect(Astro.url.pathname);
@@ -34,11 +42,12 @@ if (Astro.request.method === 'POST') {
 
 const etapas = await db.select().from(EtapasCrm);
 const tipos = await db.select().from(TiposInteraccion);
+const configs = await db.select().from(Configuraciones);
 ---
 
-<CrmLayout title="Configuración" activePath="/crm/configuracion">
+<CrmLayout title="Configuración Global" activePath={activePath}>
   <div class="header-actions">
-    <h1 class="crm-title">Configuración de Catálogos CRM</h1>
+    <h1 class="crm-title">Configuración Global (CRM y SCM)</h1>
   </div>
 
   <div class="settings-grid">
@@ -72,7 +81,7 @@ const tipos = await db.select().from(TiposInteraccion);
     <!-- Catálogo de Tipos de Interacción -->
     <div class="crm-card">
       <div class="card-header">
-        <h3>Tipos de Interacción</h3>
+        <h3>Tipos de Interacción (CRM)</h3>
       </div>
       <p class="text-muted" style="margin-bottom: 16px; font-size: 13px;">Canales o motivos por los que contactas a los clientes.</p>
       
@@ -95,6 +104,27 @@ const tipos = await db.select().from(TiposInteraccion);
         <button type="submit" class="btn-outline">Añadir</button>
       </form>
     </div>
+
+    <!-- Configuración SCM -->
+    <div class="crm-card" style="grid-column: 1 / -1;">
+      <div class="card-header">
+        <h3>Logística e Inventario (SCM)</h3>
+      </div>
+      <p class="text-muted" style="margin-bottom: 24px; font-size: 13px;">Ajusta los parámetros para el reabastecimiento automático de productos con stock bajo.</p>
+      
+      <form method="POST" style="max-width: 400px;">
+        <input type="hidden" name="action" value="save_scm_config" />
+        
+        <div class="form-group">
+          <label>Cantidad de restock automático por defecto</label>
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <input type="number" name="STOCK_REORDEN_CANTIDAD" value={configs.find(c => c.clave === 'STOCK_REORDEN_CANTIDAD')?.valor || 50} required min="1" />
+            <button type="submit" class="btn-primary">Guardar</button>
+          </div>
+          <p class="text-muted" style="margin-top: 8px; font-size: 12px;">Cantidad que se pedirá al proveedor cuando un producto llegue a su stock mínimo.</p>
+        </div>
+      </form>
+    </div>
   </div>
 </CrmLayout>
 
@@ -108,6 +138,14 @@ const tipos = await db.select().from(TiposInteraccion);
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
     gap: 24px;
+  }
+
+  .crm-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.02);
   }
 
   .card-header {
@@ -148,6 +186,18 @@ const tipos = await db.select().from(TiposInteraccion);
   }
   .action-btn:hover { opacity: 1; color: var(--color-danger); }
 
+  .action-btn-small {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    opacity: 0.6;
+    margin-left: 8px;
+    color: inherit;
+  }
+  .action-btn-small:hover { opacity: 1; color: var(--color-text); }
+  .action-btn-small.text-danger:hover { color: var(--color-danger); }
+
   .add-form {
     display: flex;
     gap: 8px;
@@ -158,7 +208,24 @@ const tipos = await db.select().from(TiposInteraccion);
     border: 1px solid var(--color-border);
     border-radius: 6px;
     font-family: inherit;
+    font-size: 14px;
   }
+  
+  .btn-primary {
+    background: var(--color-text);
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .btn-primary:hover { background: var(--color-danger); }
   
   .btn-outline {
     background: transparent;
@@ -172,4 +239,66 @@ const tipos = await db.select().from(TiposInteraccion);
     cursor: pointer;
   }
   .btn-outline:hover { background: var(--color-text); color: white; }
+
+  .table-responsive {
+    overflow-x: auto;
+    margin: 0 -24px;
+  }
+  .crm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .crm-table th {
+    text-align: left;
+    padding: 12px 24px;
+    border-bottom: 2px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-weight: 700;
+  }
+  .crm-table td {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .crm-table tbody tr:hover { background: var(--color-bg); }
+  
+  .text-right { text-align: right; }
+
+  /* Modals */
+  .crm-modal {
+    border: none;
+    border-radius: 12px;
+    padding: 0;
+    width: 100%;
+    max-width: 500px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+  }
+  .crm-modal::backdrop { background: rgba(0,0,0,0.5); }
+  .modal-content { padding: 24px; }
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  .modal-header h2 { margin: 0; font-size: 20px; }
+  .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: var(--color-text-muted); }
+  
+  .form-group { margin-bottom: 16px; text-align: left; }
+  .form-group label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+  .form-group input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 14px;
+  }
+  
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+  }
 </style>

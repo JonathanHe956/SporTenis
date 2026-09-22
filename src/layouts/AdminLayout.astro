@@ -1,77 +1,158 @@
 ---
-import { db } from '../db/db';
-import { Usuarios } from '../db/schema';
-import { eq } from 'drizzle-orm';
-import { canAccessCrm, canAccessScm } from '../lib/auth';
+import { db } from "../db/db";
+import { Usuarios } from "../db/schema";
+import { eq } from "drizzle-orm";
+import { canAccessCrm, canAccessScm } from "../lib/auth";
 
 interface Props {
   title: string;
   activePath?: string;
 }
 
-const { title, activePath = '/crm' } = Astro.props;
-const currentModule = activePath.startsWith('/scm') ? 'scm' : 'crm';
+const { title, activePath = "/crm" } = Astro.props;
+const currentModule = activePath.startsWith("/scm") ? "scm" : "crm";
 
-const sessionId = Astro.cookies.get('sportenis_session')?.value;
-let userName = 'Admin';
-let userInitial = 'A';
+const sessionId = Astro.cookies.get("sportenis_session")?.value;
+let userName = "Admin";
+let userInitial = "A";
 let userRolId = 0;
-let roleStr = '';
+let roleStr = "";
 
 if (sessionId) {
-  const user = await db.select().from(Usuarios).where(eq(Usuarios.id, Number(sessionId)));
+  const user = await db
+    .select()
+    .from(Usuarios)
+    .where(eq(Usuarios.id, Number(sessionId)));
   if (user.length > 0) {
-    userName = user[0].nombre?.trim() || 'Admin';
+    userName = user[0].nombre?.trim() || "Admin";
     const initials = userName
       .split(/\s+/)
       .filter(Boolean)
-      .map(part => part.charAt(0).toUpperCase())
-      .join('')
+      .map((part) => part.charAt(0).toUpperCase())
+      .join("")
       .slice(0, 2);
-    userInitial = initials || 'A';
+    userInitial = initials || "A";
     userRolId = user[0].id_rol;
-    roleStr = userRolId === 1 ? 'administrador' : userRolId === 2 ? 'vendedor' : userRolId === 4 ? 'logistica' : 'cliente';
+    roleStr =
+      userRolId === 1
+        ? "administrador"
+        : userRolId === 2
+          ? "vendedor"
+          : userRolId === 4
+            ? "logistica"
+            : "cliente";
   }
 }
 
 // Redirect if accessing a module they don't have permission for
-if (currentModule === 'crm' && !canAccessCrm(roleStr as any)) {
-  return Astro.redirect(canAccessScm(roleStr as any) ? '/scm' : '/login');
+if (currentModule === "crm" && !canAccessCrm(roleStr as any)) {
+  return Astro.redirect(canAccessScm(roleStr as any) ? "/scm" : "/login");
 }
-if (currentModule === 'scm' && !canAccessScm(roleStr as any)) {
-  return Astro.redirect(canAccessCrm(roleStr as any) ? '/crm' : '/login');
+if (currentModule === "scm" && !canAccessScm(roleStr as any)) {
+  return Astro.redirect(canAccessCrm(roleStr as any) ? "/crm" : "/login");
 }
 
 let menuCrm = [
-  { path: '/crm', label: 'Dashboard', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>' },
-  { path: '/crm/clientes', label: 'Clientes', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>' },
-  { path: '/crm/interacciones', label: 'Interacciones', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
-  { path: '/crm/evaluaciones', label: 'Evaluaciones', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>' },
-  { path: '/crm/usuarios', label: 'Usuarios', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' },
-  { path: '/crm/actividad', label: 'Mi actividad', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>' },
-  { path: '/crm/configuracion', label: 'Configuración', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>' },
+  {
+    path: "/crm",
+    label: "Dashboard",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>',
+  },
+  {
+    path: "/crm/clientes",
+    label: "Clientes",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  },
+  {
+    path: "/crm/interacciones",
+    label: "Interacciones",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  },
+  {
+    path: "/crm/evaluaciones",
+    label: "Evaluaciones",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+  },
+  {
+    path: "/crm/actividad",
+    label: "Mi actividad",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>',
+  },
+  {
+    path: "/crm/usuarios",
+    label: "Usuarios",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  },
+  {
+    path: "/crm/configuracion",
+    label: "Configuración",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  },
 ];
 
 let menuScm = [
-  { path: '/scm', label: 'Inicio', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>' },
-  { path: '/scm/productos', label: 'Productos', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16V8l-8-4-8 4v8l8 4 8-4Z"/><polyline points="4 8 12 12 20 8"/><polyline points="12 12 12 20"/></svg>' },
-  { path: '/scm/proveedores', label: 'Proveedores', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>' },
-  { path: '/scm/inventario', label: 'Inventario', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>' },
-  { path: '/scm/movimientos', label: 'Movimientos', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>' },
-  { path: '/scm/pedidos', label: 'Pedidos', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>' },
-  { path: '/scm/logistica', label: 'Logística', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>' },
-  { path: '/scm/reportes', label: 'Reportes', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>' },
-  { path: '/scm/usuarios', label: 'Usuarios', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' },
-  { path: '/scm/configuracion', label: 'Configuración', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>' },
+  {
+    path: "/scm",
+    label: "Inicio",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
+  },
+  {
+    path: "/scm/productos",
+    label: "Productos",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16V8l-8-4-8 4v8l8 4 8-4Z"/><polyline points="4 8 12 12 20 8"/><polyline points="12 12 12 20"/></svg>',
+  },
+  {
+    path: "/scm/proveedores",
+    label: "Proveedores",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  },
+  {
+    path: "/scm/inventario",
+    label: "Inventario",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>',
+  },
+  {
+    path: "/scm/movimientos",
+    label: "Movimientos",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>',
+  },
+  {
+    path: "/scm/pedidos",
+    label: "Pedidos",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>',
+  },
+  {
+    path: "/scm/logistica",
+    label: "Logística",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>',
+  },
+  {
+    path: "/scm/reportes",
+    label: "Reportes",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+  },
+  {
+    path: "/crm/usuarios",
+    label: "Usuarios",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  },
+  {
+    path: "/crm/configuracion",
+    label: "Configuración",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  },
 ];
 
 if (userRolId !== 1) {
-  menuCrm = menuCrm.filter(item => item.path !== '/crm/configuracion');
-  menuScm = menuScm.filter(item => item.path !== '/scm/configuracion');
+  menuCrm = menuCrm.filter((item) => item.path !== "/crm/configuracion");
+  menuScm = menuScm.filter((item) => item.path !== "/scm/configuracion");
 }
 
-let activeMenu = currentModule === 'scm' ? menuScm : menuCrm;
-const moduleTitle = currentModule === 'scm' ? 'SCM - Cadena de Suministros' : 'CRM - Administración';
+let activeMenu = currentModule === "scm" ? menuScm : menuCrm;
+const moduleTitle =
+  currentModule === "scm"
+    ? "SCM - Cadena de Suministros"
+    : "CRM - Administración";
 const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
 ---
 
@@ -87,30 +168,54 @@ const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
       <!-- Sidebar -->
       <aside class="sidebar" data-module={currentModule}>
         <div class="sidebar-header">
-          <a class="brand" href={currentModule === 'scm' ? '/scm' : '/crm'}>
+          <a class="brand" href={currentModule === "scm" ? "/scm" : "/crm"}>
             <span class="brand-mark">S</span>
-            <div style="display: flex; flex-direction: column; line-height: 1.1;">
+            <div
+              style="display: flex; flex-direction: column; line-height: 1.1;"
+            >
               <span style="font-size: 16px;">Spor<span>Tenis</span></span>
-              <span style="font-size: 12px; font-weight: 400; color: #a3a3a3;">{currentModule === 'scm' ? 'Cadena Suministros' : 'CRM'}</span>
+              <span style="font-size: 12px; font-weight: 400; color: #a3a3a3;"
+                >{currentModule === "scm" ? "Cadena Suministros" : "CRM"}</span
+              >
             </div>
           </a>
         </div>
-        
+
         <nav class="sidebar-nav">
-          {activeMenu.map(item => (
-            <a 
-              href={item.path} 
-              class={`nav-item ${activePath === item.path || (item.path !== '/crm' && item.path !== '/scm' && activePath.startsWith(item.path)) ? 'active' : ''}`}
-            >
-              <span class="nav-icon" set:html={item.icon}></span>
-              {item.label}
-            </a>
-          ))}
+          {
+            activeMenu.map((item) => (
+              <a
+                href={item.path}
+                class={`nav-item ${activePath === item.path || (item.path !== "/crm" && item.path !== "/scm" && activePath.startsWith(item.path)) ? "active" : ""}`}
+              >
+                <span class="nav-icon" set:html={item.icon} />
+                {item.label}
+              </a>
+            ))
+          }
         </nav>
 
         <div class="sidebar-footer">
           <a href="/" class="nav-item">
-            <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
+            <span class="nav-icon"
+              ><svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                ><circle cx="12" cy="12" r="10"></circle><line
+                  x1="2"
+                  y1="12"
+                  x2="22"
+                  y2="12"></line><path
+                  d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
+                ></path></svg
+              ></span
+            >
             Ver Tienda
           </a>
         </div>
@@ -121,28 +226,72 @@ const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
         <!-- Topbar -->
         <header class="topbar">
           <div class="topbar-search">
-            <form id="globalSearchForm" action="/crm/clientes" method="GET" style="margin:0; display:flex; width:100%;">
-              <input type="search" name="q" placeholder="Buscar por nombre, correo o empresa..." />
-            </form>
+            <!-- Buscador global removido -->
           </div>
           <div class="topbar-actions">
-            {showModuleSwitcher && (
-              <a href={currentModule === 'scm' ? '/crm' : '/scm'} class="module-switcher" title={`Cambiar a ${currentModule === 'scm' ? 'CRM' : 'SCM'}`}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>
-                <span>Cambiar a {currentModule === 'scm' ? 'CRM' : 'SCM'}</span>
-              </a>
-            )}
+            {
+              showModuleSwitcher && (
+                <a
+                  href={currentModule === "scm" ? "/crm" : "/scm"}
+                  class="module-switcher"
+                  title={`Cambiar a ${currentModule === "scm" ? "CRM" : "SCM"}`}
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <>
+                      <path d="M8 3 4 7l4 4" />
+                      <path d="M4 7h16" />
+                      <path d="m16 21 4-4-4-4" />
+                      <path d="M20 17H4" />
+                    </>
+                  </svg>
+                  <span>
+                    Cambiar a {currentModule === "scm" ? "CRM" : "SCM"}
+                  </span>
+                </a>
+              )
+            }
 
-            <!-- Botón Buscar -->
-            <button type="submit" form="globalSearchForm" class="icon-btn" aria-label="Buscar" title="Buscar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
-            
+            <!-- Botón Buscar Removido -->
+
             <!-- Botón Notificaciones / Campana -->
-            <a href="/crm/interacciones" class="icon-btn" aria-label="Notificaciones" title="Ver notificaciones y actividades" style="color: inherit; text-decoration: none; display: flex; align-items: center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></a>
-            
+            <a
+              href="/crm/interacciones"
+              class="icon-btn"
+              aria-label="Notificaciones"
+              title="Ver notificaciones y actividades"
+              style="color: inherit; text-decoration: none; display: flex; align-items: center;"
+              ><svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                ><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"
+                ></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg
+              ></a
+            >
+
             <!-- Perfil de Usuario (Cerrar Sesión) -->
             <form method="POST" action="/login" style="margin:0;">
               <input type="hidden" name="action" value="logout" />
-              <button type="submit" class="user-profile" title="Cerrar sesión" style="background: none; border: none; font-family: inherit; color: inherit; cursor: pointer;">
+              <button
+                type="submit"
+                class="user-profile"
+                title="Cerrar sesión"
+                style="background: none; border: none; font-family: inherit; color: inherit; cursor: pointer;"
+              >
                 <div class="avatar">{userInitial}</div>
                 <span>{userName} (Salir)</span>
               </button>
@@ -171,7 +320,9 @@ const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
         --color-success-bg: #dcfce7;
       }
 
-      * { box-sizing: border-box; }
+      * {
+        box-sizing: border-box;
+      }
       body {
         margin: 0;
         padding: 0;
@@ -198,7 +349,7 @@ const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
 
       .sidebar-header {
         padding: 24px;
-        border-bottom: 1px solid rgba(255,255,255,0.1);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
       }
 
       .brand {
@@ -210,7 +361,9 @@ const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
         font-weight: 900;
         letter-spacing: -1px;
       }
-      .brand span span { font-weight: 400; }
+      .brand span span {
+        font-weight: 400;
+      }
       .brand-mark {
         display: flex;
         align-items: center;
@@ -246,18 +399,20 @@ const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
         transition: all 0.2s;
       }
       .nav-item:hover {
-        background: rgba(255,255,255,0.05);
+        background: rgba(255, 255, 255, 0.05);
         color: white;
       }
       .nav-item.active {
         background: var(--color-primary);
         color: #171717;
       }
-      .nav-icon { font-size: 16px; }
+      .nav-icon {
+        font-size: 16px;
+      }
 
       .sidebar-footer {
         padding: 20px 12px;
-        border-top: 1px solid rgba(255,255,255,0.1);
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
       }
 
       /* Main Wrapper */
@@ -327,7 +482,9 @@ const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
         padding: 8px;
         border-radius: 50%;
       }
-      .icon-btn:hover { background: var(--color-bg); }
+      .icon-btn:hover {
+        background: var(--color-bg);
+      }
 
       .user-profile {
         display: flex;
@@ -364,9 +521,9 @@ const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
         border: 1px solid var(--color-border);
         border-radius: 12px;
         padding: 24px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
       }
-      
+
       .crm-title {
         font-family: Georgia, serif;
         font-size: 28px;
@@ -383,9 +540,18 @@ const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
         font-weight: 700;
         text-transform: uppercase;
       }
-      .badge-success { background: var(--color-success-bg); color: var(--color-success); }
-      .badge-danger { background: var(--color-danger-light); color: var(--color-danger); }
-      .badge-neutral { background: #e5e5e5; color: #555; }
+      .badge-success {
+        background: var(--color-success-bg);
+        color: var(--color-success);
+      }
+      .badge-danger {
+        background: var(--color-danger-light);
+        color: var(--color-danger);
+      }
+      .badge-neutral {
+        background: #e5e5e5;
+        color: #555;
+      }
 
       .btn-primary {
         background: var(--color-text);
@@ -402,7 +568,9 @@ const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
         align-items: center;
         gap: 8px;
       }
-      .btn-primary:hover { background: var(--color-danger); }
+      .btn-primary:hover {
+        background: var(--color-danger);
+      }
     </style>
   </body>
 </html>

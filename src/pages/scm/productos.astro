@@ -218,6 +218,16 @@ const productosList = await db
   .leftJoin(Proveedores, eq(Productos.id_proveedor, Proveedores.id))
   .leftJoin(Marcas, eq(Modelos.id_marca, Marcas.id));
 
+
+const q = Astro.url.searchParams.get('q');
+let productosFiltrados = productosList;
+
+if (q) {
+  const searchTerm = q.toLowerCase();
+  productosFiltrados = productosFiltrados.filter((item: any) => 
+    (item.nombre && item.nombre.toLowerCase().includes(searchTerm)) || (item.marca && item.marca.toLowerCase().includes(searchTerm)) || (item.categoria && item.categoria.toLowerCase().includes(searchTerm)) || (item.proveedor && item.proveedor.toLowerCase().includes(searchTerm))
+  );
+}
 ---
 
 <CrmLayout title="Productos SCM" activePath="/scm/productos">
@@ -231,6 +241,13 @@ const productosList = await db
   </div>
 
   <div class="crm-card">
+          <!-- Buscador local funcional -->
+      <form method="GET" style="margin: 0; flex: 1; max-width: 400px; display: flex; position: relative; margin-bottom: 24px;" id="searchForm">
+        <input type="search" name="q" value={q || ""} placeholder="Buscar..." class="search-input" style="width: 100%; padding-right: 40px;" />
+        <button type="submit" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+      </form>
     <div class="table-responsive">
       <table class="crm-table">
         <thead>
@@ -247,7 +264,7 @@ const productosList = await db
           </tr>
         </thead>
         <tbody>
-          {productosList.map(producto => (
+          {productosFiltrados.map(producto => (
             <tr>
               <td><strong>{producto.nombre}</strong></td>
               <td>{producto.marca || 'N/A'}</td>
@@ -286,7 +303,7 @@ const productosList = await db
               </td>
             </tr>
           ))}
-          {productosList.length === 0 && (
+          {productosFiltrados.length === 0 && (
             <tr>
               <td colspan="7" style="text-align: center; color: var(--color-text-muted);">No hay productos registrados.</td>
             </tr>
@@ -370,12 +387,12 @@ const productosList = await db
         
         <div class="form-row">
           <label>Stock actual</label>
-          <input type="number" name="stock" value="0" required / oninput="this.value = this.value.replace(/[^0-9]/g, '')" >
+          <input type="number" name="stock" value="0" required oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
         </div>
         
         <div class="form-row">
           <label>Stock minimo</label>
-          <input type="number" name="stock_minimo" value="0" required / oninput="this.value = this.value.replace(/[^0-9]/g, '')" >
+          <input type="number" name="stock_minimo" value="0" required oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
         </div>
         
         <div class="form-row">
@@ -390,12 +407,12 @@ const productosList = await db
         
         <div class="form-row">
           <label>Costo unitario</label>
-          <input type="number" step="0.001" name="costo" value="0.000" required / oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" >
+          <input type="number" step="0.001" name="costo" value="0.000" required oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" />
         </div>
 
         <div class="form-row">
           <label>Precio de venta</label>
-          <input type="number" step="0.001" name="precio_venta" value="0.000" required / oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" >
+          <input type="number" step="0.001" name="precio_venta" value="0.000" required oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" />
         </div>
         
         <div class="modal-footer" style="justify-content: center; gap: 16px; margin-top: 32px;">
@@ -478,12 +495,12 @@ const productosList = await db
         
         <div class="form-row">
           <label>Stock actual</label>
-          <input type="number" name="stock" id="edit_producto_stock" required / oninput="this.value = this.value.replace(/[^0-9]/g, '')" >
+          <input type="number" name="stock" id="edit_producto_stock" required oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
         </div>
         
         <div class="form-row">
           <label>Stock minimo</label>
-          <input type="number" name="stock_minimo" id="edit_producto_stock_minimo" required / oninput="this.value = this.value.replace(/[^0-9]/g, '')" >
+          <input type="number" name="stock_minimo" id="edit_producto_stock_minimo" required oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
         </div>
         
         <div class="form-row">
@@ -498,12 +515,12 @@ const productosList = await db
         
         <div class="form-row">
           <label>Costo unitario</label>
-          <input type="number" step="0.001" name="costo" id="edit_producto_costo" required / oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" >
+          <input type="number" step="0.001" name="costo" id="edit_producto_costo" required oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" />
         </div>
 
         <div class="form-row">
           <label>Precio de venta</label>
-          <input type="number" step="0.001" name="precio_venta" id="edit_producto_precio" required / oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" >
+          <input type="number" step="0.001" name="precio_venta" id="edit_producto_precio" required oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" />
         </div>
         
         <div class="modal-footer" style="justify-content: center; gap: 16px; margin-top: 32px;">
@@ -678,5 +695,13 @@ const productosList = await db
     font-weight: 600;
     border-radius: 6px;
     cursor: pointer;
+  }
+
+  .search-input {
+    flex: 1;
+    padding: 10px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-family: inherit;
   }
 </style>

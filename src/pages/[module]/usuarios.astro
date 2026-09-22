@@ -3,17 +3,21 @@ import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Usuarios, Roles, Interacciones } from '../../db/schema';
 import { eq, inArray } from 'drizzle-orm';
+const { module } = Astro.params;
+if (module !== 'crm' && module !== 'scm') return Astro.redirect('/404');
+const activePath = `/${module}/usuarios`;
+
 
 const session = Astro.cookies.get('sportenis_session')?.value;
 if (!session) return Astro.redirect('/login');
 
 const currentUser = await db.select().from(Usuarios).where(eq(Usuarios.id, Number(session)));
 if (currentUser.length === 0) {
-  return Astro.redirect('/crm');
+  return Astro.redirect(`/${module}`);
 }
 const loggedUser = currentUser[0];
 if (loggedUser.id_rol !== 1) {
-  return Astro.redirect('/crm');
+  return Astro.redirect(`/${module}`);
 }
 
 if (Astro.request.method === 'POST') {
@@ -94,9 +98,19 @@ const usuariosList = await db
   .from(Usuarios)
   .leftJoin(Roles, eq(Usuarios.id_rol, Roles.id))
   .where(inArray(Usuarios.id_rol, [1, 2, 4]));
+
+const q = Astro.url.searchParams.get('q');
+let usuariosFiltrados = usuariosList;
+
+if (q) {
+  const searchTerm = q.toLowerCase();
+  usuariosFiltrados = usuariosFiltrados.filter((item: any) => 
+    (item.nombre && item.nombre.toLowerCase().includes(searchTerm)) || (item.correo && item.correo.toLowerCase().includes(searchTerm)) || (item.rol && item.rol.toLowerCase().includes(searchTerm))
+  );
+}
 ---
 
-<CrmLayout title="Usuarios" activePath="/crm/usuarios">
+<CrmLayout title="Usuarios" activePath={activePath}>
   <div class="header-actions">
     <h1 class="crm-title">Directorio de Equipo</h1>
     {loggedUser.id_rol === 1 && (
@@ -105,6 +119,13 @@ const usuariosList = await db
   </div>
 
   <div class="crm-card">
+          <!-- Buscador local funcional -->
+      <form method="GET" style="margin: 0; flex: 1; max-width: 400px; display: flex; position: relative; margin-bottom: 24px;" id="searchForm">
+        <input type="search" name="q" value={q || ""} placeholder="Buscar..." class="search-input" style="width: 100%; padding-right: 40px;" />
+        <button type="submit" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+      </form>
     <div class="table-responsive">
       <table class="crm-table">
         <thead>
@@ -118,7 +139,7 @@ const usuariosList = await db
           </tr>
         </thead>
         <tbody>
-          {usuariosList.map(usr => (
+          {usuariosFiltrados.map(usr => (
             <tr>
               <td><strong>{usr.nombre}</strong></td>
               <td>{usr.correo}</td>
@@ -359,5 +380,13 @@ const usuariosList = await db
     justify-content: flex-end;
     gap: 12px;
     margin-top: 24px;
+  }
+
+  .search-input {
+    flex: 1;
+    padding: 10px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-family: inherit;
   }
 </style>

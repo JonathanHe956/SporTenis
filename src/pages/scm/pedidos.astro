@@ -100,6 +100,16 @@ const productosList = await db
 const pendientes = pedidosList.filter(p => p.estado === 'Pendiente').length;
 const completados = pedidosList.filter(p => p.estado === 'Completado').length;
 const automaticos = pedidosList.filter(p => p.tipo === 'AUTOMATICO').length;
+
+const q = Astro.url.searchParams.get('q');
+let pedidosFiltrados = pedidosList;
+
+if (q) {
+  const searchTerm = q.toLowerCase();
+  pedidosFiltrados = pedidosFiltrados.filter((item: any) => 
+    (item.producto_nombre && item.producto_nombre.toLowerCase().includes(searchTerm)) || (item.proveedor_nombre && item.proveedor_nombre.toLowerCase().includes(searchTerm)) || (item.id && item.id.toString().includes(searchTerm))
+  );
+}
 ---
 
 <CrmLayout title="Pedidos de Compra" activePath="/scm/pedidos">
@@ -138,6 +148,13 @@ const automaticos = pedidosList.filter(p => p.tipo === 'AUTOMATICO').length;
   </div>
 
   <div class="crm-card">
+          <!-- Buscador local funcional -->
+      <form method="GET" style="margin: 0; flex: 1; max-width: 400px; display: flex; position: relative; margin-bottom: 24px;" id="searchForm">
+        <input type="search" name="q" value={q || ""} placeholder="Buscar..." class="search-input" style="width: 100%; padding-right: 40px;" />
+        <button type="submit" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+      </form>
     <div class="table-responsive">
       <table class="crm-table">
         <thead>
@@ -154,7 +171,7 @@ const automaticos = pedidosList.filter(p => p.tipo === 'AUTOMATICO').length;
           </tr>
         </thead>
         <tbody>
-          {pedidosList.map(pedido => (
+          {pedidosFiltrados.map(pedido => (
             <tr>
               <td><code>#{pedido.id}</code></td>
               <td><strong>{pedido.producto || 'N/A'}</strong></td>
@@ -209,7 +226,7 @@ const automaticos = pedidosList.filter(p => p.tipo === 'AUTOMATICO').length;
               </td>
             </tr>
           ))}
-          {pedidosList.length === 0 && (
+          {pedidosFiltrados.length === 0 && (
             <tr>
               <td colspan="9" style="text-align: center; color: var(--color-text-muted); padding: 40px;">
                 No hay pedidos registrados. Los pedidos automáticos (PULL) se crean cuando el stock baja al mínimo.
@@ -245,7 +262,7 @@ const automaticos = pedidosList.filter(p => p.tipo === 'AUTOMATICO').length;
         
         <div class="form-row">
           <label>Cantidad a pedir</label>
-          <input type="number" name="cantidad" min="1" value="10" required / oninput="this.value = this.value.replace(/[^0-9]/g, '')" >
+          <input type="number" name="cantidad" min="1" value="10" required oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
         </div>
         
         <div class="modal-footer" style="justify-content: center; gap: 16px; margin-top: 32px;">
@@ -428,5 +445,13 @@ const automaticos = pedidosList.filter(p => p.tipo === 'AUTOMATICO').length;
     background: #fff1ef;
     color: #d93e2e;
     border: 1px solid #fecaca;
+  }
+
+  .search-input {
+    flex: 1;
+    padding: 10px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-family: inherit;
   }
 </style>

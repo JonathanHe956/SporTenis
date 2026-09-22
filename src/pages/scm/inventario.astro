@@ -1,4 +1,4 @@
-﻿---
+---
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Productos, Modelos } from '../../db/schema';
@@ -65,37 +65,18 @@ const bajoStock = filteredProducts.filter((producto) => producto.status === 'Sto
       margin-bottom: 4px;
     }
 
-    .search-wrap {
-      position: relative;
+    .inventory-search {
+      display: flex;
+      max-width: 300px;
       flex: 1;
-      max-width: 520px;
     }
 
-    .search-wrap svg {
-      position: absolute;
-      left: 14px;
-      top: 50%;
-      transform: translateY(-50%);
-      width: 18px;
-      height: 18px;
-      stroke: var(--color-text-muted);
-    }
-
-    .search-wrap input {
-      width: 100%;
-      padding: 10px 16px 10px 42px;
-      border-radius: 20px;
+    .search-input {
+      flex: 1;
+      padding: 10px 16px;
       border: 1px solid var(--color-border);
-      background: var(--color-bg);
-      color: var(--color-text);
+      border-radius: 6px;
       font-family: inherit;
-      font-size: 13px;
-      outline: none;
-    }
-
-    .search-wrap input:focus {
-      border-color: var(--color-text);
-      box-shadow: none;
     }
 
     .inventory-summary {
@@ -242,19 +223,6 @@ const bajoStock = filteredProducts.filter((producto) => producto.status === 'Sto
   <div class="inventory-page">
     <div class="inventory-toolbar">
       <h1 class="crm-title">Inventario</h1>
-      <form method="GET" action="/scm/inventario" class="search-wrap" role="search">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="11" cy="11" r="7"></circle>
-          <path d="m20 20-3.5-3.5"></path>
-        </svg>
-        <input
-          type="search"
-          name="q"
-          value={query}
-          placeholder="Buscar producto..."
-          aria-label="Buscar producto"
-        />
-      </form>
     </div>
 
     <div class="inventory-summary">
@@ -267,6 +235,14 @@ const bajoStock = filteredProducts.filter((producto) => producto.status === 'Sto
         <strong>{bajoStock}</strong>
       </div>
     </div>
+
+    <!-- Buscador local funcional -->
+    <form method="GET" style="margin: 0; flex: 1; max-width: 400px; display: flex; position: relative; margin-bottom: 24px;" id="searchForm">
+      <input type="search" name="q" value={query || ''} placeholder="Buscar..." class="search-input" style="width: 100%; padding-right: 40px;" />
+      <button type="submit" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+    </form>
 
     {filteredProducts.length > 0 ? (
       <div class="inventory-table-wrap">
