@@ -135,6 +135,10 @@ if (Astro.request.method === 'POST') {
     const nombre = formData.get('nombre') as string;
     await db.insert(Marcas).values({ nombre });
     return Astro.redirect(Astro.url.pathname);
+  } else if (action === 'create_categoria') {
+    const nombre = formData.get('nombre') as string;
+    await db.insert(Categorias).values({ nombre });
+    return Astro.redirect(Astro.url.pathname);
   } else if (action === 'delete_producto') {
     const id = Number(formData.get('id'));
     const producto = await db.select().from(Productos).where(eq(Productos.id, id));
@@ -181,6 +185,7 @@ const productosList = await db
     <h1 class="crm-title">Catálogo SCM</h1>
     <div style="display: flex; gap: 10px;">
       <button class="btn-primary" onclick="document.getElementById('modalCreateMarca').showModal()">+ Nueva Marca</button>
+      <button class="btn-primary" onclick="document.getElementById('modalCreateCategoria').showModal()">+ Nueva Categoría</button>
       <button class="btn-primary" onclick="document.getElementById('modalCreateProducto').showModal()">+ Nuevo Producto</button>
     </div>
   </div>
@@ -402,6 +407,27 @@ const productosList = await db
         <div class="modal-footer" style="justify-content: center; gap: 16px; margin-top: 32px;">
           <button type="button" class="btn-cancel" onclick="document.getElementById('modalEditProducto').close()">Cancelar</button>
           <button type="submit" class="btn-save">Actualizar</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Modal: Crear Categoría SCM -->
+  <dialog id="modalCreateCategoria" class="crm-modal scm-modal" style="max-width: 400px;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nueva Categoría</h2>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalCreateCategoria').close()">×</button>
+      </div>
+      <form method="POST" class="scm-form">
+        <input type="hidden" name="action" value="create_categoria" />
+        <div class="form-row" style="flex-direction: column;">
+          <label style="width: 100%;">Nombre de la categoría *</label>
+          <input type="text" name="nombre" required placeholder="Ej. Raquetas" style="margin-top: 8px;" />
+        </div>
+        <div class="modal-footer" style="justify-content: flex-end; gap: 12px; margin-top: 24px;">
+          <button type="button" class="btn-cancel" onclick="document.getElementById('modalCreateCategoria').close()">Cancelar</button>
+          <button type="submit" class="btn-save">Guardar Categoría</button>
         </div>
       </form>
     </div>

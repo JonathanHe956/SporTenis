@@ -1,14 +1,325 @@
 ﻿---
 import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db } from '../../db/db';
+import { Productos, Modelos } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') || '');
+  const id = Number(formData.get('id'));
+
+  if (action === 'stock_adjust' && id) {
+    const delta = Number(formData.get('delta') || 0);
+    const productos = await db.select().from(Productos).where(eq(Productos.id, id));
+
+    if (productos.length > 0) {
+      const currentStock = Number(productos[0].stock || 0);
+      const nextStock = Math.max(0, currentStock + delta);
+      await db.update(Productos).set({ stock: nextStock }).where(eq(Productos.id, id));
+    }
+  }
+
+  return Astro.redirect(Astro.url.pathname + (Astro.url.search || ''));
+}
+
+const query = (Astro.url.searchParams.get('q') || '').trim();
+const productos = await db
+  .select({
+    id: Productos.id,
+    nombre: Modelos.nombre,
+    stock: Productos.stock,
+    stock_minimo: Productos.stock_minimo,
+    estado: Productos.estado,
+  })
+  .from(Productos)
+  .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id));
+
+const filteredProducts = productos
+  .filter((producto) => {
+    if (!query) return true;
+    return (producto.nombre || '').toLowerCase().includes(query.toLowerCase());
+  })
+  .map((producto) => ({
+    ...producto,
+    status: Number(producto.stock || 0) <= Number(producto.stock_minimo || 0) ? 'Stock bajo' : 'Normal',
+  }));
+
+const totalProducts = filteredProducts.length;
+const bajoStock = filteredProducts.filter((producto) => producto.status === 'Stock bajo').length;
 ---
 
 <CrmLayout title="Inventario" activePath="/scm/inventario">
-  <div class="header-actions">
-    <h1 class="crm-title">Inventario</h1>
-  </div>
+  <style>
+    .inventory-page {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
 
-  <div class="crm-card">
-    <p>Esta es la página de Inventario para el módulo de Cadena de Suministros (SCM).</p>
+    .inventory-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 4px;
+    }
+
+    .search-wrap {
+      position: relative;
+      flex: 1;
+      max-width: 520px;
+    }
+
+    .search-wrap svg {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 18px;
+      height: 18px;
+      stroke: var(--color-text-muted);
+    }
+
+    .search-wrap input {
+      width: 100%;
+      padding: 10px 16px 10px 42px;
+      border-radius: 20px;
+      border: 1px solid var(--color-border);
+      background: var(--color-bg);
+      color: var(--color-text);
+      font-family: inherit;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .search-wrap input:focus {
+      border-color: var(--color-text);
+      box-shadow: none;
+    }
+
+    .inventory-summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(160px, 220px));
+      gap: 14px;
+    }
+
+    .summary-card {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+    }
+
+    .summary-card span {
+      color: var(--color-text-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .summary-card strong {
+      color: var(--color-text);
+      font-size: 26px;
+      line-height: 1.1;
+    }
+
+    .inventory-table-wrap {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+      overflow: hidden;
+    }
+
+    .inventory-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .inventory-table th,
+    .inventory-table td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .inventory-table th {
+      color: var(--color-text-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .inventory-table td {
+      color: var(--color-text);
+      font-size: 13px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 86px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .status-normal {
+      background: var(--color-success-bg);
+      color: var(--color-success);
+    }
+
+    .status-low {
+      background: var(--color-danger-light);
+      color: var(--color-danger);
+    }
+
+    .stock-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .stock-button {
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--color-border);
+      background: transparent;
+      color: var(--color-text);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+
+    .stock-button:hover {
+      transform: translateY(-1px);
+      border-color: var(--color-text);
+    }
+
+    .stock-button.minus {
+      color: var(--color-danger);
+    }
+
+    .stock-button.plus {
+      color: var(--color-success);
+    }
+
+    .empty-state {
+      padding: 36px 18px;
+      text-align: center;
+      color: var(--color-text-muted);
+      background: var(--color-surface);
+      border-radius: 12px;
+      border: 1px solid var(--color-border);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+    }
+
+    @media (max-width: 760px) {
+      .inventory-table-wrap {
+        overflow-x: auto;
+      }
+
+      .inventory-table {
+        min-width: 720px;
+      }
+    }
+  </style>
+
+  <div class="inventory-page">
+    <div class="inventory-toolbar">
+      <h1 class="crm-title">Inventario</h1>
+      <form method="GET" action="/scm/inventario" class="search-wrap" role="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"></circle>
+          <path d="m20 20-3.5-3.5"></path>
+        </svg>
+        <input
+          type="search"
+          name="q"
+          value={query}
+          placeholder="Buscar producto..."
+          aria-label="Buscar producto"
+        />
+      </form>
+    </div>
+
+    <div class="inventory-summary">
+      <div class="summary-card">
+        <span>Total</span>
+        <strong>{totalProducts}</strong>
+      </div>
+      <div class="summary-card">
+        <span>Stock bajo</span>
+        <strong>{bajoStock}</strong>
+      </div>
+    </div>
+
+    {filteredProducts.length > 0 ? (
+      <div class="inventory-table-wrap">
+        <table class="inventory-table">
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th>Stock actual</th>
+              <th>Stock mínimo</th>
+              <th>Estado</th>
+              <th style="text-align: right;">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredProducts.map((producto) => (
+              <tr>
+                <td>{producto.nombre || 'Sin nombre'}</td>
+                <td>{producto.stock}</td>
+                <td>{producto.stock_minimo ?? 0}</td>
+                <td>
+                  <span class={`status-badge ${producto.status === 'Stock bajo' ? 'status-low' : 'status-normal'}`}>
+                    {producto.status}
+                  </span>
+                </td>
+                <td>
+                  <div class="stock-actions">
+                    <form method="POST" action="/scm/inventario">
+                      <input type="hidden" name="action" value="stock_adjust" />
+                      <input type="hidden" name="id" value={producto.id} />
+                      <input type="hidden" name="delta" value="-1" />
+                      <button class="stock-button minus" type="submit" aria-label={`Restar stock de ${producto.nombre}`}>
+                        −
+                      </button>
+                    </form>
+
+                    <form method="POST" action="/scm/inventario">
+                      <input type="hidden" name="action" value="stock_adjust" />
+                      <input type="hidden" name="id" value={producto.id} />
+                      <input type="hidden" name="delta" value="1" />
+                      <button class="stock-button plus" type="submit" aria-label={`Sumar stock de ${producto.nombre}`}>
+                        +
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      <div class="empty-state">No se encontraron productos con ese criterio.</div>
+    )}
   </div>
 </CrmLayout>
 
