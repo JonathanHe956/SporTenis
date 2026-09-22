@@ -1,11 +1,12 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
-import { Productos, Modelos, Proveedores, PedidosCompra, Notificaciones } from '../../db/schema';
-import { eq, desc, and } from 'drizzle-orm';
+import { Productos, Modelos, Proveedores, PedidosCompra, MovimientosInventario } from '../../db/schema';
+import { eq, desc } from 'drizzle-orm';
 
 const session = Astro.cookies.get('sportenis_session')?.value;
 if (!session) return Astro.redirect('/login');
+const sessionUserId = Number(session);
 
 if (Astro.request.method === 'POST') {
   const formData = await Astro.request.formData();
@@ -15,7 +16,6 @@ if (Astro.request.method === 'POST') {
     const id_producto = Number(formData.get('id_producto'));
     const cantidad = Number(formData.get('cantidad'));
 
-    // Get product's proveedor
     const producto = await db.select().from(Productos).where(eq(Productos.id, id_producto));
     const id_proveedor = producto.length > 0 ? producto[0].id_proveedor : null;
 
@@ -33,20 +33,27 @@ if (Astro.request.method === 'POST') {
 
   if (action === 'completar_pedido') {
     const id = Number(formData.get('id'));
-    
-    // Get the pedido to know the product and quantity
+
     const pedido = await db.select().from(PedidosCompra).where(eq(PedidosCompra.id, id));
     if (pedido.length > 0) {
       const p = pedido[0];
-      
-      // Update stock
+
       const producto = await db.select().from(Productos).where(eq(Productos.id, p.id_producto));
       if (producto.length > 0) {
         const newStock = producto[0].stock + p.cantidad;
         await db.update(Productos).set({ stock: newStock }).where(eq(Productos.id, p.id_producto));
+
+        // Registrar el movimiento automáticamente
+        await db.insert(MovimientosInventario).values({
+          id_producto: p.id_producto,
+          tipo: 'Entrada',
+          cantidad: p.cantidad,
+          motivo: 'Pedido',
+          fecha: new Date(),
+          id_usuario: sessionUserId,
+        });
       }
 
-      // Mark pedido as complete
       await db.update(PedidosCompra).set({
         estado: 'Completado',
         fecha_completado: new Date(),
@@ -63,7 +70,6 @@ if (Astro.request.method === 'POST') {
   }
 }
 
-// Fetch all pedidos with product and proveedor info
 const pedidosList = await db
   .select({
     id: PedidosCompra.id,
@@ -84,7 +90,6 @@ const pedidosList = await db
   .leftJoin(Proveedores, eq(PedidosCompra.id_proveedor, Proveedores.id))
   .orderBy(desc(PedidosCompra.fecha_creacion));
 
-// Get products list for the create pedido modal
 const productosList = await db
   .select({
     id: Productos.id,
@@ -106,8 +111,10 @@ let pedidosFiltrados = pedidosList;
 
 if (q) {
   const searchTerm = q.toLowerCase();
-  pedidosFiltrados = pedidosFiltrados.filter((item: any) => 
-    (item.producto_nombre && item.producto_nombre.toLowerCase().includes(searchTerm)) || (item.proveedor_nombre && item.proveedor_nombre.toLowerCase().includes(searchTerm)) || (item.id && item.id.toString().includes(searchTerm))
+  pedidosFiltrados = pedidosFiltrados.filter((item: any) =>
+    (item.producto && item.producto.toLowerCase().includes(searchTerm)) ||
+    (item.proveedor && item.proveedor.toLowerCase().includes(searchTerm)) ||
+    (item.id && item.id.toString().includes(searchTerm))
   );
 }
 ---
@@ -148,13 +155,13 @@ if (q) {
   </div>
 
   <div class="crm-card">
-          <!-- Buscador local funcional -->
-      <form method="GET" style="margin: 0; flex: 1; max-width: 400px; display: flex; position: relative; margin-bottom: 24px;" id="searchForm">
-        <input type="search" name="q" value={q || ""} placeholder="Buscar..." class="search-input" style="width: 100%; padding-right: 40px;" />
-        <button type="submit" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        </button>
-      </form>
+    <!-- Buscador -->
+    <form method="GET" style="margin: 0; flex: 1; max-width: 400px; display: flex; position: relative; margin-bottom: 24px;" id="searchForm">
+      <input type="search" name="q" value={q || ""} placeholder="Buscar..." class="search-input" style="width: 100%; padding-right: 40px;" />
+      <button type="submit" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+    </form>
     <div class="table-responsive">
       <table class="crm-table">
         <thead>
@@ -369,18 +376,9 @@ if (q) {
   .action-btn.text-danger:hover { color: var(--color-danger); }
   .action-complete:hover { color: var(--color-success) !important; opacity: 1; }
 
-  .badge-pull {
-    background: #dbeafe;
-    color: #1e40af;
-  }
-  .badge-push {
-    background: #fef3c7;
-    color: #92400e;
-  }
-  .badge-warning {
-    background: #fef3c7;
-    color: #d97706;
-  }
+  .badge-pull { background: #dbeafe; color: #1e40af; }
+  .badge-push { background: #fef3c7; color: #92400e; }
+  .badge-warning { background: #fef3c7; color: #d97706; }
 
   /* Modal styles */
   .scm-modal { border: none; border-radius: 12px; padding: 0; width: 100%; max-width: 500px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
@@ -416,7 +414,6 @@ if (q) {
   }
   .btn-secondary:hover { background: var(--color-bg); border-color: var(--color-text); }
 
-  /* Toast notification */
   .stock-toast {
     position: fixed;
     bottom: 24px;
@@ -432,20 +429,9 @@ if (q) {
     transition: all 0.3s ease;
     box-shadow: 0 8px 24px rgba(0,0,0,0.15);
   }
-  .stock-toast.show {
-    transform: translateY(0);
-    opacity: 1;
-  }
-  .stock-toast.success {
-    background: #dcfce7;
-    color: #15803d;
-    border: 1px solid #bbf7d0;
-  }
-  .stock-toast.error {
-    background: #fff1ef;
-    color: #d93e2e;
-    border: 1px solid #fecaca;
-  }
+  .stock-toast.show { transform: translateY(0); opacity: 1; }
+  .stock-toast.success { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+  .stock-toast.error { background: #fff1ef; color: #d93e2e; border: 1px solid #fecaca; }
 
   .search-input {
     flex: 1;

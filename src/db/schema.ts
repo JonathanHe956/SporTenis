@@ -221,3 +221,14 @@ export const PedidosCompra = mysqlTable('PedidosCompra', {
   fecha_completado: datetime('fecha_completado'),
 });
 
+export const MovimientosInventario = mysqlTable('MovimientosInventario', {
+  id: int('id').autoincrement().primaryKey(),
+  id_producto: int('id_producto').references(() => Productos.id).notNull(),
+  tipo: varchar('tipo', { length: 50 }).notNull(),
+  cantidad: int('cantidad').notNull(),
+  motivo: varchar('motivo', { length: 255 }).notNull(),
+  fecha: datetime('fecha').notNull(),
+  id_usuario: int('id_usuario').references(() => Usuarios.id),
+});
+
+

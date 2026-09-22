@@ -144,8 +144,8 @@ let menuScm = [
 ];
 
 if (userRolId !== 1) {
-  menuCrm = menuCrm.filter((item) => item.path !== "/crm/configuracion");
-  menuScm = menuScm.filter((item) => item.path !== "/scm/configuracion");
+  menuCrm = menuCrm.filter((item) => item.path !== "/crm/configuracion" && item.path !== "/crm/usuarios");
+  menuScm = menuScm.filter((item) => item.path !== "/scm/configuracion" && item.path !== "/scm/usuarios");
 }
 
 let activeMenu = currentModule === "scm" ? menuScm : menuCrm;

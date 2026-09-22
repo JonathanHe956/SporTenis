@@ -1,14 +1,534 @@
-﻿---
+---
 import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db } from '../../db/db';
+import { Productos, Modelos, MovimientosInventario, Usuarios } from '../../db/schema';
+import { eq, desc } from 'drizzle-orm';
+
+const session = Astro.cookies.get('sportenis_session')?.value;
+if (!session) return Astro.redirect('/login');
+const sessionUserId = Number(session);
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = String(formData.get('action') || '');
+
+  if (action === 'create_movement') {
+    const id_producto = Number(formData.get('id_producto'));
+    const tipo = String(formData.get('tipo'));
+    const cantidad = Number(formData.get('cantidad'));
+    const motivo = String(formData.get('motivo'));
+    const fechaStr = String(formData.get('fecha'));
+
+    if (id_producto && tipo && cantidad && motivo && fechaStr) {
+      await db.insert(MovimientosInventario).values({
+        id_producto,
+        tipo,
+        cantidad,
+        motivo,
+        fecha: new Date(fechaStr + 'T12:00:00Z'),
+        id_usuario: sessionUserId,
+      });
+
+      const producto = await db.select().from(Productos).where(eq(Productos.id, id_producto));
+      if (producto.length > 0) {
+        const currentStock = Number(producto[0].stock || 0);
+        const delta = tipo === 'Entrada' ? cantidad : -cantidad;
+        const nextStock = Math.max(0, currentStock + delta);
+        await db.update(Productos).set({ stock: nextStock }).where(eq(Productos.id, id_producto));
+      }
+    }
+    return Astro.redirect(Astro.url.pathname);
+  }
+}
+
+const q = Astro.url.searchParams.get('q');
+const allMovimientos = await db
+  .select({
+    id: MovimientosInventario.id,
+    fecha: MovimientosInventario.fecha,
+    tipo: MovimientosInventario.tipo,
+    cantidad: MovimientosInventario.cantidad,
+    motivo: MovimientosInventario.motivo,
+    productoNombre: Modelos.nombre,
+    usuarioNombre: Usuarios.nombre,
+  })
+  .from(MovimientosInventario)
+  .innerJoin(Productos, eq(MovimientosInventario.id_producto, Productos.id))
+  .innerJoin(Modelos, eq(Productos.id_modelo, Modelos.id))
+  .leftJoin(Usuarios, eq(MovimientosInventario.id_usuario, Usuarios.id))
+  .orderBy(desc(MovimientosInventario.fecha));
+
+const groupedMovimientos = [];
+let currentGroup = null;
+
+for (const mov of allMovimientos) {
+  if (currentGroup && currentGroup.productoNombre === mov.productoNombre && currentGroup.tipo === mov.tipo) {
+    currentGroup.cantidad += mov.cantidad;
+    currentGroup.count += 1;
+    currentGroup.motivos.add(mov.motivo);
+    currentGroup.usuarios.add(mov.usuarioNombre || 'Sistema');
+    currentGroup.detalles.push(mov);
+  } else {
+    if (currentGroup) groupedMovimientos.push(currentGroup);
+    currentGroup = {
+      ...mov,
+      count: 1,
+      motivos: new Set([mov.motivo]),
+      usuarios: new Set([mov.usuarioNombre || 'Sistema']),
+      detalles: [mov]
+    };
+  }
+}
+if (currentGroup) {
+  groupedMovimientos.push(currentGroup);
+}
+
+let movimientos = groupedMovimientos.map(g => {
+  if (g.count >= 2) {
+    return {
+      ...g,
+      motivo: g.motivos.size > 1 ? 'Varios motivos' : Array.from(g.motivos)[0],
+      usuarioNombre: g.usuarios.size > 1 ? 'Varios usuarios' : Array.from(g.usuarios)[0],
+      isGrouped: true
+    };
+  } else {
+    return {
+      ...g,
+      isGrouped: false
+    };
+  }
+});
+
+if (q) {
+  const term = q.toLowerCase();
+  movimientos = movimientos.filter(m => 
+    (m.productoNombre && m.productoNombre.toLowerCase().includes(term)) ||
+    (m.motivo && m.motivo.toLowerCase().includes(term)) ||
+    (m.usuarioNombre && m.usuarioNombre.toLowerCase().includes(term)) ||
+    (m.tipo && m.tipo.toLowerCase().includes(term))
+  );
+}
+
+const productosList = await db
+  .select({
+    id: Productos.id,
+    nombre: Modelos.nombre,
+  })
+  .from(Productos)
+  .innerJoin(Modelos, eq(Productos.id_modelo, Modelos.id));
+
 ---
 
 <CrmLayout title="Movimientos" activePath="/scm/movimientos">
   <div class="header-actions">
-    <h1 class="crm-title">Movimientos</h1>
+    <div>
+      <h1 class="crm-title">Movimientos de inventario</h1>
+      <p style="color: var(--color-text-muted); margin-top: 4px; font-size: 14px;">Registra y consulta entradas y salidas.</p>
+    </div>
+    <button class="btn-primary" onclick="document.getElementById('modalNewMovement').showModal()">+ Nuevo movimiento</button>
   </div>
 
   <div class="crm-card">
-    <p>Esta es la página de Movimientos para el módulo de Cadena de Suministros (SCM).</p>
-  </div>
-</CrmLayout>
+    <form method="GET" style="margin: 0; flex: 1; max-width: 400px; display: flex; position: relative; margin-bottom: 24px;" id="searchForm">
+      <input type="search" name="q" value={q || ""} placeholder="Buscar..." class="search-input" style="width: 100%; padding-right: 40px;" />
+      <button type="submit" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+    </form>
 
+    <div class="table-responsive">
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Producto</th>
+            <th>Tipo</th>
+            <th>Cantidad</th>
+            <th>Motivo</th>
+            <th>Usuario</th>
+            <th class="text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {movimientos.map((mov, i) => {
+            const isEntrada = mov.tipo === 'Entrada';
+            const dateStr = mov.fecha ? new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(mov.fecha)) : '';
+            const dataDetalles = encodeURIComponent(JSON.stringify(mov.detalles));
+            return (
+              <tr>
+                <td>{dateStr} {mov.isGrouped && <small style="display:block; color:#888;">(Agrupado)</small>}</td>
+                <td><strong>{mov.productoNombre}</strong></td>
+                <td>
+                  <span class={`badge ${isEntrada ? 'badge-success' : 'badge-danger'}`}>
+                    {mov.tipo}
+                  </span>
+                </td>
+                <td>
+                  <span style={`font-weight:700; color: ${isEntrada ? 'var(--color-success)' : 'var(--color-danger)'}`}>
+                    {isEntrada ? '+' : '-'}{mov.cantidad}
+                  </span>
+                </td>
+                <td>{mov.motivo}</td>
+                <td>{mov.usuarioNombre}</td>
+                <td class="text-right">
+                  <button 
+                    class="action-btn" 
+                    title="Ver detalle"
+                    onclick={`showDetalles('${dataDetalles}')`}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+          {movimientos.length === 0 && (
+            <tr>
+              <td colspan="7" style="text-align: center; color: var(--color-text-muted);">No se encontraron movimientos.</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Modal: Crear Movimiento -->
+  <dialog id="modalNewMovement" class="crm-modal scm-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nuevo movimiento</h2>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalNewMovement').close()">×</button>
+      </div>
+      
+      <form method="POST" action="/scm/movimientos" class="scm-form">
+        <input type="hidden" name="action" value="create_movement" />
+        
+        <div class="form-row">
+          <label>Producto</label>
+          <div class="select-wrapper">
+            <select name="id_producto" required>
+              <option value="" disabled selected>Selecciona un producto</option>
+              {productosList.map(p => (
+                <option value={p.id}>{p.nombre}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label>Tipo</label>
+          <div style="display: flex; gap: 16px; align-items: center; width: 100%; padding-top: 10px;">
+            <label style="width: auto; padding: 0; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+              <input type="radio" name="tipo" value="Entrada" checked required style="width: auto;" /> Entrada
+            </label>
+            <label style="width: auto; padding: 0; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+              <input type="radio" name="tipo" value="Salida" style="width: auto;" /> Salida
+            </label>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label>Cantidad</label>
+          <input type="number" name="cantidad" value="0" min="1" required oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
+        </div>
+
+        <div class="form-row">
+          <label>Motivo</label>
+          <div class="select-wrapper">
+            <select name="motivo" required>
+              <option value="" disabled selected>Selecciona un motivo</option>
+              <option value="Compra">Compra</option>
+              <option value="Venta">Venta</option>
+              <option value="Ajuste">Ajuste</option>
+              <option value="Pedido">Pedido</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label>Fecha</label>
+          <input type="date" name="fecha" id="movementDate" required />
+        </div>
+
+        <div class="modal-footer" style="justify-content: flex-end; gap: 16px; margin-top: 32px; display: flex;">
+          <button type="button" class="btn-cancel" onclick="document.getElementById('modalNewMovement').close()">Cancelar</button>
+          <button type="submit" class="btn-save">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Modal: Detalles de Movimientos -->
+  <dialog id="modalDetalles" class="crm-modal scm-modal" style="max-width: 500px;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h2 style="margin-bottom: 4px;">Historial de Movimientos</h2>
+          <p style="margin: 0; font-size: 13px; color: var(--color-text-muted);" id="detallesSubtitle">Desglose de los movimientos agrupados</p>
+        </div>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalDetalles').close()">×</button>
+      </div>
+      <div class="timeline-container" id="detallesTimeline" style="max-height: 400px; overflow-y: auto; padding-right: 8px;">
+        <!-- Renderizado dinámico -->
+      </div>
+    </div>
+  </dialog>
+
+  <script is:inline>
+    // Set today's date automatically in the modal
+    document.addEventListener("DOMContentLoaded", () => {
+      const dateInput = document.getElementById("movementDate");
+      if (dateInput) {
+        const today = new Date().toISOString().split('T')[0];
+        dateInput.value = today;
+      }
+    });
+
+    function showDetalles(dataStr) {
+      const detalles = JSON.parse(decodeURIComponent(dataStr));
+      const container = document.getElementById('detallesTimeline');
+      container.innerHTML = '';
+
+      detalles.forEach(d => {
+        const isEntrada = d.tipo === 'Entrada';
+        const qtySign = isEntrada ? '+' : '-';
+        const iconClass = isEntrada ? 'entrada' : 'salida';
+
+        const dt = new Date(d.fecha);
+        const fechaFormat = new Intl.DateTimeFormat('es-MX', {
+          day: '2-digit', month: 'short', year: 'numeric',
+          hour: '2-digit', minute: '2-digit'
+        }).format(dt);
+
+        const item = document.createElement('div');
+        item.className = 'timeline-item';
+
+        item.innerHTML = `
+          <div class="timeline-icon ${iconClass}">
+            ${qtySign}${d.cantidad}
+          </div>
+          <div class="timeline-content">
+            <div class="timeline-header">
+              <span class="timeline-title">${d.motivo}</span>
+              <span class="timeline-date">${fechaFormat}</span>
+            </div>
+            <div class="timeline-body">
+              <div class="timeline-badge">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px; vertical-align: text-bottom;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                ${d.usuarioNombre || 'Sistema'}
+              </div>
+              <div class="timeline-badge" style="background: ${isEntrada ? 'var(--color-success-bg)' : 'var(--color-danger-light)'}; color: ${isEntrada ? 'var(--color-success)' : 'var(--color-danger)'}">
+                ${d.tipo}
+              </div>
+            </div>
+          </div>
+        `;
+        container.appendChild(item);
+      });
+
+      document.getElementById('modalDetalles').showModal();
+    }
+  </script>
+
+  <style>
+    .header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .crm-title { margin-bottom: 0; }
+    .table-responsive { overflow-x: auto; margin: 0 -24px; }
+    .crm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .crm-table th { text-align: left; padding: 12px 24px; border-bottom: 2px solid var(--color-border); color: var(--color-text-muted); font-weight: 700; }
+    .crm-table td { padding: 16px 24px; border-bottom: 1px solid var(--color-border); }
+    .crm-table tbody tr:hover { background: var(--color-bg); }
+    .text-right { text-align: right; }
+    
+    .action-btn { background: none; border: none; cursor: pointer; font-size: 16px; opacity: 0.6; margin-left: 8px; color: inherit; }
+    .action-btn:hover { opacity: 1; color: var(--color-text); }
+    .action-btn.text-danger:hover { color: var(--color-danger); }
+    
+    .search-input {
+      flex: 1;
+      padding: 10px 16px;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      font-family: inherit;
+    }
+
+    /* Override SCM Modal specific styles if needed */
+    .scm-modal { 
+      border: none; 
+      border-radius: 12px; 
+      padding: 0; 
+      width: 100%; 
+      max-width: 500px; 
+      box-shadow: 0 20px 40px rgba(0,0,0,0.2); 
+    }
+    .scm-modal::backdrop { background: rgba(0,0,0,0.4); }
+    .modal-content { padding: 32px; background: #ffffff; border-radius: 12px; }
+    
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .modal-header h2 { margin: 0; font-size: 18px; color: #001632; font-weight: 700; }
+    .close-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: #001632; font-weight: bold; }
+    
+    .scm-form .form-row {
+      display: flex;
+      align-items: flex-start;
+      margin-bottom: 16px;
+      gap: 16px;
+    }
+    
+    .scm-form label {
+      width: 140px;
+      font-size: 13px;
+      color: #4a5568;
+      padding-top: 10px;
+      flex-shrink: 0;
+    }
+    
+    .scm-form input, .scm-form select {
+      flex: 1;
+      padding: 10px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 14px;
+      color: #4a5568;
+      background-color: #ffffff;
+      width: 100%;
+    }
+    
+    .scm-form input:focus, .scm-form select:focus {
+      outline: none;
+      border-color: #a0aec0;
+    }
+    
+    .select-wrapper {
+      flex: 1;
+      position: relative;
+    }
+    
+    .select-wrapper::after {
+      content: "▼";
+      font-size: 10px;
+      color: #4a5568;
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+    
+    .scm-form select {
+      appearance: none;
+      padding-right: 30px;
+    }
+    
+    .btn-cancel {
+      background: transparent;
+      border: 1px solid #00564d;
+      color: #00564d;
+      padding: 10px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    
+    .btn-save {
+      background: #00564d;
+      border: none;
+      color: white;
+      padding: 10px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    /* Timeline Styles */
+    .timeline-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 8px 0;
+    }
+
+    .timeline-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 16px;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      transition: transform 0.2s;
+    }
+
+    .timeline-item:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+
+    .timeline-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-weight: 800;
+      font-size: 15px;
+    }
+
+    .timeline-icon.entrada {
+      background: var(--color-success-bg);
+      color: var(--color-success);
+    }
+
+    .timeline-icon.salida {
+      background: var(--color-danger-light);
+      color: var(--color-danger);
+    }
+
+    .timeline-content {
+      flex: 1;
+    }
+
+    .timeline-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      align-items: center;
+    }
+
+    .timeline-title {
+      font-weight: 700;
+      color: var(--color-text);
+      font-size: 14px;
+    }
+
+    .timeline-date {
+      color: var(--color-text-muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .timeline-body {
+      color: var(--color-text-muted);
+      font-size: 13px;
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .timeline-badge {
+      background: #e2e8f0;
+      color: #4a5568;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+    }
+  </style>
+</CrmLayout>

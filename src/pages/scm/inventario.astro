@@ -1,13 +1,16 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
-import { Productos, Modelos } from '../../db/schema';
+import { Productos, Modelos, MovimientosInventario } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 
 if (Astro.request.method === 'POST') {
   const formData = await Astro.request.formData();
   const action = String(formData.get('action') || '');
   const id = Number(formData.get('id'));
+
+  const session = Astro.cookies.get('sportenis_session')?.value;
+  const sessionUserId = session ? Number(session) : 1;
 
   if (action === 'stock_adjust' && id) {
     const delta = Number(formData.get('delta') || 0);
@@ -17,6 +20,17 @@ if (Astro.request.method === 'POST') {
       const currentStock = Number(productos[0].stock || 0);
       const nextStock = Math.max(0, currentStock + delta);
       await db.update(Productos).set({ stock: nextStock }).where(eq(Productos.id, id));
+      
+      if (delta !== 0) {
+        await db.insert(MovimientosInventario).values({
+          id_producto: id,
+          tipo: delta > 0 ? 'Entrada' : 'Salida',
+          cantidad: Math.abs(delta),
+          motivo: 'Ajuste',
+          fecha: new Date(),
+          id_usuario: sessionUserId,
+        });
+      }
     }
   }
 
