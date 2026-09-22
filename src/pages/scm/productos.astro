@@ -3,6 +3,8 @@ import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Usuarios, Modelos, Marcas, Categorias, Productos, Proveedores, Notificaciones, PedidosCompra } from '../../db/schema';
 import { eq, and } from 'drizzle-orm';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 const session = Astro.cookies.get('sportenis_session')?.value;
 if (!session) return Astro.redirect('/login');
@@ -27,24 +29,37 @@ if (Astro.request.method === 'POST') {
     const stock_minimo = Number(formData.get('stock_minimo'));
     const estrategia_logistica = formData.get('estrategia_logistica') as string;
     const costo = formData.get('costo') as string;
+    const color = formData.get('color') as string;
+    const theme_class = formData.get('theme_class') as string;
+    const precio_venta = formData.get('precio_venta') as string;
 
     // Dummy values for required schema fields that are hidden in this simplified view
     const id_marca = Number(formData.get('id_marca'));
     const precio_base = '0.00';
     
+    let imagen_url = null;
+    const imagenFile = formData.get('imagen_archivo') as File;
+    if (imagenFile && imagenFile.size > 0) {
+      const buf = Buffer.from(await imagenFile.arrayBuffer());
+      const fileName = `${Date.now()}-${imagenFile.name}`;
+      const filePath = path.join(process.cwd(), 'public', 'img', 'productos', fileName);
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, buf);
+      imagen_url = `/img/productos/${fileName}`;
+    }
+    
     // Create Modelo
     const [modeloResult] = await db.insert(Modelos).values({
-      id_marca, id_categoria, nombre, descripcion, precio_base
+      id_marca, id_categoria, nombre, descripcion, precio_base, imagen_url
     });
     
     const id_modelo = modeloResult.insertId;
     const sku = `SCM-${Date.now()}`;
-    const precio_venta = '0.00';
     const estado = 'Activo';
 
     // Create Producto
     const [productoResult] = await db.insert(Productos).values({
-      id_modelo, id_proveedor, sku, stock, stock_minimo, estrategia_logistica, costo, precio_venta, estado
+      id_modelo, id_proveedor, sku, stock, stock_minimo, estrategia_logistica, costo, precio_venta, estado, color, theme_class
     });
     
     // ---- PULL/PUSH stock check ----
@@ -54,20 +69,24 @@ if (Astro.request.method === 'POST') {
       const now = new Date();
 
       if (estrategia_logistica === 'PULL') {
+        // En modo PULL, el pedido se completa automáticamente y se refleja en el stock
         await db.insert(PedidosCompra).values({
           id_producto: newProductId, id_proveedor, cantidad: cantidadReponer,
-          tipo: 'AUTOMATICO', estado: 'Pendiente', fecha_creacion: now,
+          tipo: 'AUTOMATICO', estado: 'Completado', fecha_creacion: now, fecha_completado: now
         });
+        await db.update(Productos)
+          .set({ stock: stock + cantidadReponer })
+          .where(eq(Productos.id, newProductId));
         await db.insert(Notificaciones).values({
           tipo: 'pedido_auto',
-          titulo: `Pedido automático creado — ${nombre}`,
-          mensaje: `Se generó un pedido automático de ${cantidadReponer} uds para "${nombre}" (stock: ${stock}, mín: ${stock_minimo}).`,
+          titulo: `Pedido automático completado — ${nombre}`,
+          mensaje: `Se generó y completó un pedido automático de ${cantidadReponer} uds para "${nombre}". Nuevo stock: ${stock + cantidadReponer}.`,
           id_producto: newProductId, leida: false, fecha_creacion: now,
         });
       } else {
         await db.insert(Notificaciones).values({
           tipo: 'stock_bajo',
-          titulo: `⚠️ Stock bajo — ${nombre}`,
+          titulo: `Stock bajo — ${nombre}`,
           mensaje: `El producto "${nombre}" fue creado con stock bajo (${stock} uds, mín: ${stock_minimo}). Se requiere crear un pedido manualmente.`,
           id_producto: newProductId, leida: false, fecha_creacion: now,
         });
@@ -86,12 +105,26 @@ if (Astro.request.method === 'POST') {
     const stock_minimo = Number(formData.get('stock_minimo'));
     const estrategia_logistica = formData.get('estrategia_logistica') as string;
     const costo = formData.get('costo') as string;
+    const precio_venta = formData.get('precio_venta') as string;
+    const color = formData.get('color') as string;
+    const theme_class = formData.get('theme_class') as string;
+
+    let imagen_url = undefined;
+    const imagenFile = formData.get('imagen_archivo') as File;
+    if (imagenFile && imagenFile.size > 0) {
+      const buf = Buffer.from(await imagenFile.arrayBuffer());
+      const fileName = `${Date.now()}-${imagenFile.name}`;
+      const filePath = path.join(process.cwd(), 'public', 'img', 'productos', fileName);
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, buf);
+      imagen_url = `/img/productos/${fileName}`;
+    }
 
     const producto = await db.select().from(Productos).where(eq(Productos.id, id));
     if (producto.length > 0) {
       const id_modelo = producto[0].id_modelo;
-      await db.update(Modelos).set({ id_marca, id_categoria, nombre, descripcion }).where(eq(Modelos.id, id_modelo));
-      await db.update(Productos).set({ id_proveedor, stock, stock_minimo, estrategia_logistica, costo }).where(eq(Productos.id, id));
+      await db.update(Modelos).set({ id_marca, id_categoria, nombre, descripcion, ...(imagen_url ? { imagen_url } : {}) }).where(eq(Modelos.id, id_modelo));
+      await db.update(Productos).set({ id_proveedor, stock, stock_minimo, estrategia_logistica, costo, precio_venta, color, theme_class }).where(eq(Productos.id, id));
 
       // ---- PULL/PUSH stock check on update ----
       if (stock <= stock_minimo && stock_minimo > 0) {
@@ -106,12 +139,15 @@ if (Astro.request.method === 'POST') {
           if (estrategia_logistica === 'PULL') {
             await db.insert(PedidosCompra).values({
               id_producto: id, id_proveedor, cantidad: cantidadReponer,
-              tipo: 'AUTOMATICO', estado: 'Pendiente', fecha_creacion: now,
+              tipo: 'AUTOMATICO', estado: 'Completado', fecha_creacion: now, fecha_completado: now
             });
+            await db.update(Productos)
+              .set({ stock: stock + cantidadReponer })
+              .where(eq(Productos.id, id));
             await db.insert(Notificaciones).values({
               tipo: 'pedido_auto',
-              titulo: `Pedido automático creado — ${nombre}`,
-              mensaje: `Se generó un pedido automático de ${cantidadReponer} uds para "${nombre}" (stock: ${stock}, mín: ${stock_minimo}).`,
+              titulo: `Pedido automático completado — ${nombre}`,
+              mensaje: `Se generó y completó un pedido automático de ${cantidadReponer} uds para "${nombre}". Nuevo stock: ${stock + cantidadReponer}.`,
               id_producto: id, leida: false, fecha_creacion: now,
             });
           } else {
@@ -121,7 +157,7 @@ if (Astro.request.method === 'POST') {
             if (existingNotif.length === 0) {
               await db.insert(Notificaciones).values({
                 tipo: 'stock_bajo',
-                titulo: `⚠️ Stock bajo — ${nombre}`,
+                titulo: `Stock bajo — ${nombre}`,
                 mensaje: `El producto "${nombre}" tiene stock bajo (${stock} uds, mín: ${stock_minimo}). Se requiere crear un pedido manualmente.`,
                 id_producto: id, leida: false, fecha_creacion: now,
               });
@@ -171,6 +207,10 @@ const productosList = await db
     stock_minimo: Productos.stock_minimo,
     estrategia: Productos.estrategia_logistica,
     costo: Productos.costo,
+    precio_venta: Productos.precio_venta,
+    color: Productos.color,
+    theme_class: Productos.theme_class,
+    imagen_url: Modelos.imagen_url,
   })
   .from(Productos)
   .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id))
@@ -199,9 +239,10 @@ const productosList = await db
             <th>Marca</th>
             <th>Categoría</th>
             <th>Proveedor</th>
+            <th>Color / Estilo</th>
             <th>Stock Actual</th>
             <th>Estrategia</th>
-            <th>Costo</th>
+            <th>Precio / Costo</th>
             <th class="text-right">Acciones</th>
           </tr>
         </thead>
@@ -213,18 +254,25 @@ const productosList = await db
               <td>{producto.categoria || 'N/A'}</td>
               <td>{producto.proveedor || 'N/A'}</td>
               <td>
+                {producto.color || 'N/A'}<br/>
+                <small style="color: #666;">{producto.theme_class || 'N/A'}</small>
+              </td>
+              <td>
                 <span class={`badge ${producto.stock > (producto.stock_minimo || 0) ? 'badge-success' : 'badge-danger'}`}>
                   {producto.stock}
                 </span>
                 <span style="font-size: 11px; color: #a3a3a3; display: block; margin-top: 4px;">Min: {producto.stock_minimo || 0}</span>
               </td>
-              <td><span class={`badge ${producto.estrategia === 'PULL' ? 'badge-pull' : 'badge-push'}`}>{producto.estrategia === 'PULL' ? '🔄 PULL (Auto)' : '📦 PUSH (Manual)'}</span></td>
-              <td>${producto.costo}</td>
+              <td><span class={`badge ${producto.estrategia === 'PULL' ? 'badge-pull' : 'badge-push'}`}>{producto.estrategia === 'PULL' ? 'PULL (Auto)' : 'PUSH (Manual)'}</span></td>
+              <td>
+                Venta: ${producto.precio_venta}<br/>
+                <small style="color:#666;">Costo: ${producto.costo}</small>
+              </td>
               <td class="text-right" style="white-space: nowrap;">
                 <button 
                   class="action-btn" 
                   title="Editar" 
-                  onclick={`openEditProducto(${producto.id}, '${producto.nombre}', \`${producto.descripcion || ''}\`, ${producto.id_categoria || 'null'}, ${producto.id_proveedor || 'null'}, ${producto.id_marca || 'null'}, ${producto.stock}, ${producto.stock_minimo || 0}, '${producto.estrategia || 'PUSH'}', '${producto.costo}')`}
+                  onclick={`openEditProducto(${producto.id}, '${producto.nombre}', \`${producto.descripcion || ''}\`, ${producto.id_categoria || 'null'}, ${producto.id_proveedor || 'null'}, ${producto.id_marca || 'null'}, ${producto.stock}, ${producto.stock_minimo || 0}, '${producto.estrategia || 'PUSH'}', '${producto.costo}', '${producto.precio_venta}', '${producto.color || ''}', '${producto.theme_class || ''}')`}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
@@ -255,7 +303,7 @@ const productosList = await db
         <h2>Nuevo producto</h2>
         <button type="button" class="close-btn" onclick="document.getElementById('modalCreateProducto').close()">×</button>
       </div>
-      <form method="POST" class="scm-form">
+      <form method="POST" class="scm-form" enctype="multipart/form-data">
         <input type="hidden" name="action" value="create_producto" />
         
         <div class="form-row">
@@ -266,6 +314,28 @@ const productosList = await db
         <div class="form-row">
           <label>Descripción</label>
           <textarea name="descripcion" placeholder="Descripción..." rows="3"></textarea>
+        </div>
+
+        <div class="form-row">
+          <label>Color</label>
+          <input type="text" name="color" placeholder="Ej. Rojo / Negro" />
+        </div>
+
+        <div class="form-row">
+          <label>Imagen del producto</label>
+          <input type="file" name="imagen_archivo" accept="image/*" />
+        </div>
+
+        <div class="form-row">
+          <label>Estilo visual (Si no hay imagen)</label>
+          <div class="select-wrapper">
+            <select name="theme_class">
+              <option value="">(Ninguno)</option>
+              <option value="product-padel">Pádel (Pelota/Raqueta)</option>
+              <option value="product-shoe">Tenis (Zapato)</option>
+              <option value="product-shirt">Ropa (Camiseta)</option>
+            </select>
+          </div>
         </div>
         
         <div class="form-row">
@@ -300,12 +370,12 @@ const productosList = await db
         
         <div class="form-row">
           <label>Stock actual</label>
-          <input type="number" name="stock" value="0" required />
+          <input type="number" name="stock" value="0" required / oninput="this.value = this.value.replace(/[^0-9]/g, '')" >
         </div>
         
         <div class="form-row">
           <label>Stock minimo</label>
-          <input type="number" name="stock_minimo" value="0" required />
+          <input type="number" name="stock_minimo" value="0" required / oninput="this.value = this.value.replace(/[^0-9]/g, '')" >
         </div>
         
         <div class="form-row">
@@ -320,7 +390,12 @@ const productosList = await db
         
         <div class="form-row">
           <label>Costo unitario</label>
-          <input type="number" step="0.001" name="costo" value="0.000" required />
+          <input type="number" step="0.001" name="costo" value="0.000" required / oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" >
+        </div>
+
+        <div class="form-row">
+          <label>Precio de venta</label>
+          <input type="number" step="0.001" name="precio_venta" value="0.000" required / oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" >
         </div>
         
         <div class="modal-footer" style="justify-content: center; gap: 16px; margin-top: 32px;">
@@ -338,7 +413,7 @@ const productosList = await db
         <h2>Editar producto</h2>
         <button type="button" class="close-btn" onclick="document.getElementById('modalEditProducto').close()">×</button>
       </div>
-      <form method="POST" class="scm-form">
+      <form method="POST" class="scm-form" enctype="multipart/form-data">
         <input type="hidden" name="action" value="update_producto" />
         <input type="hidden" name="id" id="edit_producto_id" />
         
@@ -350,6 +425,28 @@ const productosList = await db
         <div class="form-row">
           <label>Descripción</label>
           <textarea name="descripcion" id="edit_producto_descripcion" rows="3"></textarea>
+        </div>
+
+        <div class="form-row">
+          <label>Color</label>
+          <input type="text" name="color" id="edit_producto_color" placeholder="Ej. Rojo / Negro" />
+        </div>
+
+        <div class="form-row">
+          <label>Nueva imagen</label>
+          <input type="file" name="imagen_archivo" accept="image/*" />
+        </div>
+
+        <div class="form-row">
+          <label>Estilo visual (Si no hay imagen)</label>
+          <div class="select-wrapper">
+            <select name="theme_class" id="edit_producto_theme">
+              <option value="">(Ninguno)</option>
+              <option value="product-padel">Pádel (Pelota/Raqueta)</option>
+              <option value="product-shoe">Tenis (Zapato)</option>
+              <option value="product-shirt">Ropa (Camiseta)</option>
+            </select>
+          </div>
         </div>
         
         <div class="form-row">
@@ -381,12 +478,12 @@ const productosList = await db
         
         <div class="form-row">
           <label>Stock actual</label>
-          <input type="number" name="stock" id="edit_producto_stock" required />
+          <input type="number" name="stock" id="edit_producto_stock" required / oninput="this.value = this.value.replace(/[^0-9]/g, '')" >
         </div>
         
         <div class="form-row">
           <label>Stock minimo</label>
-          <input type="number" name="stock_minimo" id="edit_producto_stock_minimo" required />
+          <input type="number" name="stock_minimo" id="edit_producto_stock_minimo" required / oninput="this.value = this.value.replace(/[^0-9]/g, '')" >
         </div>
         
         <div class="form-row">
@@ -401,7 +498,12 @@ const productosList = await db
         
         <div class="form-row">
           <label>Costo unitario</label>
-          <input type="number" step="0.001" name="costo" id="edit_producto_costo" required />
+          <input type="number" step="0.001" name="costo" id="edit_producto_costo" required / oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" >
+        </div>
+
+        <div class="form-row">
+          <label>Precio de venta</label>
+          <input type="number" step="0.001" name="precio_venta" id="edit_producto_precio" required / oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" >
         </div>
         
         <div class="modal-footer" style="justify-content: center; gap: 16px; margin-top: 32px;">
@@ -456,7 +558,7 @@ const productosList = await db
 </CrmLayout>
 
 <script is:inline>
-  function openEditProducto(id, nombre, descripcion, id_categoria, id_proveedor, id_marca, stock, stock_minimo, estrategia, costo) {
+  function openEditProducto(id, nombre, descripcion, id_categoria, id_proveedor, id_marca, stock, stock_minimo, estrategia, costo, precio_venta, color, theme_class) {
     document.getElementById('edit_producto_id').value = id;
     document.getElementById('edit_producto_nombre').value = nombre;
     document.getElementById('edit_producto_descripcion').value = descripcion;
@@ -467,6 +569,9 @@ const productosList = await db
     document.getElementById('edit_producto_stock_minimo').value = stock_minimo;
     document.getElementById('edit_producto_estrategia').value = estrategia;
     document.getElementById('edit_producto_costo').value = costo;
+    document.getElementById('edit_producto_precio').value = precio_venta;
+    document.getElementById('edit_producto_color').value = color || '';
+    document.getElementById('edit_producto_theme').value = theme_class || '';
     document.getElementById('modalEditProducto').showModal();
   }
 </script>

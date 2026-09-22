@@ -260,7 +260,7 @@ const productosList = await db
         </div>
         <div class="form-group">
           <label>Precio Base *</label>
-          <input type="number" step="0.01" name="precio_base" required placeholder="1599.00" />
+          <input type="number" step="0.01" name="precio_base" required placeholder="1599.00" / oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" >
         </div>
         <div class="form-group">
           <label>Descripción</label>
@@ -294,7 +294,7 @@ const productosList = await db
         </div>
         <div class="form-group">
           <label>Precio Base *</label>
-          <input type="number" step="0.01" name="precio_base" id="edit_modelo_precio" required />
+          <input type="number" step="0.01" name="precio_base" id="edit_modelo_precio" required / oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" >
         </div>
         <div class="form-group">
           <label>Descripción</label>
@@ -323,15 +323,15 @@ const productosList = await db
         </div>
         <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
           <div><label>SKU (Único) *</label><input type="text" name="sku" required /></div>
-          <div><label>Stock *</label><input type="number" name="stock" required /></div>
+          <div><label>Stock *</label><input type="number" name="stock" required / oninput="this.value = this.value.replace(/[^0-9]/g, '')" ></div>
         </div>
         <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
           <div><label>Color</label><input type="text" name="color" /></div>
           <div><label>Talla (cm)</label><input type="text" name="talla_cm" /></div>
         </div>
         <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-          <div><label>Precio Venta *</label><input type="number" step="0.01" name="precio_venta" required /></div>
-          <div><label>Costo Interno *</label><input type="number" step="0.01" name="costo" required /></div>
+          <div><label>Precio Venta *</label><input type="number" step="0.01" name="precio_venta" required / oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" ></div>
+          <div><label>Costo Interno *</label><input type="number" step="0.01" name="costo" required / oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" ></div>
         </div>
         <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
           <div><label>Estado *</label><select name="estado" required><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option></select></div>
@@ -362,15 +362,15 @@ const productosList = await db
         </div>
         <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
           <div><label>SKU (Único) *</label><input type="text" name="sku" id="edit_producto_sku" required /></div>
-          <div><label>Stock *</label><input type="number" name="stock" id="edit_producto_stock" required /></div>
+          <div><label>Stock *</label><input type="number" name="stock" id="edit_producto_stock" required / oninput="this.value = this.value.replace(/[^0-9]/g, '')" ></div>
         </div>
         <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
           <div><label>Color</label><input type="text" name="color" id="edit_producto_color" /></div>
           <div><label>Talla (cm)</label><input type="text" name="talla_cm" id="edit_producto_talla" /></div>
         </div>
         <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-          <div><label>Precio Venta *</label><input type="number" step="0.01" name="precio_venta" id="edit_producto_precio" required /></div>
-          <div><label>Costo Interno *</label><input type="number" step="0.01" name="costo" id="edit_producto_costo" required /></div>
+          <div><label>Precio Venta *</label><input type="number" step="0.01" name="precio_venta" id="edit_producto_precio" required / oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" ></div>
+          <div><label>Costo Interno *</label><input type="number" step="0.01" name="costo" id="edit_producto_costo" required / oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" ></div>
         </div>
         <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
           <div><label>Estado *</label><select name="estado" id="edit_producto_estado" required><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option></select></div>

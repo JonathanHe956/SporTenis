@@ -8,11 +8,13 @@ const categories = ['Novedades', 'Tenis', 'Pádel', 'Running', 'Ropa', 'Accesori
 
 const rawProducts = await db
   .select({
+    id: Productos.id,
     name: Modelos.nombre,
     type: Categorias.nombre,
     price: Productos.precio_venta,
     badge: Productos.badge,
     className: Productos.theme_class,
+    imageUrl: Modelos.imagen_url,
     description: Modelos.descripcion,
     color: Productos.color,
     talla: Productos.talla_cm
@@ -22,27 +24,22 @@ const rawProducts = await db
   .innerJoin(Categorias, eq(Modelos.id_categoria, Categorias.id))
   .where(eq(Productos.estado, 'Activo'));
 
-const productsMap = new Map();
-for (const p of rawProducts) {
-  if (!productsMap.has(p.name)) {
-    productsMap.set(p.name, {
-      name: p.name,
-      type: p.type,
-      price: '$' + p.price,
-      badge: p.badge || '',
-      className: p.className || '',
-      description: p.description || '',
-      options: []
-    });
-  }
-  if (p.color || p.talla) {
-    const optionStr = [p.color, p.talla ? `${p.talla}cm` : ''].filter(Boolean).join(' - ');
-    if (optionStr) {
-      productsMap.get(p.name).options.push(optionStr);
-    }
-  }
-}
-let products = Array.from(productsMap.values());
+let products = rawProducts.map(p => {
+  const suffix = [p.color, p.talla ? `${p.talla}cm` : ''].filter(Boolean).join(' - ');
+  const displayName = suffix ? `${p.name} - ${suffix}` : p.name;
+  return {
+    id: p.id,
+    name: displayName,
+    originalName: p.name,
+    type: p.type,
+    price: '$' + p.price,
+    badge: p.badge || '',
+    className: p.className || '',
+    imageUrl: p.imageUrl || null,
+    description: p.description || '',
+    options: suffix ? [suffix] : ['Estándar']
+  };
+});
 
 const categoria = Astro.url.searchParams.get('categoria');
 const query = Astro.url.searchParams.get('q');
@@ -157,7 +154,7 @@ const isFavoritos = Astro.url.pathname.includes('/favoritos');
             <div class={`product-visual ${product.className}`}>
               <span class="product-badge">{product.badge}</span>
               <button type="button" aria-label={`Añadir ${product.name} a favoritos`} class="favorite-btn">♡</button>
-              <i></i>
+              {product.imageUrl ? <img src={product.imageUrl} alt={product.name} style="width: 100%; height: 100%; object-fit: contain; position: absolute; top: 0; left: 0;" /> : <i></i>}
             </div>
             <div class="product-info">
               <div class="product-copy">

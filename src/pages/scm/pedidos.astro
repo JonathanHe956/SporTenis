@@ -168,7 +168,7 @@ const automaticos = pedidosList.filter(p => p.tipo === 'AUTOMATICO').length;
               </td>
               <td>
                 <span class={`badge ${pedido.tipo === 'AUTOMATICO' ? 'badge-pull' : 'badge-push'}`}>
-                  {pedido.tipo === 'AUTOMATICO' ? '🔄 PULL (Auto)' : '📦 PUSH (Manual)'}
+                  {pedido.tipo === 'AUTOMATICO' ? 'PULL (Auto)' : 'PUSH (Manual)'}
                 </span>
               </td>
               <td>
@@ -245,7 +245,7 @@ const automaticos = pedidosList.filter(p => p.tipo === 'AUTOMATICO').length;
         
         <div class="form-row">
           <label>Cantidad a pedir</label>
-          <input type="number" name="cantidad" min="1" value="10" required />
+          <input type="number" name="cantidad" min="1" value="10" required / oninput="this.value = this.value.replace(/[^0-9]/g, '')" >
         </div>
         
         <div class="modal-footer" style="justify-content: center; gap: 16px; margin-top: 32px;">
@@ -275,7 +275,7 @@ const automaticos = pedidosList.filter(p => p.tipo === 'AUTOMATICO').length;
           const data = await res.json();
           
           if (data.ok) {
-            let msg = `✅ Revisados: ${data.productosRevisados} productos. `;
+            let msg = `Revisados: ${data.productosRevisados} productos. `;
             msg += `Bajo stock: ${data.productosBajoStock}. `;
             if (data.pedidosCreados > 0) msg += `Pedidos automáticos creados: ${data.pedidosCreados}. `;
             if (data.notificacionesCreadas > 0) msg += `Alertas generadas: ${data.notificacionesCreadas}.`;

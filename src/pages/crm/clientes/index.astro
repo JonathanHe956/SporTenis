@@ -246,7 +246,7 @@ function getStageBadge(stage: string | null) {
 
         <div class="form-group">
           <label>Teléfono</label>
-          <input type="tel" name="telefono" id="edit_telefono" />
+          <input type="tel" name="telefono" id="edit_telefono" / oninput="this.value = this.value.replace(/[^0-9]/g, '')" >
         </div>
 
         <div class="form-group">
