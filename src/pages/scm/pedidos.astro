@@ -15,15 +15,17 @@ if (Astro.request.method === 'POST') {
   if (action === 'create_pedido') {
     const id_producto = Number(formData.get('id_producto'));
     const cantidad = Number(formData.get('cantidad'));
+    const tipo = formData.get('tipo')?.toString() || 'Reposición';
+    const id_proveedor_form = formData.get('id_proveedor');
 
     const producto = await db.select().from(Productos).where(eq(Productos.id, id_producto));
-    const id_proveedor = producto.length > 0 ? producto[0].id_proveedor : null;
+    const id_proveedor = id_proveedor_form ? Number(id_proveedor_form) : (producto.length > 0 ? producto[0].id_proveedor : null);
 
     await db.insert(PedidosCompra).values({
       id_producto,
       id_proveedor,
       cantidad,
-      tipo: 'MANUAL',
+      tipo: tipo,
       estado: 'Pendiente',
       fecha_creacion: new Date(),
     });
@@ -101,6 +103,8 @@ const productosList = await db
   .from(Productos)
   .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id))
   .leftJoin(Proveedores, eq(Productos.id_proveedor, Proveedores.id));
+
+const proveedoresList = await db.select().from(Proveedores);
 
 const pendientes = pedidosList.filter(p => p.estado === 'Pendiente').length;
 const completados = pedidosList.filter(p => p.estado === 'Completado').length;
@@ -247,34 +251,67 @@ if (q) {
 
   <!-- Modal: Crear Pedido Manual -->
   <dialog id="modalCreatePedido" class="crm-modal scm-modal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>Nuevo Pedido Manual (Push)</h2>
-        <button type="button" class="close-btn" onclick="document.getElementById('modalCreatePedido').close()">×</button>
+    <div class="modal-content" style="padding: 32px 40px; border-radius: 16px;">
+      <div class="modal-header" style="margin-bottom: 24px;">
+        <h2 style="font-size: 20px; font-weight: 700; color: #111827; margin: 0;">Nuevo pedido</h2>
       </div>
       <form method="POST" class="scm-form">
         <input type="hidden" name="action" value="create_pedido" />
         
-        <div class="form-row">
-          <label>Producto</label>
+        <div class="form-row" style="margin-bottom: 20px;">
+          <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563;">Producto</label>
           <div class="select-wrapper">
-            <select name="id_producto" required>
+            <select name="id_producto" required style="border-radius: 6px; border-color: #d1d5db; color: #4b5563;">
               <option value="" disabled selected>Selecciona un producto</option>
               {productosList.map(p => (
-                <option value={p.id}>{p.nombre} (Stock: {p.stock}, Min: {p.stock_minimo})</option>
+                <option value={p.id}>{p.nombre}</option>
               ))}
             </select>
           </div>
         </div>
         
-        <div class="form-row">
-          <label>Cantidad a pedir</label>
-          <input type="number" name="cantidad" min="1" value="10" required oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
+        <div class="form-row" style="margin-bottom: 20px;">
+          <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563;">Cantidad</label>
+          <input type="number" name="cantidad" min="0" value="0" required oninput="this.value = this.value.replace(/[^0-9]/g, '')" style="border-radius: 6px; border-color: #d1d5db; color: #4b5563;" />
+        </div>
+
+        <div class="form-row" style="margin-bottom: 20px;">
+          <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563;">Tipo</label>
+          <div class="select-wrapper">
+            <select name="tipo" required style="border-radius: 6px; border-color: #d1d5db; color: #4b5563;">
+              <option value="Reposición">Reposición</option>
+              <option value="Especial">Especial</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom: 20px;">
+          <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563;">Proveedor</label>
+          <div class="select-wrapper">
+            <select name="id_proveedor" required style="border-radius: 6px; border-color: #d1d5db; color: #4b5563;">
+              <option value="" disabled selected>Selecciona un proveedor</option>
+              {proveedoresList.map(prov => (
+                <option value={prov.id}>{prov.nombre}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom: 20px;">
+          <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563;">Fecha</label>
+          <div style="flex: 1; position: relative;">
+            <input type="date" name="fecha" required style="border-radius: 6px; border-color: #d1d5db; color: #4b5563; width: 100%; box-sizing: border-box;" />
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom: 32px; align-items: flex-start;">
+          <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563; padding-top: 10px;">Notas</label>
+          <textarea name="notas" placeholder="Notas..." style="flex: 1; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit; font-size: 14px; color: #4b5563; background-color: #ffffff; width: 100%; min-height: 100px; resize: vertical; box-sizing: border-box;"></textarea>
         </div>
         
-        <div class="modal-footer" style="justify-content: center; gap: 16px; margin-top: 32px;">
-          <button type="button" class="btn-cancel" onclick="document.getElementById('modalCreatePedido').close()">Cancelar</button>
-          <button type="submit" class="btn-save">Crear Pedido</button>
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 10px;">
+          <button type="button" class="btn-cancel" onclick="document.getElementById('modalCreatePedido').close()" style="border: 1px solid #d1d5db; color: #111827; background: white; padding: 10px 24px; border-radius: 6px; font-weight: 500; cursor: pointer;">Cancelar</button>
+          <button type="submit" class="btn-save" style="background: #006655; color: white; border: none; padding: 10px 24px; border-radius: 6px; font-weight: 500; cursor: pointer;">Guardar</button>
         </div>
       </form>
     </div>
