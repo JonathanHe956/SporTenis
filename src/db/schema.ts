@@ -219,6 +219,8 @@ export const PedidosCompra = mysqlTable('PedidosCompra', {
   estado: varchar('estado', { length: 100 }).notNull(),
   fecha_creacion: datetime('fecha_creacion').notNull(),
   fecha_completado: datetime('fecha_completado'),
+  stock_anterior: int('stock_anterior'),
+  stock_posterior: int('stock_posterior'),
 });
 
 export const MovimientosInventario = mysqlTable('MovimientosInventario', {
