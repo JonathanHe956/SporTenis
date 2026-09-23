@@ -1,8 +1,8 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
-import { Productos, Modelos, Proveedores, PedidosCompra, MovimientosInventario } from '../../db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { Productos, Modelos, Proveedores, Marcas, Categorias, PedidosCompra, MovimientosInventario } from '../../db/schema';
+import { eq, desc, sql } from 'drizzle-orm';
 
 const session = Astro.cookies.get('sportenis_session')?.value;
 if (!session) return Astro.redirect('/login');
@@ -20,6 +20,7 @@ if (Astro.request.method === 'POST') {
 
     const producto = await db.select().from(Productos).where(eq(Productos.id, id_producto));
     const id_proveedor = id_proveedor_form ? Number(id_proveedor_form) : (producto.length > 0 ? producto[0].id_proveedor : null);
+    const stock_anterior = producto.length > 0 ? producto[0].stock : 0;
 
     await db.insert(PedidosCompra).values({
       id_producto,
@@ -28,6 +29,8 @@ if (Astro.request.method === 'POST') {
       tipo: tipo,
       estado: 'Pendiente',
       fecha_creacion: new Date(),
+      stock_anterior,
+      stock_posterior: null,
     });
 
     return Astro.redirect(Astro.url.pathname);
@@ -46,20 +49,31 @@ if (Astro.request.method === 'POST') {
         await db.update(Productos).set({ stock: newStock }).where(eq(Productos.id, p.id_producto));
 
         // Registrar el movimiento automáticamente
-        await db.insert(MovimientosInventario).values({
-          id_producto: p.id_producto,
-          tipo: 'Entrada',
-          cantidad: p.cantidad,
-          motivo: 'Pedido',
-          fecha: new Date(),
-          id_usuario: sessionUserId,
-        });
-      }
+        try {
+          await db.insert(MovimientosInventario).values({
+            id_producto: p.id_producto,
+            tipo: 'Entrada',
+            cantidad: p.cantidad,
+            motivo: 'Pedido',
+            fecha: new Date(),
+            id_usuario: sessionUserId,
+          });
+        } catch (e) {
+          console.error("Error al registrar movimiento:", e);
+        }
 
-      await db.update(PedidosCompra).set({
-        estado: 'Completado',
-        fecha_completado: new Date(),
-      }).where(eq(PedidosCompra.id, id));
+        await db.update(PedidosCompra).set({
+          estado: 'Completado',
+          fecha_completado: new Date(),
+          stock_anterior: p.stock_anterior ?? producto[0].stock,
+          stock_posterior: newStock,
+        }).where(eq(PedidosCompra.id, id));
+      } else {
+        await db.update(PedidosCompra).set({
+          estado: 'Completado',
+          fecha_completado: new Date(),
+        }).where(eq(PedidosCompra.id, id));
+      }
     }
 
     return Astro.redirect(Astro.url.pathname);
@@ -81,15 +95,33 @@ const pedidosList = await db
     estado: PedidosCompra.estado,
     fecha_creacion: PedidosCompra.fecha_creacion,
     fecha_completado: PedidosCompra.fecha_completado,
+    stock_anterior: PedidosCompra.stock_anterior,
+    stock_posterior: PedidosCompra.stock_posterior,
     producto: Modelos.nombre,
+    imagen_url: Modelos.imagen_url,
+    descripcion: Modelos.descripcion,
+    marca: Marcas.nombre,
+    categoria: Categorias.nombre,
+    sku: Productos.sku,
+    talla_cm: Productos.talla_cm,
+    color: Productos.color,
+    precio_venta: Productos.precio_venta,
+    costo: Productos.costo,
     stock_actual: Productos.stock,
     stock_minimo: Productos.stock_minimo,
+    estrategia_logistica: Productos.estrategia_logistica,
     proveedor: Proveedores.nombre,
+    proveedor_contacto: Proveedores.contacto,
+    proveedor_correo: Proveedores.correo,
+    proveedor_telefono: Proveedores.telefono,
+    proveedor_direccion: Proveedores.direccion,
   })
   .from(PedidosCompra)
   .leftJoin(Productos, eq(PedidosCompra.id_producto, Productos.id))
   .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id))
-  .leftJoin(Proveedores, eq(PedidosCompra.id_proveedor, Proveedores.id))
+  .leftJoin(Marcas, eq(Modelos.id_marca, Marcas.id))
+  .leftJoin(Categorias, eq(Modelos.id_categoria, Categorias.id))
+  .leftJoin(Proveedores, eq(sql`COALESCE(${PedidosCompra.id_proveedor}, ${Productos.id_proveedor})`, Proveedores.id))
   .orderBy(desc(PedidosCompra.fecha_creacion));
 
 const productosList = await db
@@ -161,7 +193,7 @@ if (q) {
   <div class="crm-card">
     <!-- Buscador -->
     <form method="GET" style="margin: 0; flex: 1; max-width: 400px; display: flex; position: relative; margin-bottom: 24px;" id="searchForm">
-      <input type="search" name="q" value={q || ""} placeholder="Buscar..." class="search-input" style="width: 100%; padding-right: 40px;" />
+      <input type="search" name="q" value={q || ""} placeholder="Buscar por producto, proveedor o # pedido..." class="search-input" style="width: 100%; padding-right: 40px;" />
       <button type="submit" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </button>
@@ -174,7 +206,7 @@ if (q) {
             <th>Producto</th>
             <th>Proveedor</th>
             <th>Cantidad</th>
-            <th>Stock Actual</th>
+            <th>Stock al Pedir / Actual</th>
             <th>Tipo</th>
             <th>Estado</th>
             <th>Fecha</th>
@@ -182,61 +214,89 @@ if (q) {
           </tr>
         </thead>
         <tbody>
-          {pedidosFiltrados.map(pedido => (
-            <tr>
-              <td><code>#{pedido.id}</code></td>
-              <td><strong>{pedido.producto || 'N/A'}</strong></td>
-              <td>{pedido.proveedor || 'Sin asignar'}</td>
-              <td><strong>{pedido.cantidad} uds</strong></td>
-              <td>
-                <span class={`badge ${(pedido.stock_actual || 0) > (pedido.stock_minimo || 0) ? 'badge-success' : 'badge-danger'}`}>
-                  {pedido.stock_actual || 0}
-                </span>
-                <span style="font-size: 11px; color: #a3a3a3; display: block; margin-top: 2px;">Min: {pedido.stock_minimo || 0}</span>
-              </td>
-              <td>
-                <span class={`badge ${pedido.tipo === 'AUTOMATICO' ? 'badge-pull' : 'badge-push'}`}>
-                  {pedido.tipo === 'AUTOMATICO' ? 'PULL (Auto)' : 'PUSH (Manual)'}
-                </span>
-              </td>
-              <td>
-                <span class={`badge ${pedido.estado === 'Completado' ? 'badge-success' : pedido.estado === 'Cancelado' ? 'badge-danger' : 'badge-warning'}`}>
-                  {pedido.estado}
-                </span>
-              </td>
-              <td style="font-size: 12px; color: var(--color-text-muted);">
-                {new Date(pedido.fecha_creacion).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
-                {pedido.fecha_completado && (
-                  <span style="display: block; font-size: 11px; color: #15803d; margin-top: 2px;">
-                    ✓ {new Date(pedido.fecha_completado).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
+          {pedidosFiltrados.map(pedido => {
+            const stockAntesCalc = pedido.stock_anterior !== null && pedido.stock_anterior !== undefined 
+              ? pedido.stock_anterior 
+              : (pedido.estado === 'Completado' ? Math.max(0, (pedido.stock_actual || 0) - pedido.cantidad) : (pedido.stock_actual || 0));
+            const stockDespuesCalc = pedido.stock_posterior !== null && pedido.stock_posterior !== undefined 
+              ? pedido.stock_posterior 
+              : (stockAntesCalc + pedido.cantidad);
+
+            return (
+              <tr>
+                <td><code>#{pedido.id}</code></td>
+                <td>
+                  <strong>{pedido.producto || 'N/A'}</strong>
+                  {pedido.sku && <span class="sku-hint">{pedido.sku}</span>}
+                </td>
+                <td>{pedido.proveedor || 'Sin asignar'}</td>
+                <td><strong>+{pedido.cantidad} uds</strong></td>
+                <td>
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span class={`badge ${stockAntesCalc > (pedido.stock_minimo || 0) ? 'badge-neutral' : 'badge-danger'}`} title="Stock que tenía al momento de solicitar">
+                      Antes: {stockAntesCalc}
+                    </span>
+                    <span style="color: #94a3b8; font-size: 11px;">➔</span>
+                    <span class={`badge ${pedido.estado === 'Completado' ? 'badge-success' : 'badge-info'}`} title={pedido.estado === 'Completado' ? 'Stock final alcanzado' : 'Stock proyectado al recibir'}>
+                      {pedido.estado === 'Completado' ? `Final: ${stockDespuesCalc}` : `Proy: ${stockDespuesCalc}`}
+                    </span>
+                  </div>
+                  <span style="font-size: 11px; color: #a3a3a3; display: block; margin-top: 3px;">
+                    Min: {pedido.stock_minimo || 0} | Actual: {pedido.stock_actual || 0}
                   </span>
-                )}
-              </td>
-              <td class="text-right" style="white-space: nowrap;">
-                {pedido.estado === 'Pendiente' && (
-                  <>
-                    <form method="POST" style="display:inline;" onsubmit="return confirm('¿Marcar este pedido como completado? Se actualizará el stock del producto.');">
-                      <input type="hidden" name="action" value="completar_pedido" />
-                      <input type="hidden" name="id" value={pedido.id} />
-                      <button type="submit" class="action-btn action-complete" title="Completar pedido (agregar stock)">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-                      </button>
-                    </form>
-                    <form method="POST" style="display:inline;" onsubmit="return confirm('¿Cancelar este pedido?');">
-                      <input type="hidden" name="action" value="cancelar_pedido" />
-                      <input type="hidden" name="id" value={pedido.id} />
-                      <button type="submit" class="action-btn text-danger" title="Cancelar pedido">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                      </button>
-                    </form>
-                  </>
-                )}
-                {pedido.estado !== 'Pendiente' && (
-                  <span style="font-size: 11px; color: #a3a3a3;">—</span>
-                )}
-              </td>
-            </tr>
-          ))}
+                </td>
+                <td>
+                  <span class={`badge ${pedido.tipo === 'AUTOMATICO' ? 'badge-pull' : 'badge-push'}`}>
+                    {pedido.tipo === 'AUTOMATICO' ? 'PULL (Auto)' : 'PUSH (Manual)'}
+                  </span>
+                </td>
+                <td>
+                  <span class={`badge ${pedido.estado === 'Completado' ? 'badge-success' : pedido.estado === 'Cancelado' ? 'badge-danger' : 'badge-warning'}`}>
+                    {pedido.estado}
+                  </span>
+                </td>
+                <td style="font-size: 12px; color: var(--color-text-muted);">
+                  {new Date(pedido.fecha_creacion).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  {pedido.fecha_completado && (
+                    <span style="display: block; font-size: 11px; color: #15803d; margin-top: 2px;">
+                      ✓ {new Date(pedido.fecha_completado).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
+                    </span>
+                  )}
+                </td>
+                <td class="text-right" style="white-space: nowrap;">
+                  <!-- Botón Ojito (Ver detalles completos del pedido y niveles de stock) -->
+                  <button 
+                    type="button" 
+                    class="action-btn action-view" 
+                    title="Ver detalles del pedido e historial de stock"
+                    data-pedido={JSON.stringify(pedido)}
+                    onclick="openPedidoDetails(this)"
+                  >
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  </button>
+
+                  {pedido.estado === 'Pendiente' && (
+                    <>
+                      <form method="POST" style="display:inline;" onsubmit="return confirm('¿Marcar este pedido como completado? Se actualizará el stock del producto.');">
+                        <input type="hidden" name="action" value="completar_pedido" />
+                        <input type="hidden" name="id" value={pedido.id} />
+                        <button type="submit" class="action-btn action-complete" title="Completar pedido (agregar stock)">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                        </button>
+                      </form>
+                      <form method="POST" style="display:inline;" onsubmit="return confirm('¿Cancelar este pedido?');">
+                        <input type="hidden" name="action" value="cancelar_pedido" />
+                        <input type="hidden" name="id" value={pedido.id} />
+                        <button type="submit" class="action-btn text-danger" title="Cancelar pedido">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </form>
+                    </>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
           {pedidosFiltrados.length === 0 && (
             <tr>
               <td colspan="9" style="text-align: center; color: var(--color-text-muted); padding: 40px;">
@@ -317,6 +377,190 @@ if (q) {
     </div>
   </dialog>
 
+  <!-- Modal: Detalles Completos del Pedido (El Ojito 👁️) -->
+  <dialog id="modalDetailPedido" class="crm-modal scm-modal modal-detail-wide">
+    <div class="modal-content print-container">
+      <!-- Encabezado del Modal -->
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <h2 style="margin: 0; font-size: 20px;">Detalle del Pedido <span id="dtlId" class="id-pill">#0</span></h2>
+          <span id="dtlBadgeTipo" class="badge">PULL</span>
+          <span id="dtlBadgeEstado" class="badge">Pendiente</span>
+        </div>
+        <button type="button" class="close-btn no-print" onclick="document.getElementById('modalDetailPedido').close()">×</button>
+      </div>
+
+      <!-- SECCIÓN PRINCIPAL: ANÁLISIS DE NIVELES DE STOCK -->
+      <div class="stock-analysis-panel">
+        <div class="panel-tag-header">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          <span>Evolución e Impacto del Inventario</span>
+        </div>
+
+        <div class="stock-flow-grid">
+          <!-- 1. Stock Antes -->
+          <div class="stock-flow-card">
+            <span class="flow-label">Stock Antes de Pedir</span>
+            <div class="flow-value" id="dtlStockAntes">0</div>
+            <span class="flow-sub" id="dtlStockAntesHint">Unidades registradas</span>
+          </div>
+
+          <!-- Conector / Cantidad -->
+          <div class="stock-flow-connector">
+            <span class="connector-badge" id="dtlCantidadBadge">+0 uds</span>
+            <div class="connector-line">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </div>
+            <span style="font-size: 10px; color: #64748b; font-weight: 600;">Reabastecimiento</span>
+          </div>
+
+          <!-- 2. Stock Después -->
+          <div class="stock-flow-card highlight">
+            <span class="flow-label" id="dtlStockDespuesLabel">Stock Después</span>
+            <div class="flow-value highlight-val" id="dtlStockDespues">0</div>
+            <span class="flow-sub" id="dtlStockDespuesHint">Stock resultante</span>
+          </div>
+
+          <!-- 3. Stock Mínimo -->
+          <div class="stock-flow-card">
+            <span class="flow-label">Umbral Mínimo</span>
+            <div class="flow-value" id="dtlStockMinimo">0</div>
+            <span class="flow-sub">Punto de reorden</span>
+          </div>
+
+          <!-- 4. Stock Actual Hoy -->
+          <div class="stock-flow-card">
+            <span class="flow-label">Stock Actual (Hoy)</span>
+            <div class="flow-value" id="dtlStockActual">0</div>
+            <span class="flow-sub">En almacén físico</span>
+          </div>
+        </div>
+
+        <!-- Barra visual comparativa -->
+        <div class="stock-visual-bar-wrap">
+          <div class="stock-visual-header">
+            <span style="font-size: 12px; color: #475569; font-weight: 600;">Diagnóstico de Inventario:</span>
+            <span id="dtlStockHealthText" class="health-pill">Saludable</span>
+          </div>
+          <div class="stock-visual-track">
+            <div class="stock-visual-fill" id="dtlStockVisualFill"></div>
+          </div>
+          <div class="stock-visual-legend">
+            <span>Antes: <strong id="dtlLegendPrev">0</strong> uds</span>
+            <span class="legend-min">Umbral Mínimo: <strong id="dtlLegendMin">0</strong> uds</span>
+            <span class="legend-post">Después: <strong id="dtlLegendPost">0</strong> uds</span>
+          </div>
+          <p id="dtlStockDiagnosisNote" class="stock-note-text"></p>
+        </div>
+      </div>
+
+      <!-- SECCIÓN 2: PRODUCTO Y PROVEEDOR -->
+      <div class="detail-two-cols">
+        <!-- Tarjeta de Producto -->
+        <div class="info-block">
+          <div class="info-block-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+            <span>Información del Producto</span>
+          </div>
+          <div class="product-mini-preview">
+            <img id="dtlImg" src="" alt="Foto Producto" class="product-thumb" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+            <div class="product-thumb-fallback" style="display:none;">👟</div>
+            <div class="product-mini-info">
+              <h4 id="dtlProductoNombre" class="product-title">-</h4>
+              <div class="product-meta">
+                <span id="dtlMarca">-</span> • <span id="dtlCategoria">-</span>
+              </div>
+              <div class="product-tags-row">
+                <span class="spec-tag">SKU: <b id="dtlSku">-</b></span>
+                <span class="spec-tag">Talla: <b id="dtlTalla">-</b></span>
+                <span class="spec-tag">Color: <b id="dtlColor">-</b></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tarjeta de Proveedor -->
+        <div class="info-block">
+          <div class="info-block-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>Proveedor y Despacho</span>
+          </div>
+          <div class="provider-details">
+            <h4 id="dtlProveedorNombre" style="margin: 0 0 8px 0; font-size: 15px; color: #001632;">-</h4>
+            <div class="provider-row">
+              <span class="p-label">Atención:</span>
+              <span id="dtlProveedorContacto" class="p-val">-</span>
+            </div>
+            <div class="provider-row">
+              <span class="p-label">Email:</span>
+              <a id="dtlProveedorCorreoLink" href="#" class="p-link"><span id="dtlProveedorCorreo">-</span></a>
+            </div>
+            <div class="provider-row">
+              <span class="p-label">Teléfono:</span>
+              <a id="dtlProveedorTelefonoLink" href="#" class="p-link"><span id="dtlProveedorTelefono">-</span></a>
+            </div>
+            <div class="provider-row">
+              <span class="p-label">Dirección:</span>
+              <span id="dtlProveedorDireccion" class="p-val">-</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECCIÓN 3: COSTOS Y FECHAS -->
+      <div class="detail-summary-strip">
+        <div class="summary-cell">
+          <span class="s-label">Costo Unitario</span>
+          <strong id="dtlCostoUnitario" class="s-val">$0.00</strong>
+        </div>
+        <div class="summary-cell">
+          <span class="s-label">Inversión Pedido</span>
+          <strong id="dtlTotalInversion" class="s-val highlight-green">$0.00</strong>
+        </div>
+        <div class="summary-cell">
+          <span class="s-label">Precio Venta (PVP)</span>
+          <strong id="dtlPrecioVenta" class="s-val">$0.00</strong>
+        </div>
+        <div class="summary-cell">
+          <span class="s-label">Fecha Solicitud</span>
+          <span id="dtlFechaCreacion" class="s-val-date">-</span>
+        </div>
+        <div class="summary-cell">
+          <span class="s-label">Fecha Recepción</span>
+          <span id="dtlFechaCompletado" class="s-val-date">-</span>
+        </div>
+      </div>
+
+      <!-- FOOTER CON ACCIONES -->
+      <div class="modal-footer no-print" style="justify-content: space-between; align-items: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+        <div>
+          <button type="button" class="btn-secondary" onclick="window.printPedidoDetail()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Imprimir Ficha
+          </button>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <form id="formModalCompletar" method="POST" style="display:none;" onsubmit="return confirm('¿Confirmar recepción y marcar pedido como completado? Se actualizará el stock físico.');">
+            <input type="hidden" name="action" value="completar_pedido" />
+            <input type="hidden" name="id" id="modalCompletarId" value="" />
+            <button type="submit" class="btn-save" style="background: #15803d; border-color: #15803d; display: flex; align-items: center; gap: 6px;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+              Completar Pedido
+            </button>
+          </form>
+          <form id="formModalCancelar" method="POST" style="display:none;" onsubmit="return confirm('¿Estás seguro de cancelar este pedido de compra?');">
+            <input type="hidden" name="action" value="cancelar_pedido" />
+            <input type="hidden" name="id" id="modalCancelarId" value="" />
+            <button type="submit" class="btn-cancel" style="border-color: #dc2626; color: #dc2626;">
+              Cancelar Pedido
+            </button>
+          </form>
+          <button type="button" class="btn-secondary" onclick="document.getElementById('modalDetailPedido').close()">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
   <!-- Toast for stock check result -->
   <div id="stockToast" class="stock-toast"></div>
 </CrmLayout>
@@ -366,6 +610,203 @@ if (q) {
       setTimeout(() => { toast.className = 'stock-toast'; }, 5000);
     }
   });
+
+  window.openPedidoDetails = function(button) {
+    const data = JSON.parse(button.getAttribute('data-pedido') || '{}');
+    const modal = document.getElementById('modalDetailPedido');
+    if (!modal) return;
+
+    // Pedido ID
+    document.getElementById('dtlId').textContent = '#' + data.id;
+
+    // Badges
+    const badgeTipo = document.getElementById('dtlBadgeTipo');
+    if (badgeTipo) {
+      badgeTipo.textContent = data.tipo === 'AUTOMATICO' ? 'PULL (Auto)' : 'PUSH (Manual)';
+      badgeTipo.className = 'badge ' + (data.tipo === 'AUTOMATICO' ? 'badge-pull' : 'badge-push');
+    }
+
+    const badgeEstado = document.getElementById('dtlBadgeEstado');
+    if (badgeEstado) {
+      badgeEstado.textContent = data.estado;
+      badgeEstado.className = 'badge ' + (data.estado === 'Completado' ? 'badge-success' : data.estado === 'Cancelado' ? 'badge-danger' : 'badge-warning');
+    }
+
+    // Cálculos de Stock
+    const cantidad = Number(data.cantidad || 0);
+    const stockMinimo = Number(data.stock_minimo || 0);
+    const stockActual = Number(data.stock_actual || 0);
+
+    let stockAntes = (data.stock_anterior !== null && data.stock_anterior !== undefined)
+      ? Number(data.stock_anterior)
+      : (data.estado === 'Completado' ? Math.max(0, stockActual - cantidad) : stockActual);
+
+    let stockDespues = (data.stock_posterior !== null && data.stock_posterior !== undefined)
+      ? Number(data.stock_posterior)
+      : (stockAntes + cantidad);
+
+    document.getElementById('dtlStockAntes').textContent = stockAntes;
+    const antesHint = document.getElementById('dtlStockAntesHint');
+    if (antesHint) {
+      if (stockAntes <= stockMinimo) {
+        antesHint.innerHTML = '<span style="color:#e11d48; font-weight:700;">⚠️ Por debajo del mínimo</span>';
+      } else {
+        antesHint.innerHTML = '<span style="color:#15803d; font-weight:600;">✓ Nivel aceptable</span>';
+      }
+    }
+
+    document.getElementById('dtlCantidadBadge').textContent = `+${cantidad} uds solicitadas`;
+    document.getElementById('dtlStockDespues').textContent = stockDespues;
+
+    const despuesLabel = document.getElementById('dtlStockDespuesLabel');
+    const despuesHint = document.getElementById('dtlStockDespuesHint');
+    if (despuesLabel) {
+      despuesLabel.textContent = data.estado === 'Completado' ? 'Stock Final Logrado' : 'Stock Estimado al Recibir';
+    }
+    if (despuesHint) {
+      if (stockDespues > stockMinimo) {
+        const margen = stockDespues - stockMinimo;
+        despuesHint.innerHTML = `<span style="color:#15803d; font-weight:600;">✓ Supera mínimo (+${margen})</span>`;
+      } else {
+        despuesHint.innerHTML = '<span style="color:#d97706; font-weight:600;">Iguala umbral mínimo</span>';
+      }
+    }
+
+    document.getElementById('dtlStockMinimo').textContent = stockMinimo;
+    document.getElementById('dtlStockActual').textContent = stockActual;
+
+    // Visual Bar y Diagnóstico
+    const legendPrev = document.getElementById('dtlLegendPrev');
+    const legendMin = document.getElementById('dtlLegendMin');
+    const legendPost = document.getElementById('dtlLegendPost');
+    const visualFill = document.getElementById('dtlStockVisualFill');
+    const healthText = document.getElementById('dtlStockHealthText');
+    const noteText = document.getElementById('dtlStockDiagnosisNote');
+
+    if (legendPrev) legendPrev.textContent = stockAntes;
+    if (legendMin) legendMin.textContent = stockMinimo;
+    if (legendPost) legendPost.textContent = stockDespues;
+
+    const maxVal = Math.max(stockDespues, stockMinimo * 1.5, 10);
+    const fillPct = Math.min(100, Math.max(10, Math.round((stockDespues / maxVal) * 100)));
+
+    if (visualFill) {
+      visualFill.style.width = fillPct + '%';
+      if (data.estado === 'Cancelado') {
+        visualFill.style.background = '#ef4444';
+      } else if (stockDespues > stockMinimo) {
+        visualFill.style.background = 'linear-gradient(90deg, #f59e0b, #10b981)';
+      } else {
+        visualFill.style.background = '#f59e0b';
+      }
+    }
+
+    if (healthText) {
+      if (data.estado === 'Completado') {
+        healthText.textContent = '✅ Stock Restablecido';
+        healthText.className = 'health-pill health-success';
+      } else if (data.estado === 'Cancelado') {
+        healthText.textContent = '❌ Cancelado';
+        healthText.className = 'health-pill health-danger';
+      } else {
+        healthText.textContent = '⏳ En Proceso de Entrega';
+        healthText.className = 'health-pill health-warning';
+      }
+    }
+
+    if (noteText) {
+      if (data.estado === 'Completado') {
+        noteText.textContent = `Este pedido ingresó exitosamente ${cantidad} unidades al almacén. El stock subió de ${stockAntes} a ${stockDespues} unidades, satisfaciendo el umbral mínimo (${stockMinimo}).`;
+      } else if (data.estado === 'Cancelado') {
+        noteText.textContent = `El pedido fue cancelado. No se sumaron las ${cantidad} unidades al inventario. El stock actual permanece en ${stockActual} unidades.`;
+      } else {
+        noteText.textContent = `Pedido pendiente. Al recibirse las ${cantidad} unidades, el inventario se incrementará de ${stockAntes} a ${stockDespues} unidades, restableciendo la disponibilidad operativa.`;
+      }
+    }
+
+    // Datos del Producto
+    document.getElementById('dtlProductoNombre').textContent = data.producto || 'Producto sin nombre';
+    document.getElementById('dtlMarca').textContent = data.marca || 'Marca n/a';
+    document.getElementById('dtlCategoria').textContent = data.categoria || 'Calzado Deportivo';
+    document.getElementById('dtlSku').textContent = data.sku || 'N/A';
+    document.getElementById('dtlTalla').textContent = data.talla_cm ? `${data.talla_cm} cm` : 'Única';
+    document.getElementById('dtlColor').textContent = data.color || 'Estándar';
+
+    const img = document.getElementById('dtlImg');
+    if (img) {
+      if (data.imagen_url) {
+        img.src = data.imagen_url;
+        img.style.display = 'block';
+        if (img.nextElementSibling) img.nextElementSibling.style.display = 'none';
+      } else {
+        img.style.display = 'none';
+        if (img.nextElementSibling) img.nextElementSibling.style.display = 'flex';
+      }
+    }
+
+    // Datos del Proveedor
+    document.getElementById('dtlProveedorNombre').textContent = data.proveedor || 'Sin proveedor registrado';
+    document.getElementById('dtlProveedorContacto').textContent = data.proveedor_contacto || 'No especificado';
+    
+    const pCorreo = document.getElementById('dtlProveedorCorreo');
+    const pCorreoLink = document.getElementById('dtlProveedorCorreoLink');
+    if (pCorreo && pCorreoLink) {
+      pCorreo.textContent = data.proveedor_correo || 'No disponible';
+      pCorreoLink.href = data.proveedor_correo ? `mailto:${data.proveedor_correo}` : 'javascript:void(0)';
+    }
+
+    const pTel = document.getElementById('dtlProveedorTelefono');
+    const pTelLink = document.getElementById('dtlProveedorTelefonoLink');
+    if (pTel && pTelLink) {
+      pTel.textContent = data.proveedor_telefono || 'No disponible';
+      pTelLink.href = data.proveedor_telefono ? `tel:${data.proveedor_telefono}` : 'javascript:void(0)';
+    }
+
+    const pDir = document.getElementById('dtlProveedorDireccion');
+    if (pDir) pDir.textContent = data.proveedor_direccion || 'Dirección no registrada';
+
+    // Finanzas
+    const costo = Number(data.costo || 0);
+    const precioVenta = Number(data.precio_venta || 0);
+    const totalInversion = costo * cantidad;
+
+    document.getElementById('dtlCostoUnitario').textContent = `$${costo.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('dtlTotalInversion').textContent = `$${totalInversion.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('dtlPrecioVenta').textContent = `$${precioVenta.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    // Fechas
+    const fCreacion = data.fecha_creacion ? new Date(data.fecha_creacion).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : 'No registrada';
+    document.getElementById('dtlFechaCreacion').textContent = fCreacion;
+
+    const fCompletado = data.fecha_completado ? new Date(data.fecha_completado).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : (data.estado === 'Cancelado' ? 'Cancelado' : 'Pendiente de entrega');
+    document.getElementById('dtlFechaCompletado').textContent = fCompletado;
+
+    // Acciones dentro del modal
+    const formCompletar = document.getElementById('formModalCompletar');
+    const formCancelar = document.getElementById('formModalCancelar');
+    const modalCompletarId = document.getElementById('modalCompletarId');
+    const modalCancelarId = document.getElementById('modalCancelarId');
+
+    if (data.estado === 'Pendiente') {
+      if (formCompletar) {
+        formCompletar.style.display = 'inline-block';
+        if (modalCompletarId) modalCompletarId.value = data.id;
+      }
+      if (formCancelar) {
+        formCancelar.style.display = 'inline-block';
+        if (modalCancelarId) modalCancelarId.value = data.id;
+      }
+    } else {
+      if (formCompletar) formCompletar.style.display = 'none';
+      if (formCancelar) formCancelar.style.display = 'none';
+    }
+
+    modal.showModal();
+  };
+
+  window.printPedidoDetail = function() {
+    window.print();
+  };
 </script>
 
 <style>
@@ -408,23 +849,228 @@ if (q) {
   .crm-table td { padding: 14px 24px; border-bottom: 1px solid var(--color-border); }
   .crm-table tbody tr:hover { background: var(--color-bg); }
   .text-right { text-align: right; }
-  .action-btn { background: none; border: none; cursor: pointer; font-size: 16px; opacity: 0.6; margin-left: 8px; color: inherit; }
-  .action-btn:hover { opacity: 1; color: var(--color-text); }
-  .action-btn.text-danger:hover { color: var(--color-danger); }
-  .action-complete:hover { color: var(--color-success) !important; opacity: 1; }
+  .sku-hint { display: block; font-size: 11px; color: #64748b; font-family: monospace; }
+
+  .action-btn { background: none; border: none; cursor: pointer; font-size: 16px; opacity: 0.65; margin-left: 6px; color: inherit; transition: all 0.2s ease; vertical-align: middle; padding: 4px; border-radius: 4px; }
+  .action-btn:hover { opacity: 1; transform: scale(1.1); }
+  .action-view { color: #0284c7; }
+  .action-view:hover { color: #0369a1 !important; background: #e0f2fe; }
+  .action-btn.text-danger:hover { color: var(--color-danger); background: #fee2e2; }
+  .action-complete:hover { color: var(--color-success) !important; background: #dcfce7; }
 
   .badge-pull { background: #dbeafe; color: #1e40af; }
   .badge-push { background: #fef3c7; color: #92400e; }
   .badge-warning { background: #fef3c7; color: #d97706; }
+  .badge-neutral { background: #f1f5f9; color: #475569; }
+  .badge-info { background: #e0f2fe; color: #0369a1; }
 
-  /* Modal styles */
-  .scm-modal { border: none; border-radius: 12px; padding: 0; width: 100%; max-width: 500px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
-  .scm-modal::backdrop { background: rgba(0,0,0,0.4); }
+  /* Modal Base */
+  .scm-modal { border: none; border-radius: 12px; padding: 0; width: 100%; max-width: 520px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
+  .scm-modal::backdrop { background: rgba(0,0,0,0.5); backdrop-filter: blur(3px); }
   .modal-content { padding: 32px; background: #ffffff; border-radius: 12px; }
   .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
   .modal-header h2 { margin: 0; font-size: 18px; color: #001632; font-weight: 700; }
-  .close-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: #001632; font-weight: bold; }
-  
+  .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #64748b; font-weight: bold; line-height: 1; }
+  .close-btn:hover { color: #001632; }
+
+  /* Modal Detalles Wide */
+  .modal-detail-wide { max-width: 760px; width: 95%; }
+  .id-pill { background: #f1f5f9; color: #001632; padding: 3px 8px; border-radius: 6px; font-family: monospace; font-size: 15px; font-weight: 800; }
+
+  /* Panel de Análisis de Stock */
+  .stock-analysis-panel {
+    background: linear-gradient(145deg, #f8fafc 0%, #f1f5f9 100%);
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .panel-tag-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #00564d;
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 16px;
+  }
+
+  .stock-flow-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr 1fr 1fr;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .stock-flow-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 12px 10px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .stock-flow-card.highlight {
+    background: #f0fdf4;
+    border-color: #86efac;
+  }
+  .flow-label { display: block; font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 4px; }
+  .flow-value { font-size: 22px; font-weight: 900; color: #0f172a; line-height: 1.1; }
+  .flow-value.highlight-val { color: #15803d; }
+  .flow-sub { display: block; font-size: 10px; color: #94a3b8; margin-top: 4px; }
+
+  .stock-flow-connector {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+  }
+  .connector-badge {
+    background: #0284c7;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 3px 6px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  .connector-line { color: #0284c7; display: flex; align-items: center; justify-content: center; }
+
+  /* Barra Visual */
+  .stock-visual-bar-wrap {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+  .stock-visual-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .health-pill {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+  }
+  .health-success { background: #dcfce7; color: #15803d; }
+  .health-warning { background: #fef3c7; color: #d97706; }
+  .health-danger { background: #fee2e2; color: #dc2626; }
+
+  .stock-visual-track {
+    width: 100%;
+    height: 10px;
+    background: #e2e8f0;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 6px;
+  }
+  .stock-visual-fill {
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.4s ease;
+  }
+  .stock-visual-legend {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #64748b;
+  }
+  .legend-min { color: #d97706; }
+  .legend-post { color: #15803d; font-weight: 700; }
+  .stock-note-text {
+    margin: 8px 0 0 0;
+    font-size: 12px;
+    color: #475569;
+    line-height: 1.4;
+    border-top: 1px dashed #e2e8f0;
+    padding-top: 8px;
+  }
+
+  /* Two Columns: Producto y Proveedor */
+  .detail-two-cols {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .info-block {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .info-block-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 800;
+    color: #001632;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    border-bottom: 1px solid #f1f5f9;
+    padding-bottom: 8px;
+  }
+  .product-mini-preview {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+  }
+  .product-thumb {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+  }
+  .product-thumb-fallback {
+    width: 64px;
+    height: 64px;
+    border-radius: 8px;
+    background: #f1f5f9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    border: 1px solid #e2e8f0;
+    flex-shrink: 0;
+  }
+  .product-title { margin: 0 0 4px 0; font-size: 15px; color: #001632; font-weight: 700; }
+  .product-meta { font-size: 12px; color: #64748b; margin-bottom: 6px; }
+  .product-tags-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .spec-tag { font-size: 11px; background: #f1f5f9; color: #334155; padding: 2px 6px; border-radius: 4px; }
+
+  .provider-details { font-size: 12px; }
+  .provider-row { display: flex; margin-bottom: 4px; }
+  .p-label { width: 70px; color: #64748b; font-weight: 600; flex-shrink: 0; }
+  .p-val { color: #1e293b; }
+  .p-link { color: #00564d; text-decoration: none; font-weight: 600; }
+  .p-link:hover { text-decoration: underline; }
+
+  /* Summary strip */
+  .detail-summary-strip {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 12px;
+    gap: 10px;
+  }
+  .summary-cell { text-align: center; }
+  .s-label { display: block; font-size: 10px; text-transform: uppercase; font-weight: 700; color: #64748b; margin-bottom: 4px; }
+  .s-val { font-size: 16px; font-weight: 800; color: #0f172a; }
+  .s-val.highlight-green { color: #15803d; }
+  .s-val-date { font-size: 11px; color: #334155; font-weight: 600; }
+
+  /* Forms & Buttons */
   .scm-form .form-row { display: flex; align-items: flex-start; margin-bottom: 16px; gap: 16px; }
   .scm-form label { width: 140px; font-size: 13px; color: #4a5568; padding-top: 10px; flex-shrink: 0; }
   .scm-form input, .scm-form select { flex: 1; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-family: inherit; font-size: 14px; color: #4a5568; background-color: #ffffff; width: 100%; }
@@ -433,13 +1079,15 @@ if (q) {
   .select-wrapper::after { content: "▼"; font-size: 10px; color: #4a5568; position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
   .scm-form select { appearance: none; padding-right: 30px; }
   
-  .btn-cancel { background: transparent; border: 1px solid #00564d; color: #00564d; padding: 10px 24px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; }
-  .btn-save { background: #00564d; border: none; color: white; padding: 10px 24px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; }
+  .btn-cancel { background: transparent; border: 1px solid #00564d; color: #00564d; padding: 9px 20px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s ease; }
+  .btn-cancel:hover { background: rgba(0,0,0,0.03); }
+  .btn-save { background: #00564d; border: 1px solid #00564d; color: white; padding: 9px 20px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: opacity 0.2s ease; }
+  .btn-save:hover { opacity: 0.9; }
   .btn-secondary {
     background: var(--color-surface);
     color: var(--color-text);
     border: 1px solid var(--color-border);
-    padding: 10px 16px;
+    padding: 8px 14px;
     font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
@@ -447,7 +1095,8 @@ if (q) {
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+    transition: all 0.2s ease;
   }
   .btn-secondary:hover { background: var(--color-bg); border-color: var(--color-text); }
 
@@ -476,5 +1125,19 @@ if (q) {
     border: 1px solid var(--color-border);
     border-radius: 6px;
     font-family: inherit;
+  }
+
+  @media (max-width: 768px) {
+    .stock-flow-grid { grid-template-columns: 1fr 1fr; }
+    .stock-flow-connector { display: none; }
+    .detail-two-cols { grid-template-columns: 1fr; }
+    .detail-summary-strip { grid-template-columns: 1fr 1fr; }
+  }
+
+  @media print {
+    body * { visibility: hidden; }
+    .print-container, .print-container * { visibility: visible; }
+    .print-container { position: absolute; left: 0; top: 0; width: 100%; }
+    .no-print { display: none !important; }
   }
 </style>

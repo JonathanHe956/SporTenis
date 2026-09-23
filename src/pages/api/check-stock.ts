@@ -61,6 +61,8 @@ export const GET: APIRoute = async () => {
           tipo: 'AUTOMATICO',
           estado: 'Pendiente',
           fecha_creacion: now,
+          stock_anterior: producto.stock,
+          stock_posterior: null,
         });
         pedidosCreados++;
 
