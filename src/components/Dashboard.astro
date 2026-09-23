@@ -1,7 +1,7 @@
 ---
 import { canAccessCrm, canAccessScm } from '../lib/auth';
 import { db } from '../db/db';
-import { Productos, Modelos, Categorias } from '../db/schema';
+import { Productos, Modelos, Categorias, Clientes, Favoritos } from '../db/schema';
 import { eq } from 'drizzle-orm';
 
 const categories = ['Novedades', 'Tenis', 'Pádel', 'Running', 'Ropa', 'Accesorios'];
@@ -58,6 +58,27 @@ if (query) {
 
 const user = Astro.locals.user;
 const isLoggedIn = user !== null;
+const isFavoritos = Astro.url.pathname.includes('/favoritos');
+
+let favoriteProductIds: number[] = [];
+if (user) {
+  const client = await db
+    .select({ id: Clientes.id })
+    .from(Clientes)
+    .where(eq(Clientes.id_usuario, user.id));
+
+  if (client[0]) {
+    const favorites = await db
+      .select({ productId: Favoritos.id_producto })
+      .from(Favoritos)
+      .where(eq(Favoritos.id_cliente, client[0].id));
+    favoriteProductIds = favorites.map((favorite) => favorite.productId);
+  }
+}
+
+if (isFavoritos) {
+  products = products.filter((product) => favoriteProductIds.includes(product.id));
+}
 
 let adminMenuLabel = null;
 let adminMenuHref = null;
@@ -73,7 +94,6 @@ if (user?.role === 'administrador') {
   adminMenuHref = '/scm';
 }
 
-const isFavoritos = Astro.url.pathname.includes('/favoritos');
 ---
 
 <div class="storefront">
@@ -149,12 +169,14 @@ const isFavoritos = Astro.url.pathname.includes('/favoritos');
         <a href="#todos">Ver todo <span>↗</span></a>
       </div>
       <div class="product-grid">
-        {products.map((product) => (
+        {products.length === 0 ? (
+          <p class="empty-favorites">{isLoggedIn ? 'No tienes productos favoritos aún.' : 'Inicia sesión para ver tus favoritos.'}</p>
+        ) : products.map((product) => (
           <article class="product-card">
             <div class={`product-visual ${product.className}`}>
               <span class="product-badge">{product.badge}</span>
-              <button type="button" aria-label={`Añadir ${product.name} a favoritos`} class="favorite-btn">♡</button>
-              {product.imageUrl ? <img src={product.imageUrl} alt={product.name} style="width: 100%; height: 100%; object-fit: contain; position: absolute; top: 0; left: 0;" /> : <i></i>}
+                <button type="button" data-product-id={product.id} aria-label={`Añadir ${product.name} a favoritos`} class="favorite-btn" style="position: relative; z-index: 2;">♡</button>
+                {product.imageUrl ? <img src={product.imageUrl} alt={product.name} style="width: 100%; height: 100%; object-fit: contain; position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1;" /> : <i></i>}
             </div>
             <div class="product-info">
               <div class="product-copy">
@@ -199,6 +221,7 @@ const isFavoritos = Astro.url.pathname.includes('/favoritos');
   .products-section { padding: 55px clamp(24px, 6vw, 96px) 70px; } .section-heading { align-items: end; display: flex; justify-content: space-between; margin-bottom: 26px; } .section-heading .eyebrow { color: #d93e2e; margin-bottom: 8px; } h2 { font-size: clamp(30px, 4vw, 48px); font-weight: 400; letter-spacing: -2px; margin: 0; } .section-heading a { color: #171717; font-family: Arial, sans-serif; font-size: 11px; font-weight: 800; text-decoration: none; text-transform: uppercase; } .product-grid { display: grid; gap: 18px; grid-template-columns: repeat(3, 1fr); } .product-visual { align-items: flex-start; display: flex; height: 275px; justify-content: space-between; overflow: hidden; padding: 16px; position: relative; } .product-visual > span { background: #f7d21c; font-family: Arial, sans-serif; font-size: 9px; font-weight: 800; padding: 7px 9px; text-transform: uppercase; } .product-visual button { background: #fffdf3; border: 0; border-radius: 50%; cursor: pointer; font-size: 20px; height: 32px; width: 32px; } .product-visual i { display: block; position: absolute; } .product-padel { background: #d7e1c3; } .product-padel i { background: #242424; border-radius: 50% 50% 44% 44%; height: 190px; left: 35%; top: 58px; transform: rotate(28deg); width: 90px; } .product-padel i:after { background: repeating-linear-gradient(45deg, transparent 0 8px, #b4c293 9px 11px); border: 3px solid #f7d21c; border-radius: inherit; content: ''; inset: 12px; position: absolute; } .product-shoe { background: #e9c8bd; } .product-shoe i { background: #fffdf3; border-bottom: 19px solid #d93e2e; border-radius: 45% 55% 18% 20%; height: 105px; left: 22%; top: 110px; transform: rotate(-12deg); width: 215px; } .product-shirt { background: #d9d3ed; } .product-shirt i { background: #e9e4f5; height: 220px; left: 30%; top: 50px; transform: rotate(45deg); width: 150px; } .product-info { align-items: end; display: flex; justify-content: space-between; padding: 14px 2px 0; } .product-info p { color: #716e67; font-family: Arial, sans-serif; font-size: 10px; margin: 0 0 5px; text-transform: uppercase; } h3 { font-size: 17px; font-weight: 400; margin: 0; } .product-info strong { font-family: Arial, sans-serif; font-size: 13px; }
   @media (max-width: 900px) { nav { display: none; } .topbar { justify-content: space-between; } .hero { grid-template-columns: 1fr; } .hero-art { min-height: 300px; } .hero-copy { padding-bottom: 50px; } .benefits { grid-template-columns: repeat(2, 1fr); gap: 22px 0; } .benefits div:nth-child(2) { border: 0; } } @media (max-width: 600px) { .topbar { gap: 12px; min-height: 66px; padding: 0 16px; } .actions { gap: 10px; } .search { width: 35px; padding: 8px; } .search input { display: none; } .icon-button { font-size: 20px; } .brand { font-size: 20px; } .brand-mark { height: 25px; width: 25px; } .hero-copy { padding: 48px 24px; } h1 { font-size: 68px; } .hero-art { min-height: 260px; } .tennis-ball { right: 22%; top: 15%; } .benefits { padding: 22px 20px; } .benefits div { padding: 0 12px; } .products-section { padding: 42px 20px 55px; } .product-grid { grid-template-columns: 1fr; } .product-visual { height: 240px; } }
   .product-card { min-width: 0; } .detail-button { background: transparent; border: 0; border-bottom: 1px solid #171717; color: #171717; cursor: pointer; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; margin-top: 17px; padding: 0 0 4px; text-transform: uppercase; } .detail-button span { font-size: 15px; margin-left: 8px; }
+  .empty-favorites { font-family: Arial, sans-serif; font-size: 13px; grid-column: 1 / -1; padding: 40px 0; text-align: center; }
   .product-dialog { border: 0; box-shadow: 0 20px 80px rgba(23,23,23,.28); grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr); max-width: 760px; padding: 0; width: calc(100% - 32px); } .product-dialog[open] { display: grid; } .product-dialog::backdrop { background: rgba(23,23,23,.58); } .dialog-close { background: #fffdf3; border: 0; cursor: pointer; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; padding: 10px; position: absolute; right: 14px; text-transform: uppercase; top: 14px; z-index: 2; } .dialog-visual { align-items: center; background: #edc319; display: flex; justify-content: center; min-height: 410px; overflow: hidden; position: relative; } .dialog-visual i { background: #d8ee32; border-radius: 50%; box-shadow: 18px 22px 0 rgba(27,27,27,.15); height: 220px; position: relative; transform: rotate(-27deg); width: 220px; } .dialog-visual i:after { border: 5px solid #f7d21c; border-radius: 50%; content: ''; height: 75%; left: 27%; position: absolute; top: 12%; transform: rotate(25deg); width: 35%; } .dialog-content { display: flex; flex-direction: column; gap: 10px; padding: 58px 38px 36px; } .dialog-content .eyebrow { color: #d93e2e; margin: 0; } .dialog-content h2 { font-size: 37px; margin: 0; } .dialog-price { font-family: Arial, sans-serif; font-size: 17px; } .dialog-description { color: #716e67; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.5; margin: 6px 0 12px; } .dialog-content label { font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; text-transform: uppercase; } .dialog-content select, .dialog-content input { background: #f6f4ed; border: 1px solid #d8d3c3; font-family: Arial, sans-serif; font-size: 12px; padding: 12px; } .dialog-content input { width: 80px; } .add-button { border: 0; cursor: pointer; justify-content: space-between; margin-top: 15px; } .dialog-feedback { color: #4b7b39; font-family: Arial, sans-serif; font-size: 11px; min-height: 15px; }
   /* ── Menú de cuenta ─────────────────────────────────────── */
   .account-menu { position: relative; display: inline-flex; }
@@ -384,7 +407,7 @@ const isFavoritos = Astro.url.pathname.includes('/favoritos');
   });
 </script>
 
-<div id="auth-data" data-user-id={user?.id || 'guest'} style="display: none;"></div>
+<div id="auth-data" data-user-id={user?.id || 'guest'} data-logged-in={isLoggedIn} data-favorite-ids={favoriteProductIds.join(',')} style="display: none;"></div>
 
 <script>
   function trackEvent(accion: string, detalles: any = {}) {
@@ -395,53 +418,60 @@ const isFavoritos = Astro.url.pathname.includes('/favoritos');
     }).catch(console.error);
   }
 
-  const isFavoritosPage = window.location.pathname.includes('/favoritos');
   const favButtons = document.querySelectorAll('.favorite-btn');
-  
-  const userId = document.getElementById('auth-data')?.getAttribute('data-user-id') || 'guest';
-  const storageKey = `sportenis-favoritos-${userId}`;
-  const savedFavs = JSON.parse(localStorage.getItem(storageKey) || '[]');
+  const authData = document.getElementById('auth-data');
+  const isLoggedIn = authData?.getAttribute('data-logged-in') === 'true';
+  const favoriteIds = new Set(
+    (authData?.getAttribute('data-favorite-ids') || '')
+      .split(',')
+      .filter(Boolean)
+      .map(Number)
+  );
 
   favButtons.forEach(btn => {
-    const ariaLabel = btn.getAttribute('aria-label') || '';
-    const productName = ariaLabel.replace('Añadir ', '').replace(' a favoritos', '');
-    const card = btn.closest('.product-card');
+    const productId = Number(btn.getAttribute('data-product-id'));
+    const productName = (btn.getAttribute('aria-label') || '').replace('Añadir ', '').replace(' a favoritos', '');
 
-    if (savedFavs.includes(productName)) {
+    if (favoriteIds.has(productId)) {
       btn.textContent = '♥';
       btn.style.color = '#e7442e';
-    } else if (isFavoritosPage && card) {
-      (card as HTMLElement).style.display = 'none';
     }
 
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', async (e) => {
       e.preventDefault();
-      const idx = savedFavs.indexOf(productName);
-      if (idx > -1) {
-        savedFavs.splice(idx, 1);
-        btn.textContent = '♡';
-        btn.style.color = '';
-        if (isFavoritosPage && card) (card as HTMLElement).style.display = 'none';
-        trackEvent('favorito_removido', { producto: productName });
-      } else {
-        savedFavs.push(productName);
-        btn.textContent = '♥';
-        btn.style.color = '#e7442e';
-        trackEvent('favorito_agregado', { producto: productName });
+      if (!isLoggedIn) {
+        window.location.href = '/login';
+        return;
       }
-      localStorage.setItem(storageKey, JSON.stringify(savedFavs));
-      
-      if (isFavoritosPage && savedFavs.length === 0) {
-        const grid = document.querySelector('.product-grid');
-        if (grid) grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; padding: 40px;">No tienes productos favoritos aún.</p>';
+
+      btn.disabled = true;
+      try {
+        const response = await fetch('/api/favoritos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productId }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'No se pudo actualizar el favorito.');
+
+        if (result.favorite) {
+          favoriteIds.add(productId);
+          btn.textContent = '♥';
+          btn.style.color = '#e7442e';
+          trackEvent('favorito_agregado', { producto: productName });
+        } else {
+          favoriteIds.delete(productId);
+          btn.textContent = '♡';
+          btn.style.color = '';
+          trackEvent('favorito_removido', { producto: productName });
+        }
+      } catch (error) {
+        console.error(error);
+      } finally {
+        btn.disabled = false;
       }
     });
   });
-
-  if (isFavoritosPage && savedFavs.length === 0) {
-    const grid = document.querySelector('.product-grid');
-    if (grid) grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; padding: 40px;">No tienes productos favoritos aún.</p>';
-  }
 
   // Inject trackEvent into global window object for other scripts to use
   (window as any).trackEvent = trackEvent;
