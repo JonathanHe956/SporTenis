@@ -1,14 +1,156 @@
 ﻿---
 import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db } from '../../db/db';
+import { DetalleVentas, Modelos, Productos } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+
+const productos = await db
+  .select({
+    id: Productos.id,
+    sku: Productos.sku,
+    nombre: Modelos.nombre,
+    stock: Productos.stock,
+    stockMinimo: Productos.stock_minimo,
+  })
+  .from(Productos)
+  .innerJoin(Modelos, eq(Productos.id_modelo, Modelos.id));
+
+const ventas = await db
+  .select({ idProducto: DetalleVentas.id_producto, cantidad: DetalleVentas.cantidad })
+  .from(DetalleVentas);
+
+const ventasPorProducto = new Map<number, number>();
+for (const venta of ventas) {
+  ventasPorProducto.set(venta.idProducto, (ventasPorProducto.get(venta.idProducto) || 0) + Number(venta.cantidad || 0));
+}
+
+const reportRows = productos.map((producto) => {
+  const unidadesVendidas = ventasPorProducto.get(producto.id) || 0;
+  const stock = Number(producto.stock || 0);
+  const stockMinimo = Number(producto.stockMinimo || 0);
+  return { ...producto, stock, stockMinimo, unidadesVendidas, indiceRotacion: stock > 0 ? unidadesVendidas / stock : 0 };
+});
+
+const masVendidos = [...reportRows].filter((producto) => producto.unidadesVendidas > 0).sort((a, b) => b.unidadesVendidas - a.unidadesVendidas);
+const rotacionLenta = [...reportRows].filter((producto) => producto.stock > 0 && producto.indiceRotacion < 1).sort((a, b) => a.indiceRotacion - b.indiceRotacion);
+const inventarioCritico = [...reportRows].filter((producto) => producto.stock <= producto.stockMinimo).sort((a, b) => a.stock - b.stock);
+const exportRows = [
+  ...masVendidos.map((producto) => ({ ...producto, reporte: 'Productos más vendidos' })),
+  ...rotacionLenta.map((producto) => ({ ...producto, reporte: 'Rotación lenta' })),
+  ...inventarioCritico.map((producto) => ({ ...producto, reporte: 'Inventario crítico' })),
+];
 ---
 
 <CrmLayout title="Reportes" activePath="/scm/reportes">
-  <div class="header-actions">
-    <h1 class="crm-title">Reportes</h1>
+  <style>
+    .reports-page { display: flex; flex-direction: column; gap: 20px; }
+    .reports-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .reports-header p { margin: 4px 0 0; color: var(--color-text-muted); font-size: 14px; }
+    .export-button { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 6px; padding: 10px 14px; background: var(--color-text); color: #fff; cursor: pointer; font: inherit; font-size: 13px; }
+    .export-button:hover { opacity: .88; }
+    .report-tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--color-border); }
+    .report-tab { border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; background: transparent; color: var(--color-text-muted); cursor: pointer; font: inherit; font-size: 13px; }
+    .report-tab[aria-selected="true"] { border-bottom-color: var(--color-text); color: var(--color-text); font-weight: 700; }
+    .report-panel { display: none; }
+    .report-panel.active { display: block; }
+    .report-card { overflow-x: auto; border: 1px solid var(--color-border); border-radius: 12px; padding: 22px; background: var(--color-surface); box-shadow: 0 2px 8px rgba(0, 0, 0, .02); }
+    .report-card-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+    .report-card h2 { margin: 0; color: var(--color-text); font-size: 18px; }
+    .report-card-header span { color: var(--color-text-muted); font-size: 13px; }
+    .report-table { width: 100%; min-width: 600px; border-collapse: collapse; }
+    .report-table th, .report-table td { padding: 12px 14px; border-bottom: 1px solid var(--color-border); text-align: left; font-size: 13px; }
+    .report-table th { color: var(--color-text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+    .report-table td { color: var(--color-text); }
+    .report-table td.number, .report-table th.number { text-align: right; font-variant-numeric: tabular-nums; }
+    .empty-report { padding: 24px 0 8px; color: var(--color-text-muted); text-align: center; }
+    .critical { color: var(--color-danger) !important; font-weight: 700; }
+    @media (max-width: 700px) {
+      .reports-header { align-items: flex-start; flex-direction: column; }
+      .report-tabs { overflow-x: auto; }
+      .report-tab { white-space: nowrap; }
+    }
+  </style>
+
+  <div class="reports-page">
+    <div class="reports-header">
+      <div>
+        <h1 class="crm-title">Reportes SCM</h1>
+        <p>Indicadores de ventas y disponibilidad del inventario.</p>
+      </div>
+      <button class="export-button" id="exportReports" type="button" title="Exportar reportes a CSV">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        Exportar CSV
+      </button>
+    </div>
+
+    <div class="report-tabs" role="tablist" aria-label="Reportes de inventario">
+      <button class="report-tab" type="button" role="tab" aria-selected="true" aria-controls="best-sellers" data-report-tab="best-sellers">Productos más vendidos</button>
+      <button class="report-tab" type="button" role="tab" aria-selected="false" aria-controls="slow-moving" data-report-tab="slow-moving">Rotación lenta</button>
+      <button class="report-tab" type="button" role="tab" aria-selected="false" aria-controls="critical-stock" data-report-tab="critical-stock">Inventario crítico</button>
+    </div>
+
+    <section class="report-panel active" id="best-sellers" role="tabpanel">
+      <div class="report-card">
+        <div class="report-card-header"><h2>Productos más vendidos</h2><span>{masVendidos.length} productos</span></div>
+        {masVendidos.length > 0 ? (
+          <table class="report-table">
+            <thead><tr><th>#</th><th>Producto</th><th>SKU</th><th class="number">Unidades vendidas</th><th class="number">Stock actual</th></tr></thead>
+            <tbody>{masVendidos.map((producto, index) => <tr><td>{index + 1}</td><td><strong>{producto.nombre}</strong></td><td>{producto.sku}</td><td class="number">{producto.unidadesVendidas}</td><td class="number">{producto.stock}</td></tr>)}</tbody>
+          </table>
+        ) : <p class="empty-report">Todavía no hay ventas registradas.</p>}
+      </div>
+    </section>
+
+    <section class="report-panel" id="slow-moving" role="tabpanel">
+      <div class="report-card">
+        <div class="report-card-header"><h2>Rotación lenta</h2><span>Menos de 1 venta por unidad disponible</span></div>
+        {rotacionLenta.length > 0 ? (
+          <table class="report-table">
+            <thead><tr><th>Producto</th><th>SKU</th><th class="number">Stock actual</th><th class="number">Vendidas</th><th class="number">Índice de rotación</th></tr></thead>
+            <tbody>{rotacionLenta.map((producto) => <tr><td><strong>{producto.nombre}</strong></td><td>{producto.sku}</td><td class="number">{producto.stock}</td><td class="number">{producto.unidadesVendidas}</td><td class="number">{producto.indiceRotacion.toFixed(2)}</td></tr>)}</tbody>
+          </table>
+        ) : <p class="empty-report">No hay productos con rotación lenta.</p>}
+      </div>
+    </section>
+
+    <section class="report-panel" id="critical-stock" role="tabpanel">
+      <div class="report-card">
+        <div class="report-card-header"><h2>Inventario crítico</h2><span>Stock actual igual o menor al mínimo configurado</span></div>
+        {inventarioCritico.length > 0 ? (
+          <table class="report-table">
+            <thead><tr><th>Producto</th><th>SKU</th><th class="number">Stock actual</th><th class="number">Stock mínimo</th><th>Estado</th></tr></thead>
+            <tbody>{inventarioCritico.map((producto) => <tr><td><strong>{producto.nombre}</strong></td><td>{producto.sku}</td><td class="number critical">{producto.stock}</td><td class="number">{producto.stockMinimo}</td><td class="critical">Reponer</td></tr>)}</tbody>
+          </table>
+        ) : <p class="empty-report">No hay productos en inventario crítico.</p>}
+      </div>
+    </section>
   </div>
 
-  <div class="crm-card">
-    <p>Esta es la página de Reportes para el módulo de Cadena de Suministros (SCM).</p>
-  </div>
+  <script define:vars={{ exportRows }}>
+    const tabs = document.querySelectorAll('[data-report-tab]');
+    const panels = document.querySelectorAll('.report-panel');
+
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const target = tab.getAttribute('data-report-tab');
+        tabs.forEach((item) => item.setAttribute('aria-selected', String(item === tab)));
+        panels.forEach((panel) => panel.classList.toggle('active', panel.id === target));
+      });
+    });
+
+    document.getElementById('exportReports')?.addEventListener('click', () => {
+      const headers = ['Reporte', 'Producto', 'SKU', 'Stock actual', 'Stock minimo', 'Unidades vendidas', 'Indice de rotacion'];
+      const csvCell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const rows = exportRows.map((row) => [row.reporte, row.nombre, row.sku, row.stock, row.stockMinimo, row.unidadesVendidas, row.indiceRotacion.toFixed(2)]);
+      const csv = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\n');
+      const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'reportes-scm.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+  </script>
 </CrmLayout>
 
