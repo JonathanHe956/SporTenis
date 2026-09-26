@@ -103,7 +103,7 @@ if (Astro.request.method === 'POST') {
               return ventaId;
             });
 
-            return Astro.redirect(`/crm/ventas?detalle=${nuevaVentaId}&ok=1`);
+            return Astro.redirect(`/scm/ventas?detalle=${nuevaVentaId}&ok=1`);
           }
         }
       }
@@ -271,10 +271,10 @@ if (qParam) backParams.set('q', qParam);
 if (fromParam) backParams.set('from', fromParam);
 if (toParam) backParams.set('to', toParam);
 if (metodoPagoParam) backParams.set('metodo', metodoPagoParam);
-const backHref = '/crm/ventas' + (backParams.toString() ? '?' + backParams.toString() : '');
+const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toString() : '');
 ---
 
-<CrmLayout title="Ventas" activePath="/crm/ventas">
+<CrmLayout title="Ventas" activePath="/scm/ventas">
   <style>
     .ventas-wrap {
       display: flex;
@@ -914,7 +914,7 @@ const backHref = '/crm/ventas' + (backParams.toString() ? '?' + backParams.toStr
 
     <!-- Tarjeta Principal con Filtros y Tabla -->
     <div class="table-card">
-      <form method="GET" action="/crm/ventas" class="filters-bar">
+      <form method="GET" action="/scm/ventas" class="filters-bar">
         <input
           type="text"
           name="q"
@@ -945,7 +945,7 @@ const backHref = '/crm/ventas' + (backParams.toString() ? '?' + backParams.toStr
         <button type="submit" class="btn-filter-action">Filtrar</button>
 
         {(qParam || fromParam || toParam || metodoPagoParam) && (
-          <a href="/crm/ventas" class="link-clear">Limpiar</a>
+          <a href="/scm/ventas" class="link-clear">Limpiar</a>
         )}
       </form>
 
@@ -989,7 +989,7 @@ const backHref = '/crm/ventas' + (backParams.toString() ? '?' + backParams.toStr
                 </td>
                 <td class="col-center">
                   <a
-                    href={`/crm/ventas?detalle=${v.id}${qParam ? '&q=' + encodeURIComponent(qParam) : ''}${fromParam ? '&from=' + fromParam : ''}${toParam ? '&to=' + toParam : ''}${metodoPagoParam ? '&metodo=' + encodeURIComponent(metodoPagoParam) : ''}`}
+                    href={`/scm/ventas?detalle=${v.id}${qParam ? '&q=' + encodeURIComponent(qParam) : ''}${fromParam ? '&from=' + fromParam : ''}${toParam ? '&to=' + toParam : ''}${metodoPagoParam ? '&metodo=' + encodeURIComponent(metodoPagoParam) : ''}`}
                     class="btn-view-details"
                   >
                     Ver detalle
@@ -1032,7 +1032,7 @@ const backHref = '/crm/ventas' + (backParams.toString() ? '?' + backParams.toStr
           <button type="button" class="btn-dismiss-modal" onclick="document.getElementById('modalCreateVenta').close()">×</button>
         </div>
 
-        <form method="POST" action="/crm/ventas" id="formVenta">
+        <form method="POST" action="/scm/ventas" id="formVenta">
           <input type="hidden" name="action" value="create_venta" />
 
           <div class="grid-fields-2">
