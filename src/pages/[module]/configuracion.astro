@@ -1,7 +1,7 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
-import { Configuraciones, Usuarios, EtapasCrm, TiposInteraccion } from '../../db/schema';
+import { Configuraciones, Usuarios, EtapasCrm, TiposInteraccion, ScmSettings } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 const { module } = Astro.params;
 if (module !== 'crm' && module !== 'scm') return Astro.redirect('/404');
@@ -28,12 +28,29 @@ if (Astro.request.method === 'POST') {
   } else if (action === 'create_tipo') {
     await db.insert(TiposInteraccion).values({ nombre: formData.get('nombre') as string });
   } else if (action === 'save_scm_config') {
-    const reorden = formData.get('STOCK_REORDEN_CANTIDAD') as string;
-    const existing = await db.select().from(Configuraciones).where(eq(Configuraciones.clave, 'STOCK_REORDEN_CANTIDAD'));
-    if (existing.length > 0) {
-      await db.update(Configuraciones).set({ valor: reorden }).where(eq(Configuraciones.clave, 'STOCK_REORDEN_CANTIDAD'));
-    } else {
-      await db.insert(Configuraciones).values({ clave: 'STOCK_REORDEN_CANTIDAD', valor: reorden, descripcion: 'Cantidad a pedir automáticamente cuando el stock es bajo' });
+    // 1. Guardar configuraciones genéricas
+    const keys = ['STOCK_REORDEN_CANTIDAD', 'CORREO_ALERTAS_INVENTARIO', 'ALMACEN_PRINCIPAL'];
+    for (const clave of keys) {
+      const valor = formData.get(clave) as string;
+      if (valor !== null) {
+        const existing = await db.select().from(Configuraciones).where(eq(Configuraciones.clave, clave));
+        if (existing.length > 0) {
+          await db.update(Configuraciones).set({ valor }).where(eq(Configuraciones.clave, clave));
+        } else {
+          await db.insert(Configuraciones).values({ clave, valor, descripcion: `Configuración ${clave}` });
+        }
+      }
+    }
+    
+    // 2. Guardar nivel_scm en la tabla dedicada ScmSettings
+    const nivel_scm = formData.get('nivel_scm') as string;
+    if (nivel_scm) {
+      const existingSettings = await db.select().from(ScmSettings);
+      if (existingSettings.length > 0) {
+        await db.update(ScmSettings).set({ nivel_scm, fecha_actualizacion: new Date() }).where(eq(ScmSettings.id, existingSettings[0].id));
+      } else {
+        await db.insert(ScmSettings).values({ nivel_scm, fecha_actualizacion: new Date() });
+      }
     }
   }
   
@@ -43,6 +60,8 @@ if (Astro.request.method === 'POST') {
 const etapas = await db.select().from(EtapasCrm);
 const tipos = await db.select().from(TiposInteraccion);
 const configs = await db.select().from(Configuraciones);
+const scmSettingsRow = await db.select().from(ScmSettings);
+const nivelActual = scmSettingsRow.length > 0 ? scmSettingsRow[0].nivel_scm : 'Inicial';
 ---
 
 <CrmLayout title="Configuración Global" activePath={activePath}>
@@ -112,16 +131,37 @@ const configs = await db.select().from(Configuraciones);
       </div>
       <p class="text-muted" style="margin-bottom: 24px; font-size: 13px;">Ajusta los parámetros para el reabastecimiento automático de productos con stock bajo.</p>
       
-      <form method="POST" style="max-width: 400px;">
+      <form method="POST" style="max-width: 500px; display: flex; flex-direction: column; gap: 20px;">
         <input type="hidden" name="action" value="save_scm_config" />
         
         <div class="form-group">
-          <label>Cantidad de restock automático por defecto</label>
-          <div style="display: flex; gap: 12px; align-items: center;">
-            <input type="number" name="STOCK_REORDEN_CANTIDAD" value={configs.find(c => c.clave === 'STOCK_REORDEN_CANTIDAD')?.valor || 50} required min="1" />
-            <button type="submit" class="btn-primary">Guardar</button>
-          </div>
-          <p class="text-muted" style="margin-top: 8px; font-size: 12px;">Cantidad que se pedirá al proveedor cuando un producto llegue a su stock mínimo.</p>
+          <label style="font-weight: 600; display: block; margin-bottom: 8px;">Cantidad de restock automático por defecto</label>
+          <input type="number" name="STOCK_REORDEN_CANTIDAD" class="search-input" style="padding: 10px; width: 100%;" value={configs.find(c => c.clave === 'STOCK_REORDEN_CANTIDAD')?.valor || 50} required min="1" />
+          <p class="text-muted" style="margin-top: 4px; font-size: 12px;">Cantidad que se pedirá al proveedor cuando un producto llegue a su stock mínimo.</p>
+        </div>
+
+        <div class="form-group">
+          <label style="font-weight: 600; display: block; margin-bottom: 8px;">Nivel de Madurez del SCM</label>
+          <select name="nivel_scm" class="search-input" style="padding: 10px; width: 100%;">
+            <option value="Inicial" selected={nivelActual === 'Inicial'}>Nivel 1: Inicial (Manual)</option>
+            <option value="En desarrollo" selected={nivelActual === 'En desarrollo'}>Nivel 2: En desarrollo (Digitalización básica)</option>
+            <option value="Optimizado" selected={nivelActual === 'Optimizado'}>Nivel 3: Optimizado (Automatizado y Estratégico)</option>
+          </select>
+          <p class="text-muted" style="margin-top: 4px; font-size: 12px;">Determina la etapa de adopción de la empresa (se refleja en el Dashboard de cadena de suministros).</p>
+        </div>
+
+        <div class="form-group">
+          <label style="font-weight: 600; display: block; margin-bottom: 8px;">Correo para alertas de inventario crítico</label>
+          <input type="email" name="CORREO_ALERTAS_INVENTARIO" class="search-input" style="padding: 10px; width: 100%;" value={configs.find(c => c.clave === 'CORREO_ALERTAS_INVENTARIO')?.valor || ''} placeholder="almacen@sportenis.com" />
+        </div>
+        
+        <div class="form-group">
+          <label style="font-weight: 600; display: block; margin-bottom: 8px;">Almacén Origen (Envíos)</label>
+          <input type="text" name="ALMACEN_PRINCIPAL" class="search-input" style="padding: 10px; width: 100%;" value={configs.find(c => c.clave === 'ALMACEN_PRINCIPAL')?.valor || 'Bodega Central - CDMX'} />
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
+          <button type="submit" class="btn-scm-action primary" style="padding: 12px 24px;">Guardar Configuración SCM</button>
         </div>
       </form>
     </div>

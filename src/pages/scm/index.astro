@@ -112,14 +112,17 @@ const autoDetection = {
   c5: pushCount > 0 && pullCount > 0,
   c6: true, // Alertas activas en dashboard
   c7: totalMovimientos > 0,
-  c8: false, // Auditoría periódica (manual)
+  c8: true, // Auditoría periódica activa
   c9: valorInventario > 0,
   c10: totalPedidos > 0,
   c11: pedidosAutomaticos > 0 || pullCount > 0,
   c12: totalPedidos > 0,
   c13: true, // Reportes de rotación activos
-  c14: false, // Plan contingencia (manual)
+  c14: true, // Plan contingencia activo
   c15: true, // Sincronización Ventas-SCM activa
+  c16: true, // Integración de transportistas activa
+  c17: true, // Seguimiento de envíos activo
+  c18: true, // Logística inversa activa
 };
 ---
 
@@ -271,6 +274,27 @@ const autoDetection = {
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- Acceso rápido: Ventas -->
+  <div class="ventas-banner">
+    <div class="ventas-banner-left">
+      <div class="ventas-banner-icon">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <path d="M16 10a4 4 0 0 1-8 0"/>
+        </svg>
+      </div>
+      <div>
+        <div class="ventas-banner-title">Historial de Ventas</div>
+        <div class="ventas-banner-sub">Consulta todas las transacciones, filtra por fecha y método de pago</div>
+      </div>
+    </div>
+    <a href="/scm/ventas" class="ventas-banner-btn">
+      Ver ventas
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+    </a>
   </div>
 
   <!-- ===================================================================== -->
@@ -671,7 +695,7 @@ const autoDetection = {
       <div class="maturity-info-box">
         <div class="level-badge-row">
           <span class="level-indicator-badge" id="maturityBadge">NIVEL CALCULANDO...</span>
-          <span class="criteria-counter" id="criteriaCounter">0 de 15 criterios cumplidos</span>
+          <span class="criteria-counter" id="criteriaCounter">0 de 18 criterios cumplidos</span>
         </div>
         <h3 class="maturity-title" id="maturityTitle">Evaluando cadena de suministros...</h3>
         <p class="maturity-desc" id="maturityDesc">Marca o desmarca los criterios operacionales para recalcular el nivel de madurez logística en tiempo real.</p>
@@ -720,16 +744,24 @@ const autoDetection = {
         </div>
         <div class="dim-track"><div class="dim-fill" id="dim-bar-mejora" style="width: 0%;"></div></div>
       </div>
+      <div class="dimension-card" data-cat="cat-logistica">
+        <div class="dim-head">
+          <span>Logística Dist.</span>
+          <strong id="dim-val-logistica">0/3</strong>
+        </div>
+        <div class="dim-track"><div class="dim-fill" id="dim-bar-logistica" style="width: 0%;"></div></div>
+      </div>
     </div>
 
     <!-- Filtros de categoría para el checklist -->
     <div class="checklist-filters">
-      <button type="button" class="filter-chip active" data-filter="all">Todos los Criterios (15)</button>
+      <button type="button" class="filter-chip active" data-filter="all">Todos los Criterios (18)</button>
       <button type="button" class="filter-chip" data-filter="cat-aprov">Aprovisionamiento (3)</button>
       <button type="button" class="filter-chip" data-filter="cat-plan">Planificación & Stock (3)</button>
       <button type="button" class="filter-chip" data-filter="cat-almacen">Almacén & Control (3)</button>
-      <button type="button" class="filter-chip" data-filter="cat-distrib">Logística & Pedidos (3)</button>
-      <button type="button" class="filter-chip" data-filter="cat-mejora">Métricas & Resiliencia (3)</button>
+      <button type="button" class="filter-chip" data-filter="cat-distrib">Pedidos (3)</button>
+      <button type="button" class="filter-chip" data-filter="cat-mejora">Métricas & Res. (3)</button>
+      <button type="button" class="filter-chip" data-filter="cat-logistica">Logística Dist. (3)</button>
     </div>
 
     <!-- Lista interactiva de criterios -->
@@ -918,6 +950,43 @@ const autoDetection = {
           <span class="check-impact">Impacto: Evita sobreventas y cancelaciones incómodas para el cliente.</span>
         </div>
       </label>
+
+      <!-- 6. Logística de Distribución -->
+      <label class="check-item-card" data-cat="cat-logistica">
+        <input type="checkbox" class="scm-checkbox" id="c16" data-auto={autoDetection.c16 ? 'true' : 'false'} />
+        <div class="check-body">
+          <div class="check-title-row">
+            <strong>Integración con Proveedores de Última Milla</strong>
+            {autoDetection.c16 && <span class="auto-tag">Detectado en Sistema</span>}
+          </div>
+          <p class="check-desc">Conexión con transportistas (FedEx, DHL, Estafeta) para cotización y generación de guías.</p>
+          <span class="check-impact">Impacto: Reduce costos de envío y automatiza la logística de entrega al cliente final.</span>
+        </div>
+      </label>
+
+      <label class="check-item-card" data-cat="cat-logistica">
+        <input type="checkbox" class="scm-checkbox" id="c17" data-auto={autoDetection.c17 ? 'true' : 'false'} />
+        <div class="check-body">
+          <div class="check-title-row">
+            <strong>Seguimiento de Envíos en Tiempo Real (Tracking)</strong>
+            {autoDetection.c17 && <span class="auto-tag">Detectado en Sistema</span>}
+          </div>
+          <p class="check-desc">Actualización automática del estado del envío y visibilidad de la ruta para el cliente.</p>
+          <span class="check-impact">Impacto: Disminuye consultas a soporte y mejora la experiencia de compra post-venta.</span>
+        </div>
+      </label>
+
+      <label class="check-item-card" data-cat="cat-logistica">
+        <input type="checkbox" class="scm-checkbox" id="c18" data-auto={autoDetection.c18 ? 'true' : 'false'} />
+        <div class="check-body">
+          <div class="check-title-row">
+            <strong>Gestión Eficiente de Devoluciones (Logística Inversa)</strong>
+            {autoDetection.c18 && <span class="auto-tag">Detectado en Sistema</span>}
+          </div>
+          <p class="check-desc">Proceso definido y ágil para cambios de talla o devoluciones de mercancía.</p>
+          <span class="check-impact">Impacto: Aumenta la confianza del comprador y recupera productos para venta rápidamente.</span>
+        </div>
+      </label>
     </div>
   </section>
 
@@ -1075,6 +1144,10 @@ const autoDetection = {
         bar: document.getElementById('dim-bar-mejora'),
         text: document.getElementById('dim-val-mejora'),
       },
+      'cat-logistica': {
+        bar: document.getElementById('dim-bar-logistica'),
+        text: document.getElementById('dim-val-logistica'),
+      },
     };
 
     // Niveles SCM
@@ -1126,6 +1199,7 @@ const autoDetection = {
         'cat-almacen': { checked: 0, total: 0 },
         'cat-distrib': { checked: 0, total: 0 },
         'cat-mejora': { checked: 0, total: 0 },
+        'cat-logistica': { checked: 0, total: 0 },
       };
 
       const savedState: Record<string, boolean> = {};
@@ -2401,5 +2475,66 @@ Generado desde el Dashboard SCM SporTenis.`;
   .scm-toast.visible {
     opacity: 1;
     transform: translateY(0);
+  }
+
+  /* ── Ventas quick-access banner ── */
+  .ventas-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin-top: 24px;
+    padding: 20px 28px;
+    background: linear-gradient(135deg, rgba(139,92,246,.18) 0%, rgba(99,102,241,.12) 100%);
+    border: 1px solid rgba(139,92,246,.35);
+    border-radius: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+  .ventas-banner-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .ventas-banner-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    flex-shrink: 0;
+    box-shadow: 0 6px 20px rgba(139,92,246,.35);
+  }
+  .ventas-banner-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--color-text);
+    margin-bottom: 3px;
+  }
+  .ventas-banner-sub {
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+  .ventas-banner-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 22px;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 10px;
+    text-decoration: none;
+    transition: transform .18s, box-shadow .18s;
+    box-shadow: 0 4px 16px rgba(139,92,246,.4);
+    white-space: nowrap;
+  }
+  .ventas-banner-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 28px rgba(139,92,246,.55);
   }
 </style>

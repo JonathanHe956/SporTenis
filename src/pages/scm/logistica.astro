@@ -1,14 +1,690 @@
-﻿---
+---
 import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db } from '../../db/db';
+import { Ventas, Clientes, TransportistasLogistica } from '../../db/schema';
+import { eq, desc } from 'drizzle-orm';
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = formData.get('action');
+
+  if (action === 'update_carrier_settings') {
+    const id = Number(formData.get('id'));
+    const api_key = formData.get('api_key') as string;
+    await db.update(TransportistasLogistica).set({ api_key }).where(eq(TransportistasLogistica.id, id));
+    return Astro.redirect(Astro.url.pathname);
+  } else if (action === 'create_carrier') {
+    const nombre = formData.get('nombre') as string;
+    const codigo = formData.get('codigo') as string;
+    const api_key = formData.get('api_key') as string;
+    await db.insert(TransportistasLogistica).values({ nombre, codigo, api_key });
+    return Astro.redirect(Astro.url.pathname);
+  }
+}
+
+// Fetch real logistics carriers
+const transportistas = await db.select().from(TransportistasLogistica);
+
+// Fetch recent sales for shipments
+const enviosRecientes = await db
+  .select({
+    id: Ventas.id,
+    fecha: Ventas.fecha_venta,
+    total: Ventas.total,
+    cliente_nombre: Clientes.nombre,
+  })
+  .from(Ventas)
+  .leftJoin(Clientes, eq(Ventas.id_cliente, Clientes.id))
+  .orderBy(desc(Ventas.fecha_venta))
+  .limit(6);
+
+// Simulated tracking data
+const envios = enviosRecientes.map((e, index) => {
+  const states = ['Entregado', 'En tránsito', 'En preparación', 'En tránsito', 'Entregado', 'En tránsito'];
+  const carriers = ['DHL', 'FedEx', 'Estafeta', 'DHL', 'FedEx', '99Minutos'];
+  const state = states[index % states.length];
+  const carrier = carriers[index % carriers.length];
+  
+  return {
+    ...e,
+    estado: state,
+    transportista: carrier,
+    tracking: `TRK${e.id}00${index * 7}`
+  };
+});
+
+const enTransito = envios.filter(e => e.estado === 'En tránsito').length;
+const entregados = envios.filter(e => e.estado === 'Entregado').length;
+const enPreparacion = envios.filter(e => e.estado === 'En preparación').length;
+
 ---
 
-<CrmLayout title="Logistica" activePath="/scm/logistica">
-  <div class="header-actions">
-    <h1 class="crm-title">Logistica</h1>
+<CrmLayout title="Logística y Envíos" activePath="/scm/logistica">
+  <div class="scm-header-bar">
+    <div>
+      <h1 class="crm-title">Logística de Distribución</h1>
+      <p class="scm-subtitle">Gestión de envíos, transportistas y seguimiento de última milla</p>
+    </div>
+    <div class="header-action-buttons">
+      <button class="btn-scm-action secondary" id="btnVerMapa">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        Ver Mapa
+      </button>
+      <button class="btn-scm-action primary" id="btnCrearGuia">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Crear Guía Manual
+      </button>
+    </div>
   </div>
 
-  <div class="crm-card">
-    <p>Esta es la página de Logistica para el módulo de Cadena de Suministros (SCM).</p>
+  <div class="metrics-grid">
+    <div class="crm-card metric-card">
+      <div class="metric-top">
+        <h3>En Preparación</h3>
+        <span class="metric-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        </span>
+      </div>
+      <div class="metric-value">{enPreparacion}</div>
+      <p class="metric-desc text-warning">Órdenes listas para recolección</p>
+    </div>
+    
+    <div class="crm-card metric-card">
+      <div class="metric-top">
+        <h3>En Tránsito</h3>
+        <span class="metric-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        </span>
+      </div>
+      <div class="metric-value text-primary">{enTransito}</div>
+      <p class="metric-desc">Paquetes en ruta de entrega</p>
+    </div>
+
+    <div class="crm-card metric-card">
+      <div class="metric-top">
+        <h3>Entregados</h3>
+        <span class="metric-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </span>
+      </div>
+      <div class="metric-value text-success">{entregados}</div>
+      <p class="metric-desc">Últimos 7 días</p>
+    </div>
   </div>
+
+  <div class="logistics-content">
+    <div class="crm-card shipments-card">
+      <div class="card-header">
+        <h3>Envíos Recientes</h3>
+        <div class="search-box">
+          <input type="text" placeholder="Buscar por guía o cliente..." />
+        </div>
+      </div>
+      
+      <div class="table-responsive">
+        <table class="crm-table">
+          <thead>
+            <tr>
+              <th>Tracking ID</th>
+              <th>Cliente</th>
+              <th>Transportista</th>
+              <th>Fecha</th>
+              <th>Estado</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            {envios.map(e => (
+              <tr>
+                <td><strong>{e.tracking}</strong></td>
+                <td>{e.cliente_nombre}</td>
+                <td>
+                  <span class={`carrier-badge carrier-${e.transportista.toLowerCase()}`}>
+                    {e.transportista}
+                  </span>
+                </td>
+                <td>{new Date(e.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                <td>
+                  <span class={`status-badge status-${e.estado.replace(' ', '-').toLowerCase()}`}>
+                    {e.estado}
+                  </span>
+                </td>
+                <td>
+                  <a href="#" class="view-link">Rastrear</a>
+                </td>
+              </tr>
+            ))}
+            {envios.length === 0 && (
+              <tr><td colspan="6" class="text-center text-muted">No hay envíos registrados</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="side-panel">
+      <div class="crm-card carriers-card">
+        <h3>Integraciones Logísticas</h3>
+        <p class="text-muted" style="font-size: 13px; margin-bottom: 20px;">Estado de conexión con proveedores de última milla.</p>
+        
+        <div class="carrier-list">
+          {transportistas.map(carrier => (
+            <div class="carrier-item">
+              <div class="carrier-info">
+                <div class="carrier-logo" style="background:#f1f5f9;color:#475569;">{carrier.codigo || 'N/A'}</div>
+                <div>
+                  <strong>{carrier.nombre}</strong>
+                  <span class={`connection-status ${carrier.estado === 'Activo' ? 'online' : ''}`}>{carrier.estado}</span>
+                </div>
+              </div>
+              <button class="settings-btn" data-id={carrier.id} data-name={carrier.nombre} data-api={carrier.api_key}>⚙️</button>
+            </div>
+          ))}
+        </div>
+        
+        <button class="btn-add-carrier" onclick="document.getElementById('modalAddCarrier').showModal()">+ Añadir Transportista</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Genérico Antiguo para Logística -->
+  <div id="logisticsModal" class="logistics-modal">
+    <div class="logistics-modal-content">
+      <div class="logistics-modal-header">
+        <h3 id="modalTitle">Acción</h3>
+        <button id="modalCloseBtn" class="modal-close-btn">&times;</button>
+      </div>
+      <div class="logistics-modal-body" id="modalBody">
+        Contenido del modal.
+      </div>
+      <div class="logistics-modal-footer">
+        <button id="modalCancelBtn" class="btn-scm-action secondary">Cancelar</button>
+        <button id="modalActionBtn" class="btn-scm-action primary">Aceptar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modales Nativos -->
+  <dialog id="modalSettings" class="crm-modal scm-modal" style="border:none; border-radius:12px; padding:0; width:100%; max-width:400px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+    <div style="padding: 24px; background: #fff; border-radius: 12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
+        <h3 id="modalSettingsTitle" style="margin:0; font-size: 18px; color:#001632;">Configuración</h3>
+        <button type="button" onclick="document.getElementById('modalSettings').close()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="action" value="update_carrier_settings" />
+        <input type="hidden" name="id" id="modalSettingsId" />
+        <p style="font-size:13px; color:var(--color-text-muted); margin-bottom:16px;">Ajusta las credenciales de API para esta integración.</p>
+        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:24px;">
+          <label style="font-size:13px; font-weight:700;">API Key</label>
+          <input type="text" name="api_key" id="modalSettingsApi" class="search-input" style="padding:10px;" required />
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:12px;">
+          <button type="button" class="btn-scm-action secondary" onclick="document.getElementById('modalSettings').close()">Cancelar</button>
+          <button type="submit" class="btn-scm-action primary">Guardar Cambios</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="modalAddCarrier" class="crm-modal scm-modal" style="border:none; border-radius:12px; padding:0; width:100%; max-width:400px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+    <div style="padding: 24px; background: #fff; border-radius: 12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
+        <h3 style="margin:0; font-size: 18px; color:#001632;">Añadir Transportista</h3>
+        <button type="button" onclick="document.getElementById('modalAddCarrier').close()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="action" value="create_carrier" />
+        <div style="display:flex; flex-direction:column; gap:16px; margin-bottom:24px;">
+          <div>
+            <label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px;">Nombre</label>
+            <input type="text" name="nombre" class="search-input" style="padding:10px; width:100%;" placeholder="Ej. Redpack" required />
+          </div>
+          <div>
+            <label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px;">Código (3-4 letras)</label>
+            <input type="text" name="codigo" class="search-input" style="padding:10px; width:100%;" placeholder="Ej. RPK" required />
+          </div>
+          <div>
+            <label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px;">API Key</label>
+            <input type="text" name="api_key" class="search-input" style="padding:10px; width:100%;" placeholder="Opcional" />
+          </div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:12px;">
+          <button type="button" class="btn-scm-action secondary" onclick="document.getElementById('modalAddCarrier').close()">Cancelar</button>
+          <button type="submit" class="btn-scm-action primary">Añadir</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
 </CrmLayout>
 
+<script>
+  function setupLogisticsModal() {
+    const modal = document.getElementById('logisticsModal');
+    if (!modal) return;
+    
+    const modalTitle = document.getElementById('modalTitle');
+    const modalBody = document.getElementById('modalBody');
+    const closeBtns = [
+      document.getElementById('modalCloseBtn'), 
+      document.getElementById('modalCancelBtn'), 
+      document.getElementById('modalActionBtn')
+    ];
+    
+    function openModal(title, content) {
+      if(modalTitle) modalTitle.textContent = title;
+      if(modalBody) modalBody.innerHTML = content;
+      if(modal) modal.classList.add('active');
+    }
+    
+    function closeModal() {
+      if(modal) modal.classList.remove('active');
+    }
+    
+    closeBtns.forEach(btn => {
+      if(btn) btn.addEventListener('click', closeModal);
+    });
+    
+    const btnVerMapa = document.getElementById('btnVerMapa');
+    if(btnVerMapa) btnVerMapa.addEventListener('click', () => {
+      openModal('Mapa de Rutas Activas', '<p>Visualización del mapa de rutas no disponible en la versión actual. Integración con Google Maps pendiente.</p>');
+    });
+    
+    const btnCrearGuia = document.getElementById('btnCrearGuia');
+    if(btnCrearGuia) btnCrearGuia.addEventListener('click', () => {
+      openModal('Crear Guía Manual', '<div style="display:flex;flex-direction:column;gap:12px;"><label style="font-size:13px; font-weight:700;">ID del Pedido: <input type="text" class="modal-input" placeholder="Ej. 10293"></label><label style="font-size:13px; font-weight:700;">Transportista: <select class="modal-input"><option>FedEx</option><option>DHL</option><option>Estafeta</option></select></label><p style="font-size:12px;color:var(--color-text-muted);">Se generará una guía de rastreo y se asignará al pedido automáticamente.</p></div>');
+    });
+    
+    const settingsBtns = document.querySelectorAll('.settings-btn');
+    settingsBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const target = e.currentTarget;
+        const id = target.getAttribute('data-id');
+        const name = target.getAttribute('data-name');
+        const api = target.getAttribute('data-api');
+        
+        document.getElementById('modalSettingsTitle').textContent = `Configuración: ${name}`;
+        document.getElementById('modalSettingsId').value = id;
+        document.getElementById('modalSettingsApi').value = api || '';
+        
+        document.getElementById('modalSettings').showModal();
+      });
+    });
+    
+    // El botón btnAddCarrier ahora usa onclick directo en el HTML.
+    
+    const trackLinks = document.querySelectorAll('.view-link');
+    trackLinks.forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const target = e.currentTarget as HTMLElement;
+        const tr = target.closest('tr');
+        const tracking = tr ? (tr.querySelector('strong') as HTMLElement)?.textContent : 'TRK000';
+        openModal('Rastrear Envío', `<p>Rastreo detallado para la guía: <strong>${tracking}</strong>.</p><ul style="font-size:13px; color:var(--color-text-muted); margin-top:10px; line-height:1.6; padding-left: 20px;"><li><strong>Hoy 08:30 AM:</strong> En tránsito hacia sucursal de destino.</li><li><strong>Ayer 18:45 PM:</strong> Recolectado en centro de distribución SporTenis.</li></ul>`);
+      });
+    });
+  }
+
+  // Astro trigger for view transitions
+  document.addEventListener('astro:page-load', setupLogisticsModal);
+  
+  // Also run it if page is already loaded (fallback)
+  if (document.readyState === 'interactive' || document.readyState === 'complete') {
+    setupLogisticsModal();
+  } else {
+    document.addEventListener('DOMContentLoaded', setupLogisticsModal);
+  }
+</script>
+
+<style>
+  .scm-header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .scm-subtitle {
+    margin: 4px 0 0 0;
+    font-size: 14px;
+    color: var(--color-text-muted);
+  }
+  .header-action-buttons {
+    display: flex;
+    gap: 10px;
+  }
+  .btn-scm-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 15px;
+    font-size: 13px;
+    font-weight: 700;
+    border-radius: 6px;
+    text-decoration: none;
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+  .btn-scm-action.primary {
+    background: var(--color-primary);
+    color: #171717;
+    border: 1px solid var(--color-primary);
+  }
+  .btn-scm-action.primary:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+  .btn-scm-action.secondary {
+    background: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+  }
+  .btn-scm-action.secondary:hover {
+    background: var(--color-bg);
+  }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+    margin-bottom: 24px;
+  }
+  .metric-card {
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+  }
+  .metric-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .metric-card h3 {
+    margin: 0;
+    font-size: 13px;
+    color: var(--color-text-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .metric-icon {
+    color: var(--color-text-muted);
+    display: flex;
+    align-items: center;
+  }
+  .metric-value {
+    font-size: 38px;
+    font-weight: 900;
+    line-height: 1.1;
+    margin-bottom: 6px;
+    letter-spacing: -0.02em;
+  }
+  .metric-desc {
+    margin: 0;
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+  .text-success { color: var(--color-success); }
+  .text-primary { color: #2563eb; }
+  .text-warning { color: #d97706; }
+
+  .logistics-content {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 24px;
+  }
+  @media (max-width: 900px) {
+    .logistics-content { grid-template-columns: 1fr; }
+  }
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .card-header h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 800;
+  }
+  .search-box input {
+    padding: 8px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 13px;
+    width: 250px;
+  }
+  .search-box input:focus {
+    outline: none;
+    border-color: #171717;
+  }
+
+  .table-responsive {
+    overflow-x: auto;
+  }
+  .crm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .crm-table th {
+    text-align: left;
+    padding: 12px 16px;
+    background: #fbfbf9;
+    color: var(--color-text-muted);
+    font-weight: 700;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .crm-table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+    vertical-align: middle;
+  }
+  .crm-table tr:last-child td {
+    border-bottom: none;
+  }
+  
+  .carrier-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .carrier-dhl { background: #fef08a; color: #a16207; }
+  .carrier-fedex { background: #e0e7ff; color: #3730a3; }
+  .carrier-estafeta { background: #fee2e2; color: #b91c1c; }
+  .carrier-99minutos { background: #dcfce7; color: #15803d; }
+
+  .status-badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .status-entregado { background: #dcfce7; color: #15803d; }
+  .status-en-tránsito { background: #dbeafe; color: #1e40af; }
+  .status-en-preparación { background: #fef3c7; color: #b45309; }
+
+  .view-link {
+    color: #2563eb;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .view-link:hover { text-decoration: underline; }
+
+  /* Carriers panel */
+  .carrier-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .carrier-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: #fafaf8;
+  }
+  .carrier-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .carrier-logo {
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 11px;
+    color: white;
+  }
+  .carrier-logo.dhl { background: #eab308; color: #000; }
+  .carrier-logo.fedex { background: #4f46e5; }
+  .carrier-logo.estafeta { background: #dc2626; }
+  
+  .carrier-info strong {
+    display: block;
+    font-size: 14px;
+    margin-bottom: 2px;
+  }
+  .connection-status {
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .connection-status::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+  .connection-status.online { color: #15803d; }
+  .connection-status.online::before { background: #15803d; }
+  .connection-status.offline { color: #dc2626; }
+  .connection-status.offline::before { background: #dc2626; }
+
+  .settings-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+  }
+  .settings-btn:hover { opacity: 1; }
+
+  .btn-add-carrier {
+    width: 100%;
+    padding: 10px;
+    background: transparent;
+    border: 1px dashed var(--color-border);
+    border-radius: 8px;
+    color: var(--color-text-muted);
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-add-carrier:hover {
+    border-color: #171717;
+    color: #171717;
+    background: #fbfbf9;
+  }
+
+  /* Modal Styles */
+  .logistics-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+  .logistics-modal.active {
+    display: flex;
+    animation: fadeIn 0.2s ease-out;
+  }
+  .logistics-modal-content {
+    background: var(--color-surface);
+    border-radius: 12px;
+    width: 90%;
+    max-width: 480px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+  }
+  .logistics-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .logistics-modal-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 800;
+  }
+  .modal-close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--color-text-muted);
+    line-height: 1;
+  }
+  .logistics-modal-body {
+    padding: 20px;
+    font-size: 14px;
+    color: var(--color-text);
+  }
+  .logistics-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--color-border);
+    background: #fafaf8;
+  }
+  .modal-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    box-sizing: border-box;
+    margin-top: 4px;
+  }
+  .modal-input:focus {
+    outline: none;
+    border-color: #171717;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>

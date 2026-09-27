@@ -233,4 +233,31 @@ export const MovimientosInventario = mysqlTable('MovimientosInventario', {
   id_usuario: int('id_usuario').references(() => Usuarios.id),
 });
 
+export const Auditorias = mysqlTable('Auditorias', {
+  id: int('id').autoincrement().primaryKey(),
+  id_usuario: int('id_usuario').references(() => Usuarios.id),
+  fecha: datetime('fecha').notNull(),
+  estado: varchar('estado', { length: 50 }).notNull(),
+  notas: text('notas'),
+});
 
+export const AuditoriaDetalles = mysqlTable('AuditoriaDetalles', {
+  id: int('id').autoincrement().primaryKey(),
+  id_auditoria: int('id_auditoria').references(() => Auditorias.id).notNull(),
+  id_producto: int('id_producto').references(() => Productos.id).notNull(),
+  stock_sistema: int('stock_sistema').notNull(),
+  stock_fisico: int('stock_fisico').notNull(),
+  diferencia: int('diferencia').notNull(),
+});
+export const ScmSettings = mysqlTable('ScmSettings', {
+  id: int('id').primaryKey().autoincrement(),
+  nivel_scm: varchar('nivel_scm', { length: 50 }).default('Inicial'),
+  fecha_actualizacion: datetime('fecha_actualizacion')
+});
+export const TransportistasLogistica = mysqlTable('TransportistasLogistica', {
+  id: int('id').primaryKey().autoincrement(),
+  nombre: varchar('nombre', { length: 100 }).notNull(),
+  codigo: varchar('codigo', { length: 20 }),
+  estado: varchar('estado', { length: 50 }).default('Activo'),
+  api_key: varchar('api_key', { length: 255 })
+});

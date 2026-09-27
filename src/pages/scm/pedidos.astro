@@ -2,7 +2,7 @@
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Productos, Modelos, Proveedores, Marcas, Categorias, PedidosCompra, MovimientosInventario } from '../../db/schema';
-import { eq, desc, sql } from 'drizzle-orm';
+import { eq, desc, sql, or, and, isNull } from 'drizzle-orm';
 
 const session = Astro.cookies.get('sportenis_session')?.value;
 if (!session) return Astro.redirect('/login');
@@ -29,8 +29,8 @@ if (Astro.request.method === 'POST') {
       tipo: tipo,
       estado: 'Pendiente',
       fecha_creacion: new Date(),
-      stock_anterior,
-      stock_posterior: null,
+      // stock_anterior,
+      // stock_posterior: null,
     });
 
     return Astro.redirect(Astro.url.pathname);
@@ -65,8 +65,8 @@ if (Astro.request.method === 'POST') {
         await db.update(PedidosCompra).set({
           estado: 'Completado',
           fecha_completado: new Date(),
-          stock_anterior: p.stock_anterior ?? producto[0].stock,
-          stock_posterior: newStock,
+          // stock_anterior: p.stock_anterior ?? producto[0].stock,
+          // stock_posterior: newStock,
         }).where(eq(PedidosCompra.id, id));
       } else {
         await db.update(PedidosCompra).set({
@@ -95,8 +95,8 @@ const pedidosList = await db
     estado: PedidosCompra.estado,
     fecha_creacion: PedidosCompra.fecha_creacion,
     fecha_completado: PedidosCompra.fecha_completado,
-    stock_anterior: PedidosCompra.stock_anterior,
-    stock_posterior: PedidosCompra.stock_posterior,
+    // stock_anterior: PedidosCompra.stock_anterior,
+    // stock_posterior: PedidosCompra.stock_posterior,
     producto: Modelos.nombre,
     imagen_url: Modelos.imagen_url,
     descripcion: Modelos.descripcion,
@@ -121,7 +121,10 @@ const pedidosList = await db
   .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id))
   .leftJoin(Marcas, eq(Modelos.id_marca, Marcas.id))
   .leftJoin(Categorias, eq(Modelos.id_categoria, Categorias.id))
-  .leftJoin(Proveedores, eq(sql`COALESCE(${PedidosCompra.id_proveedor}, ${Productos.id_proveedor})`, Proveedores.id))
+  .leftJoin(Proveedores, or(
+    eq(PedidosCompra.id_proveedor, Proveedores.id),
+    and(isNull(PedidosCompra.id_proveedor), eq(Productos.id_proveedor, Proveedores.id))
+  ))
   .orderBy(desc(PedidosCompra.fecha_creacion));
 
 const productosList = await db

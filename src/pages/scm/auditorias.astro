@@ -1,0 +1,742 @@
+---
+import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db } from '../../db/db';
+import { Productos, Modelos, Auditorias, AuditoriaDetalles, MovimientosInventario, Usuarios } from '../../db/schema';
+import { eq, desc } from 'drizzle-orm';
+
+const session = Astro.cookies.get('sportenis_session')?.value;
+if (!session) return Astro.redirect('/login');
+const sessionUserId = Number(session);
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  
+  // Array of tuples: [id_producto, stock_fisico]
+  const productKeys = Array.from(formData.keys()).filter(k => k.startsWith('fisico_'));
+  
+  if (productKeys.length > 0) {
+    const notas = formData.get('notas')?.toString() || '';
+    
+    // Create Audit Record
+    const result = await db.insert(Auditorias).values({
+      id_usuario: sessionUserId,
+      fecha: new Date(),
+      estado: 'Completada',
+      notas: notas
+    });
+    
+    const auditId = result[0].insertId;
+    
+    // Process each physical count
+    for (const key of productKeys) {
+      const id_producto = Number(key.split('_')[1]);
+      const stock_fisico_raw = formData.get(key)?.toString();
+      
+      // Skip empty fields
+      if (!stock_fisico_raw || stock_fisico_raw.trim() === '') continue;
+      
+      const stock_fisico = Number(stock_fisico_raw);
+      
+      // Get current system stock
+      const prodRes = await db.select().from(Productos).where(eq(Productos.id, id_producto));
+      if (prodRes.length === 0) continue;
+      
+      const stock_sistema = prodRes[0].stock;
+      const diferencia = stock_fisico - stock_sistema;
+      
+      // Register audit detail
+      await db.insert(AuditoriaDetalles).values({
+        id_auditoria: auditId,
+        id_producto,
+        stock_sistema,
+        stock_fisico,
+        diferencia
+      });
+      
+      // Adjust stock and register movement if there's a difference
+      if (diferencia !== 0) {
+        await db.update(Productos).set({ stock: stock_fisico }).where(eq(Productos.id, id_producto));
+        
+        await db.insert(MovimientosInventario).values({
+          id_producto,
+          tipo: diferencia > 0 ? 'Entrada' : 'Salida',
+          cantidad: Math.abs(diferencia),
+          motivo: `Ajuste por Auditoría Física #${auditId}`,
+          fecha: new Date(),
+          id_usuario: sessionUserId
+        });
+      }
+    }
+    
+    return Astro.redirect('/scm/auditorias?success=1');
+  }
+}
+
+// Fetch products for the new audit form
+const productosList = await db
+  .select({
+    id: Productos.id,
+    sku: Productos.sku,
+    stock: Productos.stock,
+    talla: Productos.talla_cm,
+    color: Productos.color,
+    nombre: Modelos.nombre,
+  })
+  .from(Productos)
+  .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id));
+
+// Fetch previous audits
+const historialAuditoriasRaw = await db
+  .select({
+    id: Auditorias.id,
+    fecha: Auditorias.fecha,
+    estado: Auditorias.estado,
+    notas: Auditorias.notas,
+    usuario: Usuarios.nombre,
+  })
+  .from(Auditorias)
+  .leftJoin(Usuarios, eq(Auditorias.id_usuario, Usuarios.id))
+  .orderBy(desc(Auditorias.fecha));
+
+const todosDetalles = await db.select().from(AuditoriaDetalles);
+
+const historialAuditorias = historialAuditoriasRaw.map(aud => {
+  const audDetalles = todosDetalles.filter(d => d.id_auditoria === aud.id);
+  const itemsAuditados = audDetalles.length;
+  const itemsConDiferencia = audDetalles.filter(d => d.diferencia !== 0).length;
+  const udsAjustadas = audDetalles.reduce((sum, d) => sum + Math.abs(d.diferencia), 0);
+  
+  return {
+    ...aud,
+    itemsAuditados,
+    itemsConDiferencia,
+    udsAjustadas,
+    detallesRaw: audDetalles
+  };
+});
+
+const totalAuditorias = historialAuditorias.length;
+const totalItemsAuditados = todosDetalles.length;
+const totalAjustes = todosDetalles.filter(d => d.diferencia !== 0).length;
+const totalUdsAjustadas = todosDetalles.reduce((sum, d) => sum + Math.abs(d.diferencia), 0);
+
+const q = Astro.url.searchParams.get('q');
+let auditoriasFiltradas = historialAuditorias;
+
+if (q) {
+  const searchTerm = q.toLowerCase();
+  auditoriasFiltradas = auditoriasFiltradas.filter((item: any) =>
+    (item.id && item.id.toString().includes(searchTerm)) ||
+    (item.usuario && item.usuario.toLowerCase().includes(searchTerm)) ||
+    (item.notas && item.notas.toLowerCase().includes(searchTerm))
+  );
+}
+
+const success = Astro.url.searchParams.get('success');
+---
+
+<CrmLayout title="Auditorías Físicas" activePath="/scm/auditorias">
+  <div class="header-actions">
+    <div>
+      <h1 class="crm-title">Auditorías Físicas (Conteos Cíclicos)</h1>
+      <p class="subtitle">Validación física del inventario y conciliación automática con el sistema</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <button class="btn-primary" onclick="document.getElementById('modalNuevaAuditoria').showModal()">+ Nueva Auditoría</button>
+    </div>
+  </div>
+
+  {success && (
+    <div style="background-color: #dcfce7; color: #166534; padding: 16px; border-radius: 8px; margin-bottom: 20px; font-weight: 500; display:flex; align-items:center; gap: 8px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      Auditoría completada y stock ajustado exitosamente.
+    </div>
+  )}
+
+  <!-- Stats Cards -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-number">{totalAuditorias}</div>
+      <div class="stat-label">Total Auditorías</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-success">{totalItemsAuditados}</div>
+      <div class="stat-label">SKUs Contados</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-warning">{totalAjustes}</div>
+      <div class="stat-label">SKUs con Diferencias</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-auto">{totalUdsAjustadas}</div>
+      <div class="stat-label">Uds. Físicas Ajustadas</div>
+    </div>
+  </div>
+
+  <div class="crm-card">
+    <!-- Buscador -->
+    <form method="GET" style="margin: 0; flex: 1; max-width: 400px; display: flex; position: relative; margin-bottom: 24px;" id="searchForm">
+      <input type="search" name="q" value={q || ""} placeholder="Buscar por # auditoría, usuario o notas..." class="search-input" style="width: 100%; padding-right: 40px;" />
+      <button type="submit" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+    </form>
+    <div class="table-responsive">
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Fecha</th>
+            <th>Auditor</th>
+            <th>Estado</th>
+            <th>Items Contados</th>
+            <th>Desviaciones</th>
+            <th>Notas</th>
+            <th class="text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {auditoriasFiltradas.map(aud => (
+            <tr>
+              <td><code>#{aud.id}</code></td>
+              <td>{new Date(aud.fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })} <span style="font-size:11px; color:#64748b; margin-left:4px;">{new Date(aud.fecha).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</span></td>
+              <td>{aud.usuario || 'Desconocido'}</td>
+              <td>
+                <span class={`badge ${aud.estado === 'Completada' ? 'badge-success' : 'badge-warning'}`}>
+                  {aud.estado}
+                </span>
+              </td>
+              <td><strong>{aud.itemsAuditados}</strong> SKUs</td>
+              <td>
+                <span class={`badge ${aud.itemsConDiferencia === 0 ? 'badge-success' : 'badge-danger'}`} title="Discrepancias detectadas">
+                  {aud.itemsConDiferencia === 0 ? 'Exacto' : `${aud.itemsConDiferencia} con error`}
+                </span>
+              </td>
+              <td style="max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{aud.notas || '-'}</td>
+              <td class="text-right" style="white-space: nowrap;">
+                <button 
+                  type="button" 
+                  class="action-btn action-view" 
+                  title="Ver detalle completo de la auditoría"
+                  data-auditoria={JSON.stringify(aud)}
+                  onclick="openAuditoriaDetails(this)"
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              </td>
+            </tr>
+          ))}
+          {auditoriasFiltradas.length === 0 && (
+            <tr>
+              <td colspan="8" style="text-align: center; color: var(--color-text-muted); padding: 40px;">
+                No se encontraron auditorías físicas registradas.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Modal: Nueva Auditoría -->
+  <dialog id="modalNuevaAuditoria" class="crm-modal scm-modal" style="width: 800px; max-width: 90vw;">
+    <div class="modal-content" style="padding: 32px; border-radius: 16px;">
+      <div class="modal-header" style="margin-bottom: 24px;">
+        <h2 style="font-size: 20px; font-weight: 700; margin: 0;">Registro de Conteo Físico</h2>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalNuevaAuditoria').close()">×</button>
+      </div>
+      
+      <form method="POST" class="scm-form">
+        <p style="margin-bottom: 20px; color: #4b5563; font-size: 14px;">
+          Ingresa la cantidad física contada en bodega para los siguientes productos. Si dejas el campo en blanco, no se modificará el stock de ese producto. Las discrepancias generarán un ajuste de inventario.
+        </p>
+        
+        <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 20px;">
+          <table class="crm-table" style="margin: 0; border: none;">
+            <thead style="position: sticky; top: 0; z-index: 1;">
+              <tr>
+                <th>Producto / SKU</th>
+                <th>Talla / Color</th>
+                <th style="text-align: center;">Stock Sistema</th>
+                <th style="text-align: right; width: 140px;">Conteo Físico</th>
+              </tr>
+            </thead>
+            <tbody>
+              {productosList.map(p => (
+                <tr>
+                  <td>
+                    <strong>{p.nombre}</strong>
+                    <br/><span style="font-size: 12px; color: #64748b;">{p.sku}</span>
+                  </td>
+                  <td>{p.talla} cm / {p.color}</td>
+                  <td style="text-align: center;">
+                    <span class="badge badge-neutral">{p.stock}</span>
+                  </td>
+                  <td style="text-align: right;">
+                    <input type="number" name={`fisico_${p.id}`} min="0" placeholder="Ej. 10" style="width: 80px; padding: 6px; border: 1px solid #d1d5db; border-radius: 4px; text-align: right;" />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="form-row" style="margin-bottom: 20px; flex-direction: column; align-items: flex-start;">
+          <label style="font-size: 14px; font-weight: 500; color: #4b5563; margin-bottom: 8px;">Notas o Justificación de Ajuste</label>
+          <textarea name="notas" placeholder="Ej. Conteo cíclico pasillo 4..." style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; min-height: 60px; box-sizing: border-box;"></textarea>
+        </div>
+        
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 12px;">
+          <button type="button" class="btn-cancel" onclick="document.getElementById('modalNuevaAuditoria').close()" style="border: 1px solid #d1d5db; background: white; padding: 10px 24px; border-radius: 6px; cursor: pointer;">Cancelar</button>
+          <button type="submit" class="btn-save" style="background: #006655; color: white; border: none; padding: 10px 24px; border-radius: 6px; cursor: pointer; font-weight: 600;">Confirmar Auditoría</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+  <!-- Modal: Detalles Completos de Auditoría (El Ojito 👁️) -->
+  <dialog id="modalDetailAuditoria" class="crm-modal scm-modal modal-detail-wide">
+    <div class="modal-content print-container">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <h2 style="margin: 0; font-size: 20px;">Detalle de Auditoría <span id="dtlAudId" class="id-pill">#0</span></h2>
+          <span id="dtlAudBadgeEstado" class="badge badge-success">Completada</span>
+        </div>
+        <button type="button" class="close-btn no-print" onclick="document.getElementById('modalDetailAuditoria').close()">×</button>
+      </div>
+
+      <div class="detail-summary-strip" style="margin-top:20px;">
+        <div class="summary-cell">
+          <span class="s-label">Auditor Responsable</span>
+          <strong id="dtlAudUsuario" class="s-val">-</strong>
+        </div>
+        <div class="summary-cell">
+          <span class="s-label">Fecha y Hora</span>
+          <strong id="dtlAudFecha" class="s-val-date">-</strong>
+        </div>
+        <div class="summary-cell">
+          <span class="s-label">SKUs Revisados</span>
+          <strong id="dtlAudItems" class="s-val">0</strong>
+        </div>
+        <div class="summary-cell">
+          <span class="s-label">Errores de Stock</span>
+          <strong id="dtlAudErrores" class="s-val highlight-danger">0</strong>
+        </div>
+      </div>
+      
+      <div style="margin-top: 20px; font-size: 14px;">
+        <h4 style="margin:0 0 10px 0; color:#1e293b;">Notas de Justificación:</h4>
+        <div id="dtlAudNotas" style="padding:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; color:#475569;">
+          -
+        </div>
+      </div>
+
+      <div style="margin-top: 24px;">
+        <h4 style="margin:0 0 10px 0; color:#1e293b;">Productos Ajustados en este Conteo:</h4>
+        <div style="max-height:300px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:8px;">
+          <table class="crm-table" style="margin:0; border:none;">
+            <thead style="position:sticky; top:0; z-index:1;">
+              <tr>
+                <th>ID Producto</th>
+                <th>Stock Previo (Sistema)</th>
+                <th>Stock Real (Físico)</th>
+                <th>Desviación</th>
+              </tr>
+            </thead>
+            <tbody id="dtlAudTableBody">
+              <!-- JS Inyecta las filas -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="modal-footer no-print" style="justify-content: flex-end; align-items: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+        <button type="button" class="btn-secondary" onclick="window.print()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Imprimir Reporte
+        </button>
+        <button type="button" class="btn-secondary" onclick="document.getElementById('modalDetailAuditoria').close()">Cerrar</button>
+      </div>
+    </div>
+  </dialog>
+</CrmLayout>
+
+<script is:inline>
+  window.openAuditoriaDetails = function(button) {
+    const aud = JSON.parse(button.getAttribute('data-auditoria') || '{}');
+    const modal = document.getElementById('modalDetailAuditoria');
+    if (!modal) return;
+
+    document.getElementById('dtlAudId').textContent = '#' + aud.id;
+    document.getElementById('dtlAudUsuario').textContent = aud.usuario || 'Desconocido';
+    document.getElementById('dtlAudFecha').textContent = new Date(aud.fecha).toLocaleString('es-MX');
+    document.getElementById('dtlAudItems').textContent = aud.itemsAuditados || '0';
+    
+    const errEl = document.getElementById('dtlAudErrores');
+    if (errEl) {
+      errEl.textContent = aud.itemsConDiferencia || '0';
+      errEl.className = aud.itemsConDiferencia > 0 ? 's-val highlight-danger' : 's-val highlight-green';
+    }
+
+    document.getElementById('dtlAudNotas').textContent = aud.notas || 'Sin justificación / notas adicionales registradas.';
+
+    const tbody = document.getElementById('dtlAudTableBody');
+    if (tbody) {
+      tbody.innerHTML = '';
+      if (aud.detallesRaw && aud.detallesRaw.length > 0) {
+        aud.detallesRaw.forEach(d => {
+          const tr = document.createElement('tr');
+          const isError = d.diferencia !== 0;
+          
+          tr.innerHTML = `
+            <td><code>PID: ${d.id_producto}</code></td>
+            <td><span class="badge badge-neutral">${d.stock_sistema}</span></td>
+            <td><span class="badge badge-info">${d.stock_fisico}</span></td>
+            <td>
+              <span class="badge ${isError ? 'badge-danger' : 'badge-success'}">
+                ${d.diferencia > 0 ? '+' : ''}${d.diferencia}
+              </span>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } else {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px; color:#64748b;">No se registró ningún artículo en esta auditoría.</td></tr>';
+      }
+    }
+
+    modal.showModal();
+  };
+</script>
+
+<style>
+  .header-actions { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+  .crm-title { margin-bottom: 4px; }
+  .subtitle { margin: 0; font-size: 13px; color: var(--color-text-muted); }
+  
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+  }
+  .stat-number {
+    font-size: 32px;
+    font-weight: 900;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .stat-warning { color: #d97706; }
+  .stat-success { color: var(--color-success); }
+  .stat-auto { color: #2563eb; }
+  .stat-label {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .table-responsive { overflow-x: auto; margin: 0 -24px; }
+  .crm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .crm-table th { text-align: left; padding: 12px 24px; border-bottom: 2px solid var(--color-border); color: var(--color-text-muted); font-weight: 700; }
+  .crm-table td { padding: 14px 24px; border-bottom: 1px solid var(--color-border); }
+  .crm-table tbody tr:hover { background: var(--color-bg); }
+  .text-right { text-align: right; }
+  .sku-hint { display: block; font-size: 11px; color: #64748b; font-family: monospace; }
+
+  .action-btn { background: none; border: none; cursor: pointer; font-size: 16px; opacity: 0.65; margin-left: 6px; color: inherit; transition: all 0.2s ease; vertical-align: middle; padding: 4px; border-radius: 4px; }
+  .action-btn:hover { opacity: 1; transform: scale(1.1); }
+  .action-view { color: #0284c7; }
+  .action-view:hover { color: #0369a1 !important; background: #e0f2fe; }
+  .action-btn.text-danger:hover { color: var(--color-danger); background: #fee2e2; }
+  .action-complete:hover { color: var(--color-success) !important; background: #dcfce7; }
+
+  .badge-pull { background: #dbeafe; color: #1e40af; }
+  .badge-push { background: #fef3c7; color: #92400e; }
+  .badge-warning { background: #fef3c7; color: #d97706; }
+  .badge-neutral { background: #f1f5f9; color: #475569; }
+  .badge-info { background: #e0f2fe; color: #0369a1; }
+
+  /* Modal Base */
+  .scm-modal { border: none; border-radius: 12px; padding: 0; width: 100%; max-width: 520px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
+  .scm-modal::backdrop { background: rgba(0,0,0,0.5); backdrop-filter: blur(3px); }
+  .modal-content { padding: 32px; background: #ffffff; border-radius: 12px; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .modal-header h2 { margin: 0; font-size: 18px; color: #001632; font-weight: 700; }
+  .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #64748b; font-weight: bold; line-height: 1; }
+  .close-btn:hover { color: #001632; }
+
+  /* Modal Detalles Wide */
+  .modal-detail-wide { max-width: 760px; width: 95%; }
+  .id-pill { background: #f1f5f9; color: #001632; padding: 3px 8px; border-radius: 6px; font-family: monospace; font-size: 15px; font-weight: 800; }
+
+  /* Panel de Análisis de Stock */
+  .stock-analysis-panel {
+    background: linear-gradient(145deg, #f8fafc 0%, #f1f5f9 100%);
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .panel-tag-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #00564d;
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 16px;
+  }
+
+  .stock-flow-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr 1fr 1fr;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .stock-flow-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 12px 10px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .stock-flow-card.highlight {
+    background: #f0fdf4;
+    border-color: #86efac;
+  }
+  .flow-label { display: block; font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 4px; }
+  .flow-value { font-size: 22px; font-weight: 900; color: #0f172a; line-height: 1.1; }
+  .flow-value.highlight-val { color: #15803d; }
+  .flow-sub { display: block; font-size: 10px; color: #94a3b8; margin-top: 4px; }
+
+  .stock-flow-connector {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+  }
+  .connector-badge {
+    background: #0284c7;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 3px 6px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  .connector-line { color: #0284c7; display: flex; align-items: center; justify-content: center; }
+
+  /* Barra Visual */
+  .stock-visual-bar-wrap {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+  .stock-visual-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .health-pill {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+  }
+  .health-success { background: #dcfce7; color: #15803d; }
+  .health-warning { background: #fef3c7; color: #d97706; }
+  .health-danger { background: #fee2e2; color: #dc2626; }
+
+  .stock-visual-track {
+    width: 100%;
+    height: 10px;
+    background: #e2e8f0;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 6px;
+  }
+  .stock-visual-fill {
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.4s ease;
+  }
+  .stock-visual-legend {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #64748b;
+  }
+  .legend-min { color: #d97706; }
+  .legend-post { color: #15803d; font-weight: 700; }
+  .stock-note-text {
+    margin: 8px 0 0 0;
+    font-size: 12px;
+    color: #475569;
+    line-height: 1.4;
+    border-top: 1px dashed #e2e8f0;
+    padding-top: 8px;
+  }
+
+  /* Two Columns: Producto y Proveedor */
+  .detail-two-cols {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .info-block {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .info-block-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 800;
+    color: #001632;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    border-bottom: 1px solid #f1f5f9;
+    padding-bottom: 8px;
+  }
+  .product-mini-preview {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+  }
+  .product-thumb {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+  }
+  .product-thumb-fallback {
+    width: 64px;
+    height: 64px;
+    border-radius: 8px;
+    background: #f1f5f9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    border: 1px solid #e2e8f0;
+    flex-shrink: 0;
+  }
+  .product-title { margin: 0 0 4px 0; font-size: 15px; color: #001632; font-weight: 700; }
+  .product-meta { font-size: 12px; color: #64748b; margin-bottom: 6px; }
+  .product-tags-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .spec-tag { font-size: 11px; background: #f1f5f9; color: #334155; padding: 2px 6px; border-radius: 4px; }
+
+  .provider-details { font-size: 12px; }
+  .provider-row { display: flex; margin-bottom: 4px; }
+  .p-label { width: 70px; color: #64748b; font-weight: 600; flex-shrink: 0; }
+  .p-val { color: #1e293b; }
+  .p-link { color: #00564d; text-decoration: none; font-weight: 600; }
+  .p-link:hover { text-decoration: underline; }
+
+  /* Summary strip */
+  .detail-summary-strip {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 12px;
+    gap: 10px;
+  }
+  .summary-cell { text-align: center; }
+  .s-label { display: block; font-size: 10px; text-transform: uppercase; font-weight: 700; color: #64748b; margin-bottom: 4px; }
+  .s-val { font-size: 16px; font-weight: 800; color: #0f172a; }
+  .s-val.highlight-green { color: #15803d; }
+  .s-val-date { font-size: 11px; color: #334155; font-weight: 600; }
+
+  /* Forms & Buttons */
+  .scm-form .form-row { display: flex; align-items: flex-start; margin-bottom: 16px; gap: 16px; }
+  .scm-form label { width: 140px; font-size: 13px; color: #4a5568; padding-top: 10px; flex-shrink: 0; }
+  .scm-form input, .scm-form select { flex: 1; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-family: inherit; font-size: 14px; color: #4a5568; background-color: #ffffff; width: 100%; }
+  .scm-form input:focus, .scm-form select:focus { outline: none; border-color: #a0aec0; }
+  .select-wrapper { flex: 1; position: relative; }
+  .select-wrapper::after { content: "▼"; font-size: 10px; color: #4a5568; position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+  .scm-form select { appearance: none; padding-right: 30px; }
+  
+  .btn-cancel { background: transparent; border: 1px solid #00564d; color: #00564d; padding: 9px 20px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s ease; }
+  .btn-cancel:hover { background: rgba(0,0,0,0.03); }
+  .btn-save { background: #00564d; border: 1px solid #00564d; color: white; padding: 9px 20px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: opacity 0.2s ease; }
+  .btn-save:hover { opacity: 0.9; }
+  .btn-secondary {
+    background: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+  }
+  .btn-secondary:hover { background: var(--color-bg); border-color: var(--color-text); }
+
+  .stock-toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    padding: 16px 24px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    max-width: 480px;
+    z-index: 9999;
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.3s ease;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  }
+  .stock-toast.show { transform: translateY(0); opacity: 1; }
+  .stock-toast.success { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+  .stock-toast.error { background: #fff1ef; color: #d93e2e; border: 1px solid #fecaca; }
+
+  .search-input {
+    flex: 1;
+    padding: 10px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-family: inherit;
+  }
+
+  @media (max-width: 768px) {
+    .stock-flow-grid { grid-template-columns: 1fr 1fr; }
+    .stock-flow-connector { display: none; }
+    .detail-two-cols { grid-template-columns: 1fr; }
+    .detail-summary-strip { grid-template-columns: 1fr 1fr; }
+  }
+
+  @media print {
+    body * { visibility: hidden; }
+    .print-container, .print-container * { visibility: visible; }
+    .print-container { position: absolute; left: 0; top: 0; width: 100%; }
+    .no-print { display: none !important; }
+  }
+</style>
