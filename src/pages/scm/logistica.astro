@@ -1,342 +1,212 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
-import { Ventas, Clientes, TransportistasLogistica } from '../../db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { Productos, Modelos, MovimientosInventario } from '../../db/schema';
+import { eq } from 'drizzle-orm';
 
 if (Astro.request.method === 'POST') {
   const formData = await Astro.request.formData();
   const action = formData.get('action');
-
-  if (action === 'update_carrier_settings') {
-    const id = Number(formData.get('id'));
-    const api_key = formData.get('api_key') as string;
-    await db.update(TransportistasLogistica).set({ api_key }).where(eq(TransportistasLogistica.id, id));
-    return Astro.redirect(Astro.url.pathname);
-  } else if (action === 'create_carrier') {
-    const nombre = formData.get('nombre') as string;
-    const codigo = formData.get('codigo') as string;
-    const api_key = formData.get('api_key') as string;
-    await db.insert(TransportistasLogistica).values({ nombre, codigo, api_key });
+  
+  if (action === 'cambiar_estrategia') {
+    const id_producto = Number(formData.get('id_producto'));
+    const nueva_estrategia = formData.get('estrategia')?.toString().toUpperCase() || 'PUSH';
+    await db.update(Productos).set({ estrategia_logistica: nueva_estrategia }).where(eq(Productos.id, id_producto));
     return Astro.redirect(Astro.url.pathname);
   }
 }
 
-// Fetch real logistics carriers
-const transportistas = await db.select().from(TransportistasLogistica);
+const productosRaw = await db.select({
+  id: Productos.id,
+  sku: Productos.sku,
+  nombre: Modelos.nombre,
+  imagen_url: Modelos.imagen_url,
+  stock: Productos.stock,
+  stock_minimo: Productos.stock_minimo,
+  estrategia_logistica: Productos.estrategia_logistica,
+  costo: Productos.costo,
+}).from(Productos).leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id));
 
-// Fetch recent sales for shipments
-const enviosRecientes = await db
-  .select({
-    id: Ventas.id,
-    fecha: Ventas.fecha_venta,
-    total: Ventas.total,
-    cliente_nombre: Clientes.nombre,
-  })
-  .from(Ventas)
-  .leftJoin(Clientes, eq(Ventas.id_cliente, Clientes.id))
-  .orderBy(desc(Ventas.fecha_venta))
-  .limit(6);
+const movimientosRaw = await db.select().from(MovimientosInventario);
 
-// Simulated tracking data
-const envios = enviosRecientes.map((e, index) => {
-  const states = ['Entregado', 'En tránsito', 'En preparación', 'En tránsito', 'Entregado', 'En tránsito'];
-  const carriers = ['DHL', 'FedEx', 'Estafeta', 'DHL', 'FedEx', '99Minutos'];
-  const state = states[index % states.length];
-  const carrier = carriers[index % carriers.length];
+let pushCount = 0;
+let pullCount = 0;
+let pushStock = 0;
+let pullStock = 0;
+let pushValor = 0;
+let pullValor = 0;
+
+const productosEstadisticas = productosRaw.map(prod => {
+  const movs = movimientosRaw.filter(m => m.id_producto === prod.id);
+  const totalEntradas = movs.filter(m => m.tipo === 'Entrada').reduce((acc, m) => acc + m.cantidad, 0);
+  const totalSalidas = movs.filter(m => m.tipo === 'Salida').reduce((acc, m) => acc + m.cantidad, 0);
   
+  const rotacion = totalEntradas + totalSalidas;
+  const sugerencia = (totalSalidas >= 10 || rotacion >= 20) ? 'PUSH' : 'PULL';
+
+  const stock = Number(prod.stock || 0);
+  const costo = Number(prod.costo || 0);
+  const valor = stock * costo;
+  const estrategia = (prod.estrategia_logistica || 'PUSH').toUpperCase();
+
+  if (estrategia === 'PULL') {
+    pullCount++;
+    pullStock += stock;
+    pullValor += valor;
+  } else {
+    pushCount++;
+    pushStock += stock;
+    pushValor += valor;
+  }
+
   return {
-    ...e,
-    estado: state,
-    transportista: carrier,
-    tracking: `TRK${e.id}00${index * 7}`
+    ...prod,
+    totalEntradas,
+    totalSalidas,
+    rotacion,
+    sugerencia,
+    estrategia,
+    valor,
   };
 });
 
-const enTransito = envios.filter(e => e.estado === 'En tránsito').length;
-const entregados = envios.filter(e => e.estado === 'Entregado').length;
-const enPreparacion = envios.filter(e => e.estado === 'En preparación').length;
+const totalEstrategias = pushCount + pullCount;
+const pushPct = totalEstrategias > 0 ? Math.round((pushCount / totalEstrategias) * 100) : 50;
+const pullPct = 100 - pushPct;
 
+const totalStockEstrategias = pushStock + pullStock;
+const pushStockPct = totalStockEstrategias > 0 ? Math.round((pushStock / totalStockEstrategias) * 100) : 50;
+const pullStockPct = 100 - pushStockPct;
+
+const formatter = new Intl.NumberFormat('es-MX', {
+  style: 'currency',
+  currency: 'MXN',
+  maximumFractionDigits: 2,
+});
 ---
 
-<CrmLayout title="Logística y Envíos" activePath="/scm/logistica">
-  <div class="scm-header-bar">
+<CrmLayout title="Estrategia Logística PUSH / PULL" activePath="/scm/logistica">
+  <div class="scm-header-bar" style="margin-bottom: 24px;">
     <div>
-      <h1 class="crm-title">Logística de Distribución</h1>
-      <p class="scm-subtitle">Gestión de envíos, transportistas y seguimiento de última milla</p>
-    </div>
-    <div class="header-action-buttons">
-      <button class="btn-scm-action secondary" id="btnVerMapa">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-        Ver Mapa
-      </button>
-      <button class="btn-scm-action primary" id="btnCrearGuia">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Crear Guía Manual
-      </button>
+      <h1 class="crm-title">Estrategia Logística: PUSH vs PULL</h1>
+      <p class="scm-subtitle">Configuración y comparativa de modelos de abastecimiento en base a rotación.</p>
     </div>
   </div>
 
-  <div class="metrics-grid">
-    <div class="crm-card metric-card">
-      <div class="metric-top">
-        <h3>En Preparación</h3>
-        <span class="metric-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-        </span>
-      </div>
-      <div class="metric-value">{enPreparacion}</div>
-      <p class="metric-desc text-warning">Órdenes listas para recolección</p>
-    </div>
-    
-    <div class="crm-card metric-card">
-      <div class="metric-top">
-        <h3>En Tránsito</h3>
-        <span class="metric-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-        </span>
-      </div>
-      <div class="metric-value text-primary">{enTransito}</div>
-      <p class="metric-desc">Paquetes en ruta de entrega</p>
-    </div>
-
-    <div class="crm-card metric-card">
-      <div class="metric-top">
-        <h3>Entregados</h3>
-        <span class="metric-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-        </span>
-      </div>
-      <div class="metric-value text-success">{entregados}</div>
-      <p class="metric-desc">Últimos 7 días</p>
-    </div>
-  </div>
-
-  <div class="logistics-content">
-    <div class="crm-card shipments-card">
-      <div class="card-header">
-        <h3>Envíos Recientes</h3>
-        <div class="search-box">
-          <input type="text" placeholder="Buscar por guía o cliente..." />
-        </div>
+  <section class="crm-card scm-feature-section" id="widget-push-pull" style="margin-bottom: 24px;">
+    <div class="feature-header">
+      <div class="feature-title-group">
+        <span class="feature-badge">Métricas Globales</span>
+        <h2>Widget Comparativo: Modelo Push vs Pull</h2>
+        <p>Análisis de reabastecimiento general en el catálogo de SporTenis.</p>
       </div>
       
-      <div class="table-responsive">
-        <table class="crm-table">
-          <thead>
-            <tr>
-              <th>Tracking ID</th>
-              <th>Cliente</th>
-              <th>Transportista</th>
-              <th>Fecha</th>
-              <th>Estado</th>
-              <th>Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            {envios.map(e => (
-              <tr>
-                <td><strong>{e.tracking}</strong></td>
-                <td>{e.cliente_nombre}</td>
-                <td>
-                  <span class={`carrier-badge carrier-${e.transportista.toLowerCase()}`}>
-                    {e.transportista}
-                  </span>
-                </td>
-                <td>{new Date(e.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                <td>
-                  <span class={`status-badge status-${e.estado.replace(' ', '-').toLowerCase()}`}>
-                    {e.estado}
-                  </span>
-                </td>
-                <td>
-                  <a href="#" class="view-link">Rastrear</a>
-                </td>
-              </tr>
-            ))}
-            {envios.length === 0 && (
-              <tr><td colspan="6" class="text-center text-muted">No hay envíos registrados</td></tr>
-            )}
-          </tbody>
-        </table>
+      <div class="push-pull-summary-pill">
+        <div class="pill-col push-col">
+          <span class="pill-dot push-dot"></span>
+          <span class="pill-name">PUSH (Empuje):</span>
+          <strong>{pushPct}%</strong> ({pushCount} prod &bull; {formatter.format(pushValor)})
+        </div>
+        <div class="pill-divider"></div>
+        <div class="pill-col pull-col">
+          <span class="pill-dot pull-dot"></span>
+          <span class="pill-name">PULL (Arrastre):</span>
+          <strong>{pullPct}%</strong> ({pullCount} prod &bull; {formatter.format(pullValor)})
+        </div>
       </div>
     </div>
 
-    <div class="side-panel">
-      <div class="crm-card carriers-card">
-        <h3>Integraciones Logísticas</h3>
-        <p class="text-muted" style="font-size: 13px; margin-bottom: 20px;">Estado de conexión con proveedores de última milla.</p>
-        
-        <div class="carrier-list">
-          {transportistas.map(carrier => (
-            <div class="carrier-item">
-              <div class="carrier-info">
-                <div class="carrier-logo" style="background:#f1f5f9;color:#475569;">{carrier.codigo || 'N/A'}</div>
-                <div>
-                  <strong>{carrier.nombre}</strong>
-                  <span class={`connection-status ${carrier.estado === 'Activo' ? 'online' : ''}`}>{carrier.estado}</span>
+    <div class="distribution-track" title={`Catálogo: ${pushPct}% Push / ${pullPct}% Pull`}>
+      <div class="track-segment segment-push" style={`width: ${pushPct}%;`}>
+        <span>PUSH: {pushPct}% ({pushStock} uds &bull; {pushStockPct}%)</span>
+      </div>
+      <div class="track-segment segment-pull" style={`width: ${pullPct}%;`}>
+        <span>PULL: {pullPct}% ({pullStock} uds &bull; {pullStockPct}%)</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="crm-card">
+    <div class="card-header" style="margin-bottom: 20px;">
+      <h3 style="font-size: 18px; margin: 0; font-weight: 800;">Análisis por Producto (Altas y Bajas)</h3>
+      <p style="font-size: 13px; color: var(--color-text-muted); margin-top: 4px;">Evalúa el movimiento físico (entradas y salidas) para decidir si debes tener inventario físico (PUSH) o pedir a proveedor bajo demanda (PULL).</p>
+    </div>
+    
+    <div class="table-responsive">
+      <table class="crm-table">
+        <thead>
+          <tr style="background:#fbfbf9; border-bottom:1px solid #e2e8f0;">
+            <th style="padding:12px 16px; text-align:left; color:#64748b;">Producto</th>
+            <th style="padding:12px 16px; text-align:left; color:#64748b;">Entradas (Altas)</th>
+            <th style="padding:12px 16px; text-align:left; color:#64748b;">Salidas (Bajas)</th>
+            <th style="padding:12px 16px; text-align:left; color:#64748b;">Rotación Total</th>
+            <th style="padding:12px 16px; text-align:left; color:#64748b;">Estrategia Sugerida</th>
+            <th style="padding:12px 16px; text-align:left; color:#64748b;">Estrategia Actual</th>
+            <th style="padding:12px 16px; text-align:right; color:#64748b;">Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {productosEstadisticas.map(prod => (
+            <tr style="border-bottom:1px solid #f1f5f9;">
+              <td style="padding:12px 16px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  {prod.imagen_url ? (
+                    <img src={prod.imagen_url} alt="img" style="width: 40px; height: 40px; border-radius: 8px; object-fit: cover;" />
+                  ) : (
+                    <div style="width: 40px; height: 40px; border-radius: 8px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 18px;">👟</div>
+                  )}
+                  <div>
+                    <strong style="display: block;">{prod.nombre}</strong>
+                    <span style="font-size: 11px; color: #64748b;">SKU: {prod.sku || 'N/A'}</span>
+                  </div>
                 </div>
-              </div>
-              <button class="settings-btn" data-id={carrier.id} data-name={carrier.nombre} data-api={carrier.api_key}>⚙️</button>
-            </div>
+              </td>
+              <td style="padding:12px 16px; color: #15803d; font-weight: 600; font-size:14px;">+{prod.totalEntradas}</td>
+              <td style="padding:12px 16px; color: #b91c1c; font-weight: 600; font-size:14px;">-{prod.totalSalidas}</td>
+              <td style="padding:12px 16px; font-size:14px;"><strong>{prod.rotacion}</strong> movs</td>
+              <td style="padding:12px 16px;">
+                <span class={`badge ${prod.sugerencia === 'PUSH' ? 'badge-push' : 'badge-pull'}`} style="opacity: 0.8; border-style: dashed;">
+                  Sugerido: {prod.sugerencia}
+                </span>
+                <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">
+                  {prod.sugerencia === 'PUSH' ? 'Alta rotación (stockear)' : 'Baja rotación (bajo demanda)'}
+                </div>
+              </td>
+              <td style="padding:12px 16px;">
+                <span class={`badge ${prod.estrategia === 'PUSH' ? 'badge-push' : 'badge-pull'}`}>
+                  {prod.estrategia}
+                </span>
+                {prod.estrategia !== prod.sugerencia && (
+                  <div style="font-size: 10px; color: #d97706; font-weight: 600; margin-top: 4px;">⚠️ Subóptimo</div>
+                )}
+              </td>
+              <td style="padding:12px 16px; text-align:right;">
+                <form method="POST" style="margin: 0; display: inline-block;">
+                  <input type="hidden" name="action" value="cambiar_estrategia" />
+                  <input type="hidden" name="id_producto" value={prod.id} />
+                  <input type="hidden" name="estrategia" value={prod.estrategia === 'PUSH' ? 'PULL' : 'PUSH'} />
+                  <button type="submit" style={`background: ${prod.estrategia === 'PUSH' ? '#f8fafc' : '#fef2f2'}; border: 1px solid ${prod.estrategia === 'PUSH' ? '#cbd5e1' : '#fca5a5'}; color: ${prod.estrategia === 'PUSH' ? '#475569' : '#b91c1c'}; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: pointer;`}>
+                    Cambiar a {prod.estrategia === 'PUSH' ? 'PULL' : 'PUSH'}
+                  </button>
+                </form>
+              </td>
+            </tr>
           ))}
-        </div>
-        
-        <button class="btn-add-carrier" onclick="document.getElementById('modalAddCarrier').showModal()">+ Añadir Transportista</button>
-      </div>
+          {productosEstadisticas.length === 0 && (
+            <tr><td colspan="7" style="text-align:center; padding:40px; color:#94a3b8;">No hay productos registrados.</td></tr>
+          )}
+        </tbody>
+      </table>
     </div>
   </div>
 
-  <!-- Modal Genérico Antiguo para Logística -->
-  <div id="logisticsModal" class="logistics-modal">
-    <div class="logistics-modal-content">
-      <div class="logistics-modal-header">
-        <h3 id="modalTitle">Acción</h3>
-        <button id="modalCloseBtn" class="modal-close-btn">&times;</button>
-      </div>
-      <div class="logistics-modal-body" id="modalBody">
-        Contenido del modal.
-      </div>
-      <div class="logistics-modal-footer">
-        <button id="modalCancelBtn" class="btn-scm-action secondary">Cancelar</button>
-        <button id="modalActionBtn" class="btn-scm-action primary">Aceptar</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modales Nativos -->
-  <dialog id="modalSettings" class="crm-modal scm-modal" style="border:none; border-radius:12px; padding:0; width:100%; max-width:400px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
-    <div style="padding: 24px; background: #fff; border-radius: 12px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
-        <h3 id="modalSettingsTitle" style="margin:0; font-size: 18px; color:#001632;">Configuración</h3>
-        <button type="button" onclick="document.getElementById('modalSettings').close()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
-      </div>
-      <form method="POST">
-        <input type="hidden" name="action" value="update_carrier_settings" />
-        <input type="hidden" name="id" id="modalSettingsId" />
-        <p style="font-size:13px; color:var(--color-text-muted); margin-bottom:16px;">Ajusta las credenciales de API para esta integración.</p>
-        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:24px;">
-          <label style="font-size:13px; font-weight:700;">API Key</label>
-          <input type="text" name="api_key" id="modalSettingsApi" class="search-input" style="padding:10px;" required />
-        </div>
-        <div style="display:flex; justify-content:flex-end; gap:12px;">
-          <button type="button" class="btn-scm-action secondary" onclick="document.getElementById('modalSettings').close()">Cancelar</button>
-          <button type="submit" class="btn-scm-action primary">Guardar Cambios</button>
-        </div>
-      </form>
-    </div>
-  </dialog>
-
-  <dialog id="modalAddCarrier" class="crm-modal scm-modal" style="border:none; border-radius:12px; padding:0; width:100%; max-width:400px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
-    <div style="padding: 24px; background: #fff; border-radius: 12px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
-        <h3 style="margin:0; font-size: 18px; color:#001632;">Añadir Transportista</h3>
-        <button type="button" onclick="document.getElementById('modalAddCarrier').close()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
-      </div>
-      <form method="POST">
-        <input type="hidden" name="action" value="create_carrier" />
-        <div style="display:flex; flex-direction:column; gap:16px; margin-bottom:24px;">
-          <div>
-            <label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px;">Nombre</label>
-            <input type="text" name="nombre" class="search-input" style="padding:10px; width:100%;" placeholder="Ej. Redpack" required />
-          </div>
-          <div>
-            <label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px;">Código (3-4 letras)</label>
-            <input type="text" name="codigo" class="search-input" style="padding:10px; width:100%;" placeholder="Ej. RPK" required />
-          </div>
-          <div>
-            <label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px;">API Key</label>
-            <input type="text" name="api_key" class="search-input" style="padding:10px; width:100%;" placeholder="Opcional" />
-          </div>
-        </div>
-        <div style="display:flex; justify-content:flex-end; gap:12px;">
-          <button type="button" class="btn-scm-action secondary" onclick="document.getElementById('modalAddCarrier').close()">Cancelar</button>
-          <button type="submit" class="btn-scm-action primary">Añadir</button>
-        </div>
-      </form>
-    </div>
-  </dialog>
 </CrmLayout>
 
-<script>
-  function setupLogisticsModal() {
-    const modal = document.getElementById('logisticsModal');
-    if (!modal) return;
-    
-    const modalTitle = document.getElementById('modalTitle');
-    const modalBody = document.getElementById('modalBody');
-    const closeBtns = [
-      document.getElementById('modalCloseBtn'), 
-      document.getElementById('modalCancelBtn'), 
-      document.getElementById('modalActionBtn')
-    ];
-    
-    function openModal(title, content) {
-      if(modalTitle) modalTitle.textContent = title;
-      if(modalBody) modalBody.innerHTML = content;
-      if(modal) modal.classList.add('active');
-    }
-    
-    function closeModal() {
-      if(modal) modal.classList.remove('active');
-    }
-    
-    closeBtns.forEach(btn => {
-      if(btn) btn.addEventListener('click', closeModal);
-    });
-    
-    const btnVerMapa = document.getElementById('btnVerMapa');
-    if(btnVerMapa) btnVerMapa.addEventListener('click', () => {
-      openModal('Mapa de Rutas Activas', '<p>Visualización del mapa de rutas no disponible en la versión actual. Integración con Google Maps pendiente.</p>');
-    });
-    
-    const btnCrearGuia = document.getElementById('btnCrearGuia');
-    if(btnCrearGuia) btnCrearGuia.addEventListener('click', () => {
-      openModal('Crear Guía Manual', '<div style="display:flex;flex-direction:column;gap:12px;"><label style="font-size:13px; font-weight:700;">ID del Pedido: <input type="text" class="modal-input" placeholder="Ej. 10293"></label><label style="font-size:13px; font-weight:700;">Transportista: <select class="modal-input"><option>FedEx</option><option>DHL</option><option>Estafeta</option></select></label><p style="font-size:12px;color:var(--color-text-muted);">Se generará una guía de rastreo y se asignará al pedido automáticamente.</p></div>');
-    });
-    
-    const settingsBtns = document.querySelectorAll('.settings-btn');
-    settingsBtns.forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const target = e.currentTarget;
-        const id = target.getAttribute('data-id');
-        const name = target.getAttribute('data-name');
-        const api = target.getAttribute('data-api');
-        
-        document.getElementById('modalSettingsTitle').textContent = `Configuración: ${name}`;
-        document.getElementById('modalSettingsId').value = id;
-        document.getElementById('modalSettingsApi').value = api || '';
-        
-        document.getElementById('modalSettings').showModal();
-      });
-    });
-    
-    // El botón btnAddCarrier ahora usa onclick directo en el HTML.
-    
-    const trackLinks = document.querySelectorAll('.view-link');
-    trackLinks.forEach(link => {
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        const target = e.currentTarget as HTMLElement;
-        const tr = target.closest('tr');
-        const tracking = tr ? (tr.querySelector('strong') as HTMLElement)?.textContent : 'TRK000';
-        openModal('Rastrear Envío', `<p>Rastreo detallado para la guía: <strong>${tracking}</strong>.</p><ul style="font-size:13px; color:var(--color-text-muted); margin-top:10px; line-height:1.6; padding-left: 20px;"><li><strong>Hoy 08:30 AM:</strong> En tránsito hacia sucursal de destino.</li><li><strong>Ayer 18:45 PM:</strong> Recolectado en centro de distribución SporTenis.</li></ul>`);
-      });
-    });
-  }
-
-  // Astro trigger for view transitions
-  document.addEventListener('astro:page-load', setupLogisticsModal);
-  
-  // Also run it if page is already loaded (fallback)
-  if (document.readyState === 'interactive' || document.readyState === 'complete') {
-    setupLogisticsModal();
-  } else {
-    document.addEventListener('DOMContentLoaded', setupLogisticsModal);
-  }
-</script>
 
 <style>
+  /* =========================================================================
+     ESTILOS GENERALES Y CABECERA SCM
+     ========================================================================= */
   .scm-header-bar {
     display: flex;
     justify-content: space-between;
@@ -345,11 +215,41 @@ const enPreparacion = envios.filter(e => e.estado === 'En preparación').length;
     gap: 16px;
     flex-wrap: wrap;
   }
+  .header-badges {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .badge-tag {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--color-border);
+    color: var(--color-text-muted);
+  }
+  .live-tag {
+    background: #dcfce7;
+    color: #15803d;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .pulse-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #15803d;
+    box-shadow: 0 0 0 2px rgba(21, 128, 61, 0.3);
+  }
   .scm-subtitle {
     margin: 4px 0 0 0;
     font-size: 14px;
     color: var(--color-text-muted);
   }
+
   .header-action-buttons {
     display: flex;
     gap: 10px;
@@ -364,12 +264,10 @@ const enPreparacion = envios.filter(e => e.estado === 'En preparación').length;
     border-radius: 6px;
     text-decoration: none;
     transition: all 0.2s;
-    cursor: pointer;
   }
   .btn-scm-action.primary {
     background: var(--color-primary);
     color: #171717;
-    border: 1px solid var(--color-primary);
   }
   .btn-scm-action.primary:hover {
     opacity: 0.9;
@@ -384,6 +282,9 @@ const enPreparacion = envios.filter(e => e.estado === 'En preparación').length;
     background: var(--color-bg);
   }
 
+  /* =========================================================================
+     MÉTRICAS PRINCIPALES
+     ========================================================================= */
   .metrics-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -395,6 +296,9 @@ const enPreparacion = envios.filter(e => e.estado === 'En preparación').length;
     display: flex;
     flex-direction: column;
     justify-content: center;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    border-radius: 12px;
     transition: transform 0.2s, box-shadow 0.2s;
   }
   .metric-card:hover {
@@ -427,264 +331,1034 @@ const enPreparacion = envios.filter(e => e.estado === 'En preparación').length;
     margin-bottom: 6px;
     letter-spacing: -0.02em;
   }
+  .currency-value {
+    font-size: 30px;
+  }
   .metric-desc {
     margin: 0;
     font-size: 12px;
     color: var(--color-text-muted);
   }
   .text-success { color: var(--color-success); }
-  .text-primary { color: #2563eb; }
+  .text-danger { color: var(--color-danger); }
   .text-warning { color: #d97706; }
 
-  .logistics-content {
+  /* =========================================================================
+     DASHBOARD WIDGETS: ALERTAS & SALUD
+     ========================================================================= */
+  .dashboard-widgets {
     display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 24px;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 24px;
   }
   @media (max-width: 900px) {
-    .logistics-content { grid-template-columns: 1fr; }
+    .dashboard-widgets { grid-template-columns: 1fr; }
   }
-
-  .card-header {
+  .widget-card {
+    padding: 22px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    border-radius: 12px;
+  }
+  .widget-header-flex {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-    gap: 12px;
+    margin-bottom: 18px;
   }
-  .card-header h3 {
+  .widget-header-flex h3 {
     margin: 0;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 800;
   }
-  .search-box input {
-    padding: 8px 12px;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    font-size: 13px;
-    width: 250px;
+  .status-pill {
+    font-size: 12px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 20px;
   }
-  .search-box input:focus {
-    outline: none;
-    border-color: #171717;
+  .status-danger {
+    background: #fee2e2;
+    color: var(--color-danger);
+  }
+  .status-success {
+    background: #dcfce7;
+    color: var(--color-success);
+  }
+  .status-info {
+    background: #e0e7ff;
+    color: #3730a3;
   }
 
-  .table-responsive {
-    overflow-x: auto;
+  /* Risk items */
+  .risk-list {
+    display: flex;
+    flex-direction: column;
   }
-  .crm-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-  .crm-table th {
-    text-align: left;
-    padding: 12px 16px;
-    background: #fbfbf9;
-    color: var(--color-text-muted);
-    font-weight: 700;
+  .risk-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
     border-bottom: 1px solid var(--color-border);
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.15s;
   }
-  .crm-table td {
-    padding: 14px 16px;
-    border-bottom: 1px solid rgba(0,0,0,0.05);
-    vertical-align: middle;
+  .risk-item:last-child { border-bottom: none; }
+  .risk-item:hover {
+    background: var(--color-bg);
+    margin: 0 -12px;
+    padding: 12px;
+    border-radius: 8px;
+    border-bottom-color: transparent;
   }
-  .crm-table tr:last-child td {
-    border-bottom: none;
+  .risk-item strong {
+    font-size: 14px;
+    display: block;
+    margin-bottom: 3px;
   }
-  
-  .carrier-badge {
+  .risk-item p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+  .tag-strategy {
+    font-weight: 700;
+    font-size: 11px;
+    color: var(--color-text);
+  }
+  .risk-badge {
+    font-size: 12px;
+    font-weight: 700;
+    background: #fff1ef;
     padding: 4px 8px;
     border-radius: 4px;
+  }
+  .healthy-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px;
+    gap: 10px;
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: 13px;
+  }
+
+  /* Health Bars */
+  .chart-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .health-bar-row {
+    width: 100%;
+  }
+  .health-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+  .indicator-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+  }
+  .indicator-dot.green { background: var(--color-success); }
+  .indicator-dot.red { background: var(--color-danger); }
+  .health-val {
+    font-weight: 700;
+    color: var(--color-text-muted);
+  }
+  .progress-track {
+    width: 100%;
+    height: 10px;
+    background: var(--color-border);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    transition: width 0.4s ease;
+  }
+  .fill-green { background: var(--color-success); }
+  .fill-red { background: var(--color-danger); }
+
+  .health-footer-stats {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--color-border);
+    font-size: 12px;
+  }
+  .footer-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .footer-stat span { color: var(--color-text-muted); }
+  .footer-stat strong { font-size: 13px; }
+
+  .view-all {
+    display: block;
+    text-align: right;
+    margin-top: 14px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-text);
+    text-decoration: none;
+  }
+  .view-all:hover { text-decoration: underline; }
+
+  /* =========================================================================
+     SECCIÓN CARACTERÍSTICA SCM BASE
+     ========================================================================= */
+  .scm-feature-section {
+    padding: 28px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    border-radius: 14px;
+    margin-bottom: 28px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+  }
+  .feature-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .feature-title-group h2 {
+    margin: 6px 0 4px 0;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+  }
+  .feature-title-group p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--color-text-muted);
+  }
+  .feature-badge {
+    display: inline-block;
     font-size: 11px;
     font-weight: 800;
     text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: #171717;
+    color: #fff;
+    padding: 3px 8px;
+    border-radius: 4px;
   }
-  .carrier-dhl { background: #fef08a; color: #a16207; }
-  .carrier-fedex { background: #e0e7ff; color: #3730a3; }
-  .carrier-estafeta { background: #fee2e2; color: #b91c1c; }
-  .carrier-99minutos { background: #dcfce7; color: #15803d; }
 
-  .status-badge {
-    padding: 4px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 700;
-    white-space: nowrap;
+  /* Pestañas genéricas */
+  .feature-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 22px;
+    overflow-x: auto;
   }
-  .status-entregado { background: #dcfce7; color: #15803d; }
-  .status-en-tránsito { background: #dbeafe; color: #1e40af; }
-  .status-en-preparación { background: #fef3c7; color: #b45309; }
-
-  .view-link {
-    color: #2563eb;
+  .feature-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--color-text-muted);
+    font-size: 13px;
     font-weight: 600;
-    text-decoration: none;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
   }
-  .view-link:hover { text-decoration: underline; }
+  .feature-tab:hover {
+    color: var(--color-text);
+  }
+  .feature-tab.active {
+    color: var(--color-text);
+    border-bottom-color: var(--color-text);
+    font-weight: 800;
+  }
+  .pp-panel {
+    display: none;
+  }
+  .pp-panel.active {
+    display: block;
+    animation: fadeIn 0.25s ease-out;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
 
-  /* Carriers panel */
-  .carrier-list {
+  /* =========================================================================
+     ESTILOS ESPECÍFICOS: WIDGET PUSH VS PULL
+     ========================================================================= */
+  .push-pull-summary-pill {
+    display: flex;
+    align-items: center;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    padding: 8px 14px;
+    border-radius: 30px;
+    font-size: 12px;
+    gap: 12px;
+  }
+  .pill-col {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .pill-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+  .push-dot { background: #2563eb; }
+  .pull-dot { background: #16a34a; }
+  .pill-name { color: var(--color-text-muted); }
+  .pill-divider {
+    width: 1px;
+    height: 14px;
+    background: var(--color-border);
+  }
+
+  /* Distribution Track */
+  .distribution-track {
+    width: 100%;
+    height: 28px;
+    border-radius: 6px;
+    background: var(--color-border);
+    overflow: hidden;
+    display: flex;
+    margin-bottom: 20px;
+    font-size: 12px;
+    font-weight: 800;
+  }
+  .track-segment {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 8px;
+    transition: width 0.4s ease;
+  }
+  .segment-push {
+    background: #1e40af;
+  }
+  .segment-pull {
+    background: #15803d;
+  }
+
+  /* Push vs Pull Grid */
+  .push-pull-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+    margin-bottom: 22px;
+  }
+  @media (max-width: 850px) {
+    .push-pull-grid { grid-template-columns: 1fr; }
+  }
+  .strategy-card {
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 22px;
+    background: #fafaf8;
     display: flex;
     flex-direction: column;
+  }
+  .push-card { border-top: 4px solid #2563eb; }
+  .pull-card { border-top: 4px solid #16a34a; }
+
+  .strategy-badge-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .tag-push {
+    background: #dbeafe;
+    color: #1e40af;
+    font-weight: 800;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 4px;
+  }
+  .tag-pull {
+    background: #dcfce7;
+    color: #15803d;
+    font-weight: 800;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 4px;
+  }
+  .strategy-alias {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    font-weight: 600;
+  }
+  .strategy-summary {
+    font-size: 13px;
+    color: var(--color-text);
+    line-height: 1.5;
+    margin: 0 0 16px 0;
+  }
+
+  /* Diagrama de flujo */
+  .flow-diagram {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    padding: 12px 10px;
+    border-radius: 8px;
+    margin-bottom: 18px;
+    overflow-x: auto;
+  }
+  .flow-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    min-width: 68px;
+  }
+  .step-num {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--color-border);
+    color: var(--color-text);
+    font-size: 11px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 4px;
+  }
+  .flow-step.highlight .step-num {
+    background: var(--color-primary);
+    color: #171717;
+  }
+  .step-text {
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--color-text);
+  }
+  .flow-arrow {
+    color: var(--color-text-muted);
+    font-weight: 900;
+    font-size: 16px;
+    padding: 0 4px;
+  }
+
+  /* Specs table */
+  .strategy-specs-table {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .spec-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    gap: 12px;
+  }
+  .spec-label {
+    font-weight: 700;
+    color: var(--color-text-muted);
+    min-width: 120px;
+  }
+  .spec-val {
+    text-align: right;
+    font-weight: 600;
+  }
+  .highlight-row {
+    background: rgba(247, 210, 28, 0.15);
+    padding: 6px 8px;
+    border-radius: 4px;
+    border-bottom: none;
+  }
+
+  /* Hybrid banner */
+  .hybrid-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    background: #fdfbf3;
+    border: 1px solid #e7d8a6;
+    padding: 18px 20px;
+    border-radius: 10px;
+  }
+  .hybrid-icon {
+    background: var(--color-primary);
+    color: #171717;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .hybrid-banner h4 {
+    margin: 0 0 6px 0;
+    font-size: 15px;
+    font-weight: 800;
+  }
+  .hybrid-banner p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #4b483e;
+  }
+
+  /* Simulator */
+  .simulator-wrapper {
+    background: #fafaf8;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .simulator-header-box h3 {
+    margin: 0 0 4px 0;
+    font-size: 17px;
+    font-weight: 800;
+  }
+  .simulator-header-box p {
+    margin: 0 0 20px 0;
+    font-size: 13px;
+    color: var(--color-text-muted);
+  }
+
+  .slider-container {
+    margin-bottom: 26px;
+  }
+  .slider-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+  .label-push strong { color: #1e40af; font-size: 18px; }
+  .label-pull strong { color: #15803d; font-size: 18px; }
+  .label-center { font-size: 12px; color: var(--color-text-muted); font-weight: 700; text-transform: uppercase; }
+
+  .pp-slider {
+    width: 100%;
+    height: 10px;
+    border-radius: 5px;
+    background: linear-gradient(to right, #1e40af, #15803d);
+    outline: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+  }
+  .pp-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 3px solid #171717;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  }
+  .slider-ticks {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--color-text-muted);
+    margin-top: 6px;
+  }
+
+  /* Impact Grid */
+  .impact-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 22px;
+  }
+  @media (max-width: 800px) {
+    .impact-grid { grid-template-columns: 1fr; }
+  }
+  .impact-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .impact-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .meter-track {
+    width: 100%;
+    height: 8px;
+    background: var(--color-border);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .meter-bar {
+    height: 100%;
+    background: #171717;
+    transition: width 0.3s ease;
+  }
+  .impact-caption {
+    margin: 0;
+    font-size: 11px;
+    color: var(--color-text-muted);
+    line-height: 1.3;
+  }
+
+  /* Diagnostic Card */
+  .sim-diagnostic-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-left: 4px solid var(--color-primary);
+    padding: 16px;
+    border-radius: 8px;
+  }
+  .diag-icon { font-size: 24px; }
+  .sim-diagnostic-card h4 {
+    margin: 0 0 4px 0;
+    font-size: 14px;
+    font-weight: 800;
+  }
+  .sim-diagnostic-card p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--color-text-muted);
+    line-height: 1.4;
+  }
+
+  /* Catalog Split View */
+  .catalog-split-view {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 800px) {
+    .catalog-split-view { grid-template-columns: 1fr; }
+  }
+  .split-col {
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: var(--color-surface);
+    overflow: hidden;
+  }
+  .split-header {
+    padding: 14px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .push-header { background: #eff6ff; border-bottom: 1px solid #bfdbfe; }
+  .pull-header { background: #f0fdf4; border-bottom: 1px solid #bbf7d0; }
+  .split-header h4 { margin: 0; font-size: 13px; font-weight: 800; }
+  .sub-badge { font-size: 11px; font-weight: 700; color: var(--color-text-muted); }
+  .table-mini-scroll { max-height: 320px; overflow-y: auto; }
+  .mini-table { font-size: 12px; margin: 0; }
+  .mini-table th { padding: 8px 12px; background: var(--color-bg); }
+  .mini-table td { padding: 10px 12px; }
+  .mini-sku { display: block; font-size: 11px; color: var(--color-text-muted); font-family: monospace; }
+  .badge-stock { font-weight: 800; }
+  .mini-link { font-weight: 700; color: var(--color-text); text-decoration: underline; font-size: 12px; }
+
+  /* =========================================================================
+     ESTILOS ESPECÍFICOS: EVALUACIÓN DE NIVEL SCM (CHECKLIST)
+     ========================================================================= */
+  .checklist-action-bar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .btn-tool {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-tool:hover {
+    background: var(--color-bg);
+  }
+  .primary-tool {
+    background: #171717;
+    color: #fff;
+    border-color: #171717;
+  }
+  .primary-tool:hover {
+    background: #333333;
+  }
+
+  /* Maturity Hero Card */
+  .scm-maturity-hero {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    background: linear-gradient(135deg, #171717 0%, #2b2b28 100%);
+    color: #fff;
+    border-radius: 12px;
+    padding: 26px 30px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .maturity-score-box {
+    flex-shrink: 0;
+  }
+  .circular-chart-wrap {
+    position: relative;
+    width: 100px;
+    height: 100px;
+  }
+  .circular-chart {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .circle-bg {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.15);
+    stroke-width: 3.8;
+  }
+  .circle {
+    fill: none;
+    stroke-width: 3.8;
+    stroke-linecap: round;
+    stroke: var(--color-primary);
+    transition: stroke-dasharray 0.6s ease;
+  }
+  .circle-inner-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .pct-val {
+    font-size: 20px;
+    font-weight: 900;
+    display: block;
+    line-height: 1;
+    color: #fff;
+  }
+  .pct-label {
+    font-size: 9px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.6);
+    letter-spacing: 0.05em;
+  }
+
+  .maturity-info-box {
+    flex: 1;
+    min-width: 260px;
+  }
+  .level-badge-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .level-indicator-badge {
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    padding: 4px 10px;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+  }
+  .criteria-counter {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 600;
+  }
+  .maturity-title {
+    margin: 0 0 6px 0;
+    font-size: 20px;
+    font-weight: 900;
+    color: #fff;
+  }
+  .maturity-desc {
+    margin: 0 0 14px 0;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.4;
+  }
+  .maturity-roadmap {
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 8px 12px;
+    border-radius: 6px;
+    display: inline-block;
+  }
+  .maturity-roadmap strong {
+    color: var(--color-primary);
+    margin-right: 6px;
+  }
+
+  /* Dimension progress cards */
+  .dimension-progress-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     gap: 12px;
     margin-bottom: 20px;
   }
-  .carrier-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
+  .dimension-card {
+    background: var(--color-bg);
     border: 1px solid var(--color-border);
     border-radius: 8px;
-    background: #fafaf8;
+    padding: 12px 14px;
   }
-  .carrier-info {
+  .dim-head {
     display: flex;
-    align-items: center;
-    gap: 12px;
+    justify-content: space-between;
+    font-size: 12px;
+    margin-bottom: 6px;
   }
-  .carrier-logo {
-    width: 36px;
-    height: 36px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 900;
-    font-size: 11px;
-    color: white;
-  }
-  .carrier-logo.dhl { background: #eab308; color: #000; }
-  .carrier-logo.fedex { background: #4f46e5; }
-  .carrier-logo.estafeta { background: #dc2626; }
-  
-  .carrier-info strong {
-    display: block;
-    font-size: 14px;
-    margin-bottom: 2px;
-  }
-  .connection-status {
-    font-size: 11px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .connection-status::before {
-    content: '';
-    display: inline-block;
-    width: 6px;
+  .dim-head span { color: var(--color-text-muted); font-weight: 600; }
+  .dim-head strong { font-weight: 800; }
+  .dim-track {
+    width: 100%;
     height: 6px;
-    border-radius: 50%;
-  }
-  .connection-status.online { color: #15803d; }
-  .connection-status.online::before { background: #15803d; }
-  .connection-status.offline { color: #dc2626; }
-  .connection-status.offline::before { background: #dc2626; }
-
-  .settings-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 16px;
-    opacity: 0.5;
-    transition: opacity 0.2s;
-  }
-  .settings-btn:hover { opacity: 1; }
-
-  .btn-add-carrier {
-    width: 100%;
-    padding: 10px;
-    background: transparent;
-    border: 1px dashed var(--color-border);
-    border-radius: 8px;
-    color: var(--color-text-muted);
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .btn-add-carrier:hover {
-    border-color: #171717;
-    color: #171717;
-    background: #fbfbf9;
-  }
-
-  /* Modal Styles */
-  .logistics-modal {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 1000;
-    align-items: center;
-    justify-content: center;
-  }
-  .logistics-modal.active {
-    display: flex;
-    animation: fadeIn 0.2s ease-out;
-  }
-  .logistics-modal-content {
-    background: var(--color-surface);
-    border-radius: 12px;
-    width: 90%;
-    max-width: 480px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    background: var(--color-border);
+    border-radius: 3px;
     overflow: hidden;
   }
-  .logistics-modal-header {
+  .dim-fill {
+    height: 100%;
+    background: #171717;
+    transition: width 0.3s ease;
+  }
+
+  /* Filter chips */
+  .checklist-filters {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--color-border);
+    gap: 8px;
+    margin-bottom: 18px;
+    overflow-x: auto;
+    padding-bottom: 4px;
   }
-  .logistics-modal-header h3 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 800;
-  }
-  .modal-close-btn {
-    background: none;
-    border: none;
-    font-size: 24px;
-    cursor: pointer;
+  .filter-chip {
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 20px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
     color: var(--color-text-muted);
-    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
   }
-  .logistics-modal-body {
-    padding: 20px;
-    font-size: 14px;
+  .filter-chip:hover {
     color: var(--color-text);
   }
-  .logistics-modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    padding: 16px 20px;
-    border-top: 1px solid var(--color-border);
-    background: #fafaf8;
-  }
-  .modal-input {
-    width: 100%;
-    padding: 8px 12px;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    font-family: inherit;
-    font-size: 13px;
-    box-sizing: border-box;
-    margin-top: 4px;
-  }
-  .modal-input:focus {
-    outline: none;
+  .filter-chip.active {
+    background: #171717;
+    color: #fff;
     border-color: #171717;
   }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-10px); }
-    to { opacity: 1; transform: translateY(0); }
+
+  /* Checklist Grid */
+  .checklist-items-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 850px) {
+    .checklist-items-grid { grid-template-columns: 1fr; }
+  }
+  .check-item-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: var(--color-surface);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+  }
+  .check-item-card:hover {
+    border-color: #a3a3a3;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+  }
+  .check-item-card.checked {
+    background: #fbfbf9;
+    border-color: #cbd5e1;
+  }
+  .scm-checkbox {
+    width: 20px;
+    height: 20px;
+    margin-top: 2px;
+    accent-color: #171717;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .check-body {
+    flex: 1;
+  }
+  .check-title-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .check-title-row strong {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--color-text);
+  }
+  .auto-tag {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: #e0f2fe;
+    color: #0369a1;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .check-desc {
+    margin: 0 0 6px 0;
+    font-size: 12px;
+    color: var(--color-text-muted);
+    line-height: 1.4;
+  }
+  .check-impact {
+    display: block;
+    font-size: 11px;
+    font-style: italic;
+    color: #854d0e;
+    background: #fefce8;
+    padding: 3px 6px;
+    border-radius: 4px;
+    border-left: 2px solid #eab308;
+  }
+
+  /* Toast Notification */
+  .scm-toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #171717;
+    color: #fff;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    opacity: 0;
+    transform: translateY(12px);
+    transition: all 0.25s ease;
+    pointer-events: none;
+    z-index: 1000;
+  }
+  .scm-toast.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── Ventas quick-access banner ── */
+  .ventas-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin-top: 24px;
+    padding: 20px 28px;
+    background: linear-gradient(135deg, rgba(139,92,246,.18) 0%, rgba(99,102,241,.12) 100%);
+    border: 1px solid rgba(139,92,246,.35);
+    border-radius: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+  .ventas-banner-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .ventas-banner-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    flex-shrink: 0;
+    box-shadow: 0 6px 20px rgba(139,92,246,.35);
+  }
+  .ventas-banner-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--color-text);
+    margin-bottom: 3px;
+  }
+  .ventas-banner-sub {
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+  .ventas-banner-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 22px;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 10px;
+    text-decoration: none;
+    transition: transform .18s, box-shadow .18s;
+    box-shadow: 0 4px 16px rgba(139,92,246,.4);
+    white-space: nowrap;
+  }
+  .ventas-banner-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 28px rgba(139,92,246,.55);
   }
 </style>

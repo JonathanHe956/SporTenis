@@ -2,7 +2,7 @@
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Productos, Modelos, Proveedores, Marcas, Categorias, PedidosCompra, MovimientosInventario } from '../../db/schema';
-import { eq, desc, sql, or, and, isNull } from 'drizzle-orm';
+import { eq, desc, or, and, isNull } from 'drizzle-orm';
 
 const session = Astro.cookies.get('sportenis_session')?.value;
 if (!session) return Astro.redirect('/login');
@@ -84,228 +84,226 @@ if (Astro.request.method === 'POST') {
     await db.update(PedidosCompra).set({ estado: 'Cancelado' }).where(eq(PedidosCompra.id, id));
     return Astro.redirect(Astro.url.pathname);
   }
+
+  if (action === 'update_stock') {
+    const id = Number(formData.get('id'));
+    const operacion = formData.get('operacion');
+    const cantidad = Number(formData.get('cantidad') || 1);
+    const motivo = formData.get('motivo') || 'Ajuste Manual';
+
+    const producto = await db.select().from(Productos).where(eq(Productos.id, id));
+    if (producto.length > 0) {
+      let newStock = producto[0].stock;
+      if (operacion === 'add') {
+        newStock += cantidad;
+        await db.insert(MovimientosInventario).values({
+          id_producto: id,
+          tipo: 'Entrada',
+          cantidad: cantidad,
+          motivo: motivo,
+          fecha: new Date(),
+          id_usuario: sessionUserId,
+        });
+      }
+      if (operacion === 'sub' && newStock >= cantidad) {
+        newStock -= cantidad;
+        await db.insert(MovimientosInventario).values({
+          id_producto: id,
+          tipo: 'Salida',
+          cantidad: cantidad,
+          motivo: motivo,
+          fecha: new Date(),
+          id_usuario: sessionUserId,
+        });
+      }
+
+      await db.update(Productos).set({ stock: newStock }).where(eq(Productos.id, id));
+    }
+    return Astro.redirect(Astro.url.pathname);
+  }
 }
 
-const pedidosList = await db
-  .select({
-    id: PedidosCompra.id,
-    id_producto: PedidosCompra.id_producto,
-    cantidad: PedidosCompra.cantidad,
-    tipo: PedidosCompra.tipo,
-    estado: PedidosCompra.estado,
-    fecha_creacion: PedidosCompra.fecha_creacion,
-    fecha_completado: PedidosCompra.fecha_completado,
-    // stock_anterior: PedidosCompra.stock_anterior,
-    // stock_posterior: PedidosCompra.stock_posterior,
-    producto: Modelos.nombre,
-    imagen_url: Modelos.imagen_url,
-    descripcion: Modelos.descripcion,
-    marca: Marcas.nombre,
-    categoria: Categorias.nombre,
-    sku: Productos.sku,
-    talla_cm: Productos.talla_cm,
-    color: Productos.color,
-    precio_venta: Productos.precio_venta,
-    costo: Productos.costo,
-    stock_actual: Productos.stock,
-    stock_minimo: Productos.stock_minimo,
-    estrategia_logistica: Productos.estrategia_logistica,
-    proveedor: Proveedores.nombre,
-    proveedor_contacto: Proveedores.contacto,
-    proveedor_correo: Proveedores.correo,
-    proveedor_telefono: Proveedores.telefono,
-    proveedor_direccion: Proveedores.direccion,
-  })
-  .from(PedidosCompra)
-  .leftJoin(Productos, eq(PedidosCompra.id_producto, Productos.id))
-  .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id))
-  .leftJoin(Marcas, eq(Modelos.id_marca, Marcas.id))
-  .leftJoin(Categorias, eq(Modelos.id_categoria, Categorias.id))
-  .leftJoin(Proveedores, or(
-    eq(PedidosCompra.id_proveedor, Proveedores.id),
-    and(isNull(PedidosCompra.id_proveedor), eq(Productos.id_proveedor, Proveedores.id))
-  ))
-  .orderBy(desc(PedidosCompra.fecha_creacion));
+
 
 const productosList = await db
   .select({
     id: Productos.id,
-    nombre: Modelos.nombre,
+    sku: Productos.sku,
+    talla_cm: Productos.talla_cm,
+    color: Productos.color,
     stock: Productos.stock,
     stock_minimo: Productos.stock_minimo,
+    estrategia_logistica: Productos.estrategia_logistica,
+    nombre: Modelos.nombre,
+    imagen_url: Modelos.imagen_url,
+    marca: Marcas.nombre,
+    categoria: Categorias.nombre,
     proveedor: Proveedores.nombre,
   })
   .from(Productos)
   .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id))
+  .leftJoin(Marcas, eq(Modelos.id_marca, Marcas.id))
+  .leftJoin(Categorias, eq(Modelos.id_categoria, Categorias.id))
   .leftJoin(Proveedores, eq(Productos.id_proveedor, Proveedores.id));
 
+const pedidosRaw = await db.select().from(PedidosCompra).orderBy(desc(PedidosCompra.fecha_creacion));
+const movimientosRaw = await db.select().from(MovimientosInventario).orderBy(desc(MovimientosInventario.fecha));
 const proveedoresList = await db.select().from(Proveedores);
 
-const pendientes = pedidosList.filter(p => p.estado === 'Pendiente').length;
-const completados = pedidosList.filter(p => p.estado === 'Completado').length;
-const automaticos = pedidosList.filter(p => p.tipo === 'AUTOMATICO').length;
+const productosAgrupados = productosList.map(prod => {
+  const pedidos = pedidosRaw.filter(p => p.id_producto === prod.id);
+  const movimientos = movimientosRaw.filter(m => m.id_producto === prod.id);
+  const pendientes = pedidos.filter(p => p.estado === 'Pendiente');
+  const cantidadPendiente = pendientes.reduce((sum, p) => sum + p.cantidad, 0);
+
+  return {
+    ...prod,
+    pedidos,
+    movimientos,
+    pendientes,
+    cantidadPendiente,
+    total_pedidos: pedidos.length
+  };
+});
 
 const q = Astro.url.searchParams.get('q');
-let pedidosFiltrados = pedidosList;
+let productosFiltrados = productosAgrupados;
 
 if (q) {
   const searchTerm = q.toLowerCase();
-  pedidosFiltrados = pedidosFiltrados.filter((item: any) =>
-    (item.producto && item.producto.toLowerCase().includes(searchTerm)) ||
+  productosFiltrados = productosFiltrados.filter(item =>
+    (item.nombre && item.nombre.toLowerCase().includes(searchTerm)) ||
     (item.proveedor && item.proveedor.toLowerCase().includes(searchTerm)) ||
-    (item.id && item.id.toString().includes(searchTerm))
+    (item.sku && item.sku.toLowerCase().includes(searchTerm))
   );
 }
 ---
 
-<CrmLayout title="Pedidos de Compra" activePath="/scm/pedidos">
+<CrmLayout title="Inventario y Pedidos" activePath="/scm/pedidos">
   <div class="header-actions">
     <div>
-      <h1 class="crm-title">Pedidos de Compra</h1>
-      <p class="subtitle">Gestión de pedidos de reabastecimiento — Pull (automático) y Push (manual)</p>
+      <h1 class="crm-title">Inventario y Pedidos (Altas/Bajas)</h1>
+      <p class="subtitle">Agrupado por producto para ver su historial de movimientos y pedidos activos</p>
     </div>
     <div style="display: flex; gap: 10px;">
-      <button class="btn-secondary" id="btnCheckStock" title="Revisar niveles de stock y generar alertas/pedidos automáticos">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-        Verificar Stock
-      </button>
-      <button class="btn-primary" onclick="document.getElementById('modalCreatePedido').showModal()">+ Nuevo Pedido Manual</button>
-    </div>
-  </div>
-
-  <!-- Stats Cards -->
-  <div class="stats-row">
-    <div class="stat-card">
-      <div class="stat-number">{pedidosList.length}</div>
-      <div class="stat-label">Total Pedidos</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-number stat-warning">{pendientes}</div>
-      <div class="stat-label">Pendientes</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-number stat-success">{completados}</div>
-      <div class="stat-label">Completados</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-number stat-auto">{automaticos}</div>
-      <div class="stat-label">Automáticos (Pull)</div>
+      
     </div>
   </div>
 
   <div class="crm-card">
-    <!-- Buscador -->
     <form method="GET" style="margin: 0; flex: 1; max-width: 400px; display: flex; position: relative; margin-bottom: 24px;" id="searchForm">
-      <input type="search" name="q" value={q || ""} placeholder="Buscar por producto, proveedor o # pedido..." class="search-input" style="width: 100%; padding-right: 40px;" />
+      <input type="search" name="q" value={q || ""} placeholder="Buscar por producto, proveedor o SKU..." class="search-input" style="width: 100%; padding-right: 40px;" />
       <button type="submit" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </button>
     </form>
+    
     <div class="table-responsive">
       <table class="crm-table">
         <thead>
           <tr>
-            <th>#</th>
             <th>Producto</th>
             <th>Proveedor</th>
-            <th>Cantidad</th>
-            <th>Stock al Pedir / Actual</th>
-            <th>Tipo</th>
-            <th>Estado</th>
-            <th>Fecha</th>
-            <th class="text-right">Acciones</th>
+            <th>Stock Actual</th>
+            <th>Pedidos en Curso</th>
+            <th>Estrategia</th>
+            <th style="text-align: center;">Acciones</th>
           </tr>
         </thead>
         <tbody>
-          {pedidosFiltrados.map(pedido => {
-            const stockAntesCalc = pedido.stock_anterior !== null && pedido.stock_anterior !== undefined 
-              ? pedido.stock_anterior 
-              : (pedido.estado === 'Completado' ? Math.max(0, (pedido.stock_actual || 0) - pedido.cantidad) : (pedido.stock_actual || 0));
-            const stockDespuesCalc = pedido.stock_posterior !== null && pedido.stock_posterior !== undefined 
-              ? pedido.stock_posterior 
-              : (stockAntesCalc + pedido.cantidad);
-
-            return (
-              <tr>
-                <td><code>#{pedido.id}</code></td>
-                <td>
-                  <strong>{pedido.producto || 'N/A'}</strong>
-                  {pedido.sku && <span class="sku-hint">{pedido.sku}</span>}
-                </td>
-                <td>{pedido.proveedor || 'Sin asignar'}</td>
-                <td><strong>+{pedido.cantidad} uds</strong></td>
-                <td>
-                  <div style="display: flex; align-items: center; gap: 6px;">
-                    <span class={`badge ${stockAntesCalc > (pedido.stock_minimo || 0) ? 'badge-neutral' : 'badge-danger'}`} title="Stock que tenía al momento de solicitar">
-                      Antes: {stockAntesCalc}
-                    </span>
-                    <span style="color: #94a3b8; font-size: 11px;">➔</span>
-                    <span class={`badge ${pedido.estado === 'Completado' ? 'badge-success' : 'badge-info'}`} title={pedido.estado === 'Completado' ? 'Stock final alcanzado' : 'Stock proyectado al recibir'}>
-                      {pedido.estado === 'Completado' ? `Final: ${stockDespuesCalc}` : `Proy: ${stockDespuesCalc}`}
-                    </span>
-                  </div>
-                  <span style="font-size: 11px; color: #a3a3a3; display: block; margin-top: 3px;">
-                    Min: {pedido.stock_minimo || 0} | Actual: {pedido.stock_actual || 0}
-                  </span>
-                </td>
-                <td>
-                  <span class={`badge ${pedido.tipo === 'AUTOMATICO' ? 'badge-pull' : 'badge-push'}`}>
-                    {pedido.tipo === 'AUTOMATICO' ? 'PULL (Auto)' : 'PUSH (Manual)'}
-                  </span>
-                </td>
-                <td>
-                  <span class={`badge ${pedido.estado === 'Completado' ? 'badge-success' : pedido.estado === 'Cancelado' ? 'badge-danger' : 'badge-warning'}`}>
-                    {pedido.estado}
-                  </span>
-                </td>
-                <td style="font-size: 12px; color: var(--color-text-muted);">
-                  {new Date(pedido.fecha_creacion).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
-                  {pedido.fecha_completado && (
-                    <span style="display: block; font-size: 11px; color: #15803d; margin-top: 2px;">
-                      ✓ {new Date(pedido.fecha_completado).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
-                    </span>
-                  )}
-                </td>
-                <td class="text-right" style="white-space: nowrap;">
-                  <!-- Botón Ojito (Ver detalles completos del pedido y niveles de stock) -->
-                  <button 
-                    type="button" 
-                    class="action-btn action-view" 
-                    title="Ver detalles del pedido e historial de stock"
-                    data-pedido={JSON.stringify(pedido)}
-                    onclick="openPedidoDetails(this)"
-                  >
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                  </button>
-
-                  {pedido.estado === 'Pendiente' && (
-                    <>
-                      <form method="POST" style="display:inline;" onsubmit="return confirm('¿Marcar este pedido como completado? Se actualizará el stock del producto.');">
-                        <input type="hidden" name="action" value="completar_pedido" />
-                        <input type="hidden" name="id" value={pedido.id} />
-                        <button type="submit" class="action-btn action-complete" title="Completar pedido (agregar stock)">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-                        </button>
-                      </form>
-                      <form method="POST" style="display:inline;" onsubmit="return confirm('¿Cancelar este pedido?');">
-                        <input type="hidden" name="action" value="cancelar_pedido" />
-                        <input type="hidden" name="id" value={pedido.id} />
-                        <button type="submit" class="action-btn text-danger" title="Cancelar pedido">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                        </button>
-                      </form>
-                    </>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-          {pedidosFiltrados.length === 0 && (
+          {productosFiltrados.map(prod => (
             <tr>
-              <td colspan="9" style="text-align: center; color: var(--color-text-muted); padding: 40px;">
-                No hay pedidos registrados. Los pedidos automáticos (PULL) se crean cuando el stock baja al mínimo.
+              <td>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  {prod.imagen_url ? (
+                    <img src={prod.imagen_url} alt="img" style="width: 40px; height: 40px; border-radius: 8px; object-fit: cover;" />
+                  ) : (
+                    <div style="width: 40px; height: 40px; border-radius: 8px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 18px;">👟</div>
+                  )}
+                  <div>
+                    <strong style="display: block;">{prod.nombre}</strong>
+                    <span style="font-size: 11px; color: #64748b;">SKU: {prod.sku || 'N/A'} | {prod.talla_cm}cm | {prod.color}</span>
+                  </div>
+                </div>
+              </td>
+              <td>{prod.proveedor || 'Sin asignar'}</td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <form method="POST" style="margin:0; display:inline;">
+                    <input type="hidden" name="action" value="update_stock" />
+                    <input type="hidden" name="id" value={prod.id} />
+                    <input type="hidden" name="operacion" value="sub" />
+                    <button type="submit" disabled={prod.stock <= 0} style={`background:#f1f5f9; border:1px solid #cbd5e1; width:28px; height:28px; border-radius:6px; cursor:${prod.stock <= 0 ? 'not-allowed' : 'pointer'}; font-weight:bold; display:flex; align-items:center; justify-content:center; opacity:${prod.stock <= 0 ? 0.5 : 1}; color:#334155;`}>-</button>
+                  </form>
+                  
+                  <span class={`badge ${prod.stock > prod.stock_minimo ? 'badge-success' : 'badge-danger'}`} style="font-size: 14px; min-width: 44px; text-align: center; justify-content: center;">
+                    {prod.stock}
+                  </span>
+                  
+                  <form method="POST" style="margin:0; display:inline;">
+                    <input type="hidden" name="action" value="update_stock" />
+                    <input type="hidden" name="id" value={prod.id} />
+                    <input type="hidden" name="operacion" value="add" />
+                    <button type="submit" style="background:#f1f5f9; border:1px solid #cbd5e1; width:28px; height:28px; border-radius:6px; cursor:pointer; font-weight:bold; display:flex; align-items:center; justify-content:center; color:#334155;">+</button>
+                  </form>
+                  
+                  <span style="font-size: 11px; color: #94a3b8; margin-left: 4px;">(Min: {prod.stock_minimo})</span>
+                </div>
+              </td>
+              <td>
+                {prod.cantidadPendiente > 0 ? (
+                  <span class="badge badge-warning" title={`${prod.pendientes.length} pedidos pendientes`}>
+                    + {prod.cantidadPendiente} uds en camino
+                  </span>
+                ) : (
+                  <span style="color: #94a3b8; font-size: 12px;">Sin pedidos activos</span>
+                )}
+              </td>
+              <td>
+                <span class={`badge ${prod.estrategia_logistica === 'AUTOMATICO' || prod.estrategia_logistica === 'PULL' ? 'badge-pull' : 'badge-push'}`}>
+                  {prod.estrategia_logistica || 'PUSH'}
+                </span>
+              </td>
+              <td style="text-align: center;">
+                <button 
+                  type="button" 
+                  class="action-btn" 
+                  title="Ajuste de Stock (Entrada/Salida)"
+                  data-prod-id={prod.id}
+                  data-prod-nombre={prod.nombre}
+                  onclick="openAjusteStockModal(this)"
+                  style="background: #334155; padding: 6px 12px; border-radius: 6px; color: white; font-size: 12px; font-weight: 600; margin-right: 8px; border: none;"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px; margin-top: -2px;"><path d="M12 20v-8m0 0V4m0 8h8m-8 0H4"/></svg>
+                  Ajuste Bulk
+                </button>
+                <button 
+                  type="button" 
+                  class="action-btn" 
+                  title="Nuevo Pedido"
+                  data-prod-id={prod.id}
+                  data-prod-nombre={prod.nombre}
+                  onclick="openCreatePedidoModal(this)"
+                  style="background: #0f766e; padding: 6px 12px; border-radius: 6px; color: white; font-size: 12px; font-weight: 600; margin-right: 8px; border: none;"
+                >
+                  + Nuevo Pedido
+                </button>
+                <button 
+                  type="button" 
+                  class="action-btn action-view" 
+                  title="Ver Pedidos de Compra"
+                  data-prod={JSON.stringify(prod)}
+                  onclick="openHistorialModal(this)"
+                  style="background: #f1f5f9; padding: 6px 12px; border-radius: 6px; color: #334155; font-size: 12px; font-weight: 600;"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px; margin-top: -2px;"><path d="M12 20v-8m0 0V4m0 8h8m-8 0H4"/></svg>
+                  Pedidos de Compra
+                </button>
               </td>
             </tr>
+          ))}
+          {productosFiltrados.length === 0 && (
+            <tr><td colspan="6" style="text-align: center; padding: 40px; color: #94a3b8;">No se encontraron productos.</td></tr>
           )}
         </tbody>
       </table>
@@ -320,38 +318,29 @@ if (q) {
       </div>
       <form method="POST" class="scm-form">
         <input type="hidden" name="action" value="create_pedido" />
-        
+        <input type="hidden" name="id_producto" id="createPedidoProdId" value="" />
         <div class="form-row" style="margin-bottom: 20px;">
           <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563;">Producto</label>
-          <div class="select-wrapper">
-            <select name="id_producto" required style="border-radius: 6px; border-color: #d1d5db; color: #4b5563;">
-              <option value="" disabled selected>Selecciona un producto</option>
-              {productosList.map(p => (
-                <option value={p.id}>{p.nombre}</option>
-              ))}
-            </select>
+          <div style="flex: 1; padding: 8px 12px; background: #f1f5f9; border-radius: 6px; color: #334155; font-weight: 600; border: 1px solid #e2e8f0; display: flex; align-items: center;" id="createPedidoProdNombre">
           </div>
         </div>
-        
         <div class="form-row" style="margin-bottom: 20px;">
           <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563;">Cantidad</label>
-          <input type="number" name="cantidad" min="0" value="0" required oninput="this.value = this.value.replace(/[^0-9]/g, '')" style="border-radius: 6px; border-color: #d1d5db; color: #4b5563;" />
+          <input type="number" name="cantidad" min="1" value="1" required style="border-radius: 6px; border-color: #d1d5db; color: #4b5563; padding: 8px; width: 100%; box-sizing: border-box;" />
         </div>
-
         <div class="form-row" style="margin-bottom: 20px;">
           <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563;">Tipo</label>
           <div class="select-wrapper">
-            <select name="tipo" required style="border-radius: 6px; border-color: #d1d5db; color: #4b5563;">
+            <select name="tipo" required style="border-radius: 6px; border-color: #d1d5db; color: #4b5563; width: 100%; padding: 8px;">
               <option value="Reposición">Reposición</option>
               <option value="Especial">Especial</option>
             </select>
           </div>
         </div>
-
         <div class="form-row" style="margin-bottom: 20px;">
           <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563;">Proveedor</label>
           <div class="select-wrapper">
-            <select name="id_proveedor" required style="border-radius: 6px; border-color: #d1d5db; color: #4b5563;">
+            <select name="id_proveedor" required style="border-radius: 6px; border-color: #d1d5db; color: #4b5563; width: 100%; padding: 8px;">
               <option value="" disabled selected>Selecciona un proveedor</option>
               {proveedoresList.map(prov => (
                 <option value={prov.id}>{prov.nombre}</option>
@@ -359,456 +348,179 @@ if (q) {
             </select>
           </div>
         </div>
-
-        <div class="form-row" style="margin-bottom: 20px;">
-          <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563;">Fecha</label>
-          <div style="flex: 1; position: relative;">
-            <input type="date" name="fecha" required style="border-radius: 6px; border-color: #d1d5db; color: #4b5563; width: 100%; box-sizing: border-box;" />
-          </div>
-        </div>
-
-        <div class="form-row" style="margin-bottom: 32px; align-items: flex-start;">
-          <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563; padding-top: 10px;">Notas</label>
-          <textarea name="notas" placeholder="Notas..." style="flex: 1; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit; font-size: 14px; color: #4b5563; background-color: #ffffff; width: 100%; min-height: 100px; resize: vertical; box-sizing: border-box;"></textarea>
-        </div>
-        
-        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 10px;">
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
           <button type="button" class="btn-cancel" onclick="document.getElementById('modalCreatePedido').close()" style="border: 1px solid #d1d5db; color: #111827; background: white; padding: 10px 24px; border-radius: 6px; font-weight: 500; cursor: pointer;">Cancelar</button>
-          <button type="submit" class="btn-save" style="background: #006655; color: white; border: none; padding: 10px 24px; border-radius: 6px; font-weight: 500; cursor: pointer;">Guardar</button>
+          <button type="submit" class="btn-save" style="background: #006655; color: white; border: none; padding: 10px 24px; border-radius: 6px; font-weight: 500; cursor: pointer;">Guardar Pedido</button>
         </div>
       </form>
     </div>
   </dialog>
 
-  <!-- Modal: Detalles Completos del Pedido (El Ojito 👁️) -->
-  <dialog id="modalDetailPedido" class="crm-modal scm-modal modal-detail-wide">
-    <div class="modal-content print-container">
-      <!-- Encabezado del Modal -->
+  <!-- Modal: Historial y Movimientos del Producto -->
+  <dialog id="modalHistorial" class="crm-modal scm-modal modal-detail-wide">
+    <div class="modal-content" style="padding: 32px;">
       <div class="modal-header">
-        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-          <h2 style="margin: 0; font-size: 20px;">Detalle del Pedido <span id="dtlId" class="id-pill">#0</span></h2>
-          <span id="dtlBadgeTipo" class="badge">PULL</span>
-          <span id="dtlBadgeEstado" class="badge">Pendiente</span>
-        </div>
-        <button type="button" class="close-btn no-print" onclick="document.getElementById('modalDetailPedido').close()">×</button>
+        <h2 style="margin: 0; font-size: 20px;">Altas, Bajas y Pedidos: <span id="histProdNombre" style="color:#0f172a;"></span></h2>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalHistorial').close()">×</button>
       </div>
 
-      <!-- SECCIÓN PRINCIPAL: ANÁLISIS DE NIVELES DE STOCK -->
-      <div class="stock-analysis-panel">
-        <div class="panel-tag-header">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-          <span>Evolución e Impacto del Inventario</span>
-        </div>
-
-        <div class="stock-flow-grid">
-          <!-- 1. Stock Antes -->
-          <div class="stock-flow-card">
-            <span class="flow-label">Stock Antes de Pedir</span>
-            <div class="flow-value" id="dtlStockAntes">0</div>
-            <span class="flow-sub" id="dtlStockAntesHint">Unidades registradas</span>
-          </div>
-
-          <!-- Conector / Cantidad -->
-          <div class="stock-flow-connector">
-            <span class="connector-badge" id="dtlCantidadBadge">+0 uds</span>
-            <div class="connector-line">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-            </div>
-            <span style="font-size: 10px; color: #64748b; font-weight: 600;">Reabastecimiento</span>
-          </div>
-
-          <!-- 2. Stock Después -->
-          <div class="stock-flow-card highlight">
-            <span class="flow-label" id="dtlStockDespuesLabel">Stock Después</span>
-            <div class="flow-value highlight-val" id="dtlStockDespues">0</div>
-            <span class="flow-sub" id="dtlStockDespuesHint">Stock resultante</span>
-          </div>
-
-          <!-- 3. Stock Mínimo -->
-          <div class="stock-flow-card">
-            <span class="flow-label">Umbral Mínimo</span>
-            <div class="flow-value" id="dtlStockMinimo">0</div>
-            <span class="flow-sub">Punto de reorden</span>
-          </div>
-
-          <!-- 4. Stock Actual Hoy -->
-          <div class="stock-flow-card">
-            <span class="flow-label">Stock Actual (Hoy)</span>
-            <div class="flow-value" id="dtlStockActual">0</div>
-            <span class="flow-sub">En almacén físico</span>
-          </div>
-        </div>
-
-        <!-- Barra visual comparativa -->
-        <div class="stock-visual-bar-wrap">
-          <div class="stock-visual-header">
-            <span style="font-size: 12px; color: #475569; font-weight: 600;">Diagnóstico de Inventario:</span>
-            <span id="dtlStockHealthText" class="health-pill">Saludable</span>
-          </div>
-          <div class="stock-visual-track">
-            <div class="stock-visual-fill" id="dtlStockVisualFill"></div>
-          </div>
-          <div class="stock-visual-legend">
-            <span>Antes: <strong id="dtlLegendPrev">0</strong> uds</span>
-            <span class="legend-min">Umbral Mínimo: <strong id="dtlLegendMin">0</strong> uds</span>
-            <span class="legend-post">Después: <strong id="dtlLegendPost">0</strong> uds</span>
-          </div>
-          <p id="dtlStockDiagnosisNote" class="stock-note-text"></p>
-        </div>
-      </div>
-
-      <!-- SECCIÓN 2: PRODUCTO Y PROVEEDOR -->
-      <div class="detail-two-cols">
-        <!-- Tarjeta de Producto -->
-        <div class="info-block">
-          <div class="info-block-header">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-            <span>Información del Producto</span>
-          </div>
-          <div class="product-mini-preview">
-            <img id="dtlImg" src="" alt="Foto Producto" class="product-thumb" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-            <div class="product-thumb-fallback" style="display:none;">👟</div>
-            <div class="product-mini-info">
-              <h4 id="dtlProductoNombre" class="product-title">-</h4>
-              <div class="product-meta">
-                <span id="dtlMarca">-</span> • <span id="dtlCategoria">-</span>
-              </div>
-              <div class="product-tags-row">
-                <span class="spec-tag">SKU: <b id="dtlSku">-</b></span>
-                <span class="spec-tag">Talla: <b id="dtlTalla">-</b></span>
-                <span class="spec-tag">Color: <b id="dtlColor">-</b></span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tarjeta de Proveedor -->
-        <div class="info-block">
-          <div class="info-block-header">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            <span>Proveedor y Despacho</span>
-          </div>
-          <div class="provider-details">
-            <h4 id="dtlProveedorNombre" style="margin: 0 0 8px 0; font-size: 15px; color: #001632;">-</h4>
-            <div class="provider-row">
-              <span class="p-label">Atención:</span>
-              <span id="dtlProveedorContacto" class="p-val">-</span>
-            </div>
-            <div class="provider-row">
-              <span class="p-label">Email:</span>
-              <a id="dtlProveedorCorreoLink" href="#" class="p-link"><span id="dtlProveedorCorreo">-</span></a>
-            </div>
-            <div class="provider-row">
-              <span class="p-label">Teléfono:</span>
-              <a id="dtlProveedorTelefonoLink" href="#" class="p-link"><span id="dtlProveedorTelefono">-</span></a>
-            </div>
-            <div class="provider-row">
-              <span class="p-label">Dirección:</span>
-              <span id="dtlProveedorDireccion" class="p-val">-</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- SECCIÓN 3: COSTOS Y FECHAS -->
-      <div class="detail-summary-strip">
-        <div class="summary-cell">
-          <span class="s-label">Costo Unitario</span>
-          <strong id="dtlCostoUnitario" class="s-val">$0.00</strong>
-        </div>
-        <div class="summary-cell">
-          <span class="s-label">Inversión Pedido</span>
-          <strong id="dtlTotalInversion" class="s-val highlight-green">$0.00</strong>
-        </div>
-        <div class="summary-cell">
-          <span class="s-label">Precio Venta (PVP)</span>
-          <strong id="dtlPrecioVenta" class="s-val">$0.00</strong>
-        </div>
-        <div class="summary-cell">
-          <span class="s-label">Fecha Solicitud</span>
-          <span id="dtlFechaCreacion" class="s-val-date">-</span>
-        </div>
-        <div class="summary-cell">
-          <span class="s-label">Fecha Recepción</span>
-          <span id="dtlFechaCompletado" class="s-val-date">-</span>
-        </div>
-      </div>
-
-      <!-- FOOTER CON ACCIONES -->
-      <div class="modal-footer no-print" style="justify-content: space-between; align-items: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px;">
+        <!-- Columna Izquierda: Pedidos Activos e Historial de Compras -->
         <div>
-          <button type="button" class="btn-secondary" onclick="window.printPedidoDetail()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-            Imprimir Ficha
-          </button>
+          <h3 style="font-size: 16px; margin-bottom: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Historial de Pedidos de Compra</h3>
+          <div id="histPedidosList" style="max-height: 400px; overflow-y: auto; padding-right: 8px;">
+            <!-- Renderizado vía JS -->
+          </div>
         </div>
-        <div style="display: flex; gap: 10px; align-items: center;">
-          <form id="formModalCompletar" method="POST" style="display:none;" onsubmit="return confirm('¿Confirmar recepción y marcar pedido como completado? Se actualizará el stock físico.');">
-            <input type="hidden" name="action" value="completar_pedido" />
-            <input type="hidden" name="id" id="modalCompletarId" value="" />
-            <button type="submit" class="btn-save" style="background: #15803d; border-color: #15803d; display: flex; align-items: center; gap: 6px;">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Completar Pedido
-            </button>
-          </form>
-          <form id="formModalCancelar" method="POST" style="display:none;" onsubmit="return confirm('¿Estás seguro de cancelar este pedido de compra?');">
-            <input type="hidden" name="action" value="cancelar_pedido" />
-            <input type="hidden" name="id" id="modalCancelarId" value="" />
-            <button type="submit" class="btn-cancel" style="border-color: #dc2626; color: #dc2626;">
-              Cancelar Pedido
-            </button>
-          </form>
-          <button type="button" class="btn-secondary" onclick="document.getElementById('modalDetailPedido').close()">Cerrar</button>
+
+        <!-- Columna Derecha: Movimientos (Altas y Bajas Físicas) -->
+        <div>
+          <h3 style="font-size: 16px; margin-bottom: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Altas y Bajas (Movimientos Físicos)</h3>
+          <div id="histMovimientosList" style="max-height: 400px; overflow-y: auto; padding-right: 8px;">
+            <!-- Renderizado vía JS -->
+          </div>
         </div>
       </div>
     </div>
   </dialog>
 
-  <!-- Toast for stock check result -->
-  <div id="stockToast" class="stock-toast"></div>
+  <!-- Modal: Ajuste de Stock Bulk -->
+  <dialog id="modalAjusteStock" class="crm-modal scm-modal">
+    <div class="modal-content" style="padding: 32px 40px; border-radius: 16px;">
+      <div class="modal-header" style="margin-bottom: 24px;">
+        <h2 style="font-size: 20px; font-weight: 700; color: #111827; margin: 0;">Ajuste Manual Bulk</h2>
+      </div>
+      <form method="POST" class="scm-form">
+        <input type="hidden" name="action" value="update_stock" />
+        <input type="hidden" name="id" id="ajusteStockProdId" value="" />
+        
+        <div class="form-row" style="margin-bottom: 20px;">
+          <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563;">Producto</label>
+          <div style="flex: 1; padding: 8px 12px; background: #f1f5f9; border-radius: 6px; color: #334155; font-weight: 600; border: 1px solid #e2e8f0; display: flex; align-items: center;" id="ajusteStockProdNombre">
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom: 20px;">
+          <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563;">Operación</label>
+          <div class="select-wrapper">
+            <select name="operacion" required style="border-radius: 6px; border-color: #d1d5db; color: #4b5563; width: 100%; padding: 8px;">
+              <option value="add">Entrada de stock (+)</option>
+              <option value="sub">Salida de stock (-)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom: 20px;">
+          <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563;">Cantidad</label>
+          <input type="number" name="cantidad" min="1" value="1" required style="border-radius: 6px; border-color: #d1d5db; color: #4b5563; padding: 8px; width: 100%; box-sizing: border-box;" />
+        </div>
+
+        <div class="form-row" style="margin-bottom: 20px;">
+          <label style="width: 100px; font-size: 14px; font-weight: 500; color: #4b5563;">Motivo</label>
+          <input type="text" name="motivo" placeholder="Ej. Inventario inicial, merma, regalo..." required style="border-radius: 6px; border-color: #d1d5db; color: #4b5563; padding: 8px; width: 100%; box-sizing: border-box;" />
+        </div>
+
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
+          <button type="button" class="btn-cancel" onclick="document.getElementById('modalAjusteStock').close()" style="border: 1px solid #d1d5db; color: #111827; background: white; padding: 10px 24px; border-radius: 6px; font-weight: 500; cursor: pointer;">Cancelar</button>
+          <button type="submit" class="btn-save" style="background: #334155; color: white; border: none; padding: 10px 24px; border-radius: 6px; font-weight: 500; cursor: pointer;">Guardar Ajuste</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
 </CrmLayout>
 
 <script is:inline>
-  document.addEventListener('DOMContentLoaded', () => {
-    const checkBtn = document.getElementById('btnCheckStock');
-    const toast = document.getElementById('stockToast');
+  window.openCreatePedidoModal = function(button) {
+    const prodId = button.getAttribute('data-prod-id');
+    const prodNombre = button.getAttribute('data-prod-nombre');
+    document.getElementById('createPedidoProdId').value = prodId;
+    document.getElementById('createPedidoProdNombre').textContent = prodNombre;
+    document.getElementById('modalCreatePedido').showModal();
+  };
 
-    if (checkBtn) {
-      checkBtn.addEventListener('click', async () => {
-        checkBtn.disabled = true;
-        checkBtn.textContent = 'Verificando...';
-        
-        try {
-          const res = await fetch('/api/check-stock');
-          const data = await res.json();
-          
-          if (data.ok) {
-            let msg = `Revisados: ${data.productosRevisados} productos. `;
-            msg += `Bajo stock: ${data.productosBajoStock}. `;
-            if (data.pedidosCreados > 0) msg += `Pedidos automáticos creados: ${data.pedidosCreados}. `;
-            if (data.notificacionesCreadas > 0) msg += `Alertas generadas: ${data.notificacionesCreadas}.`;
-            if (data.productosBajoStock === 0) msg += `Todo el inventario está saludable.`;
-            
-            showToast(msg, 'success');
-            
-            if (data.pedidosCreados > 0 || data.notificacionesCreadas > 0) {
-              setTimeout(() => location.reload(), 2000);
-            }
-          } else {
-            showToast('❌ Error: ' + data.error, 'error');
-          }
-        } catch (e) {
-          showToast('❌ Error de conexión', 'error');
-        }
-        
-        checkBtn.disabled = false;
-        checkBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Verificar Stock';
-      });
-    }
-
-    function showToast(msg, type) {
-      if (!toast) return;
-      toast.textContent = msg;
-      toast.className = 'stock-toast show ' + type;
-      setTimeout(() => { toast.className = 'stock-toast'; }, 5000);
-    }
-  });
-
-  window.openPedidoDetails = function(button) {
-    const data = JSON.parse(button.getAttribute('data-pedido') || '{}');
-    const modal = document.getElementById('modalDetailPedido');
+  window.openHistorialModal = function(button) {
+    const data = JSON.parse(button.getAttribute('data-prod') || '{}');
+    const modal = document.getElementById('modalHistorial');
     if (!modal) return;
 
-    // Pedido ID
-    document.getElementById('dtlId').textContent = '#' + data.id;
+    document.getElementById('histProdNombre').textContent = data.nombre;
 
-    // Badges
-    const badgeTipo = document.getElementById('dtlBadgeTipo');
-    if (badgeTipo) {
-      badgeTipo.textContent = data.tipo === 'AUTOMATICO' ? 'PULL (Auto)' : 'PUSH (Manual)';
-      badgeTipo.className = 'badge ' + (data.tipo === 'AUTOMATICO' ? 'badge-pull' : 'badge-push');
-    }
-
-    const badgeEstado = document.getElementById('dtlBadgeEstado');
-    if (badgeEstado) {
-      badgeEstado.textContent = data.estado;
-      badgeEstado.className = 'badge ' + (data.estado === 'Completado' ? 'badge-success' : data.estado === 'Cancelado' ? 'badge-danger' : 'badge-warning');
-    }
-
-    // Cálculos de Stock
-    const cantidad = Number(data.cantidad || 0);
-    const stockMinimo = Number(data.stock_minimo || 0);
-    const stockActual = Number(data.stock_actual || 0);
-
-    let stockAntes = (data.stock_anterior !== null && data.stock_anterior !== undefined)
-      ? Number(data.stock_anterior)
-      : (data.estado === 'Completado' ? Math.max(0, stockActual - cantidad) : stockActual);
-
-    let stockDespues = (data.stock_posterior !== null && data.stock_posterior !== undefined)
-      ? Number(data.stock_posterior)
-      : (stockAntes + cantidad);
-
-    document.getElementById('dtlStockAntes').textContent = stockAntes;
-    const antesHint = document.getElementById('dtlStockAntesHint');
-    if (antesHint) {
-      if (stockAntes <= stockMinimo) {
-        antesHint.innerHTML = '<span style="color:#e11d48; font-weight:700;">⚠️ Por debajo del mínimo</span>';
-      } else {
-        antesHint.innerHTML = '<span style="color:#15803d; font-weight:600;">✓ Nivel aceptable</span>';
-      }
-    }
-
-    document.getElementById('dtlCantidadBadge').textContent = `+${cantidad} uds solicitadas`;
-    document.getElementById('dtlStockDespues').textContent = stockDespues;
-
-    const despuesLabel = document.getElementById('dtlStockDespuesLabel');
-    const despuesHint = document.getElementById('dtlStockDespuesHint');
-    if (despuesLabel) {
-      despuesLabel.textContent = data.estado === 'Completado' ? 'Stock Final Logrado' : 'Stock Estimado al Recibir';
-    }
-    if (despuesHint) {
-      if (stockDespues > stockMinimo) {
-        const margen = stockDespues - stockMinimo;
-        despuesHint.innerHTML = `<span style="color:#15803d; font-weight:600;">✓ Supera mínimo (+${margen})</span>`;
-      } else {
-        despuesHint.innerHTML = '<span style="color:#d97706; font-weight:600;">Iguala umbral mínimo</span>';
-      }
-    }
-
-    document.getElementById('dtlStockMinimo').textContent = stockMinimo;
-    document.getElementById('dtlStockActual').textContent = stockActual;
-
-    // Visual Bar y Diagnóstico
-    const legendPrev = document.getElementById('dtlLegendPrev');
-    const legendMin = document.getElementById('dtlLegendMin');
-    const legendPost = document.getElementById('dtlLegendPost');
-    const visualFill = document.getElementById('dtlStockVisualFill');
-    const healthText = document.getElementById('dtlStockHealthText');
-    const noteText = document.getElementById('dtlStockDiagnosisNote');
-
-    if (legendPrev) legendPrev.textContent = stockAntes;
-    if (legendMin) legendMin.textContent = stockMinimo;
-    if (legendPost) legendPost.textContent = stockDespues;
-
-    const maxVal = Math.max(stockDespues, stockMinimo * 1.5, 10);
-    const fillPct = Math.min(100, Math.max(10, Math.round((stockDespues / maxVal) * 100)));
-
-    if (visualFill) {
-      visualFill.style.width = fillPct + '%';
-      if (data.estado === 'Cancelado') {
-        visualFill.style.background = '#ef4444';
-      } else if (stockDespues > stockMinimo) {
-        visualFill.style.background = 'linear-gradient(90deg, #f59e0b, #10b981)';
-      } else {
-        visualFill.style.background = '#f59e0b';
-      }
-    }
-
-    if (healthText) {
-      if (data.estado === 'Completado') {
-        healthText.textContent = '✅ Stock Restablecido';
-        healthText.className = 'health-pill health-success';
-      } else if (data.estado === 'Cancelado') {
-        healthText.textContent = '❌ Cancelado';
-        healthText.className = 'health-pill health-danger';
-      } else {
-        healthText.textContent = '⏳ En Proceso de Entrega';
-        healthText.className = 'health-pill health-warning';
-      }
-    }
-
-    if (noteText) {
-      if (data.estado === 'Completado') {
-        noteText.textContent = `Este pedido ingresó exitosamente ${cantidad} unidades al almacén. El stock subió de ${stockAntes} a ${stockDespues} unidades, satisfaciendo el umbral mínimo (${stockMinimo}).`;
-      } else if (data.estado === 'Cancelado') {
-        noteText.textContent = `El pedido fue cancelado. No se sumaron las ${cantidad} unidades al inventario. El stock actual permanece en ${stockActual} unidades.`;
-      } else {
-        noteText.textContent = `Pedido pendiente. Al recibirse las ${cantidad} unidades, el inventario se incrementará de ${stockAntes} a ${stockDespues} unidades, restableciendo la disponibilidad operativa.`;
-      }
-    }
-
-    // Datos del Producto
-    document.getElementById('dtlProductoNombre').textContent = data.producto || 'Producto sin nombre';
-    document.getElementById('dtlMarca').textContent = data.marca || 'Marca n/a';
-    document.getElementById('dtlCategoria').textContent = data.categoria || 'Calzado Deportivo';
-    document.getElementById('dtlSku').textContent = data.sku || 'N/A';
-    document.getElementById('dtlTalla').textContent = data.talla_cm ? `${data.talla_cm} cm` : 'Única';
-    document.getElementById('dtlColor').textContent = data.color || 'Estándar';
-
-    const img = document.getElementById('dtlImg');
-    if (img) {
-      if (data.imagen_url) {
-        img.src = data.imagen_url;
-        img.style.display = 'block';
-        if (img.nextElementSibling) img.nextElementSibling.style.display = 'none';
-      } else {
-        img.style.display = 'none';
-        if (img.nextElementSibling) img.nextElementSibling.style.display = 'flex';
-      }
-    }
-
-    // Datos del Proveedor
-    document.getElementById('dtlProveedorNombre').textContent = data.proveedor || 'Sin proveedor registrado';
-    document.getElementById('dtlProveedorContacto').textContent = data.proveedor_contacto || 'No especificado';
-    
-    const pCorreo = document.getElementById('dtlProveedorCorreo');
-    const pCorreoLink = document.getElementById('dtlProveedorCorreoLink');
-    if (pCorreo && pCorreoLink) {
-      pCorreo.textContent = data.proveedor_correo || 'No disponible';
-      pCorreoLink.href = data.proveedor_correo ? `mailto:${data.proveedor_correo}` : 'javascript:void(0)';
-    }
-
-    const pTel = document.getElementById('dtlProveedorTelefono');
-    const pTelLink = document.getElementById('dtlProveedorTelefonoLink');
-    if (pTel && pTelLink) {
-      pTel.textContent = data.proveedor_telefono || 'No disponible';
-      pTelLink.href = data.proveedor_telefono ? `tel:${data.proveedor_telefono}` : 'javascript:void(0)';
-    }
-
-    const pDir = document.getElementById('dtlProveedorDireccion');
-    if (pDir) pDir.textContent = data.proveedor_direccion || 'Dirección no registrada';
-
-    // Finanzas
-    const costo = Number(data.costo || 0);
-    const precioVenta = Number(data.precio_venta || 0);
-    const totalInversion = costo * cantidad;
-
-    document.getElementById('dtlCostoUnitario').textContent = `$${costo.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    document.getElementById('dtlTotalInversion').textContent = `$${totalInversion.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    document.getElementById('dtlPrecioVenta').textContent = `$${precioVenta.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-    // Fechas
-    const fCreacion = data.fecha_creacion ? new Date(data.fecha_creacion).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : 'No registrada';
-    document.getElementById('dtlFechaCreacion').textContent = fCreacion;
-
-    const fCompletado = data.fecha_completado ? new Date(data.fecha_completado).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : (data.estado === 'Cancelado' ? 'Cancelado' : 'Pendiente de entrega');
-    document.getElementById('dtlFechaCompletado').textContent = fCompletado;
-
-    // Acciones dentro del modal
-    const formCompletar = document.getElementById('formModalCompletar');
-    const formCancelar = document.getElementById('formModalCancelar');
-    const modalCompletarId = document.getElementById('modalCompletarId');
-    const modalCancelarId = document.getElementById('modalCancelarId');
-
-    if (data.estado === 'Pendiente') {
-      if (formCompletar) {
-        formCompletar.style.display = 'inline-block';
-        if (modalCompletarId) modalCompletarId.value = data.id;
-      }
-      if (formCancelar) {
-        formCancelar.style.display = 'inline-block';
-        if (modalCancelarId) modalCancelarId.value = data.id;
-      }
+    // Renderizar Pedidos
+    const pList = document.getElementById('histPedidosList');
+    pList.innerHTML = '';
+    if (data.pedidos && data.pedidos.length > 0) {
+      data.pedidos.forEach(p => {
+        const isPendiente = p.estado === 'Pendiente';
+        pList.innerHTML += `
+          <div style="background: ${isPendiente ? '#fffbeb' : '#f8fafc'}; border: 1px solid ${isPendiente ? '#fef3c7' : '#e2e8f0'}; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+              <strong>#${p.id} - ${p.cantidad} uds</strong>
+              <span class="badge ${isPendiente ? 'badge-warning' : (p.estado === 'Cancelado' ? 'badge-danger' : 'badge-success')}">${p.estado}</span>
+            </div>
+            <div style="font-size: 12px; color: #64748b; margin-bottom: 8px;">
+              Tipo: ${p.tipo} <br/>
+              Fecha: ${new Date(p.fecha_creacion).toLocaleDateString()}
+            </div>
+            ${isPendiente ? `
+              <div style="display: flex; gap: 8px; margin-top: 10px;">
+                <form method="POST" style="margin:0;" onsubmit="return confirm('¿Completar pedido y registrar ALTA de stock?');">
+                  <input type="hidden" name="action" value="completar_pedido" />
+                  <input type="hidden" name="id" value="${p.id}" />
+                  <button type="submit" style="background:#15803d; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:12px; cursor:pointer;">Marcar Completado (Alta)</button>
+                </form>
+                <form method="POST" style="margin:0;" onsubmit="return confirm('¿Cancelar pedido?');">
+                  <input type="hidden" name="action" value="cancelar_pedido" />
+                  <input type="hidden" name="id" value="${p.id}" />
+                  <button type="submit" style="background:#dc2626; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:12px; cursor:pointer;">Cancelar</button>
+                </form>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      });
     } else {
-      if (formCompletar) formCompletar.style.display = 'none';
-      if (formCancelar) formCancelar.style.display = 'none';
+      pList.innerHTML = '<p style="color:#94a3b8; font-size:13px;">No hay pedidos registrados.</p>';
+    }
+
+    // Renderizar Movimientos (Altas y Bajas)
+    const mList = document.getElementById('histMovimientosList');
+    mList.innerHTML = '';
+    if (data.movimientos && data.movimientos.length > 0) {
+      data.movimientos.forEach(m => {
+        const isEntrada = m.tipo === 'Entrada';
+        mList.innerHTML += `
+          <div style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; border-bottom: 1px solid #f1f5f9;">
+            <div style="background: ${isEntrada ? '#dcfce7' : '#fee2e2'}; color: ${isEntrada ? '#166534' : '#991b1b'}; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              ${isEntrada ? '↑' : '↓'}
+            </div>
+            <div>
+              <div style="font-size: 14px; font-weight: 600; color: #1e293b;">
+                ${isEntrada ? 'ALTA' : 'BAJA'} de ${m.cantidad} uds
+              </div>
+              <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
+                ${m.motivo}
+              </div>
+              <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">
+                ${new Date(m.fecha).toLocaleString()}
+              </div>
+            </div>
+          </div>
+        `;
+      });
+    } else {
+      mList.innerHTML = '<p style="color:#94a3b8; font-size:13px;">No hay movimientos físicos registrados.</p>';
     }
 
     modal.showModal();
   };
 
-  window.printPedidoDetail = function() {
-    window.print();
+  window.openAjusteStockModal = function(button) {
+    const prodId = button.getAttribute('data-prod-id');
+    const prodNombre = button.getAttribute('data-prod-nombre');
+    document.getElementById('ajusteStockProdId').value = prodId;
+    document.getElementById('ajusteStockProdNombre').textContent = prodNombre;
+    document.getElementById('modalAjusteStock').showModal();
   };
 </script>
 
@@ -1144,3 +856,4 @@ if (q) {
     .no-print { display: none !important; }
   }
 </style>
+

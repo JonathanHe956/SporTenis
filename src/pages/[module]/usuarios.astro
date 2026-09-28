@@ -30,7 +30,7 @@ if (Astro.request.method === 'POST') {
 
   if (action === 'create') {
     const rol_id = Number(formData.get('rol_id'));
-    if (loggedUser.id_rol !== 1 && (rol_id === 1 || rol_id === 4)) {
+    if (loggedUser.id_rol !== 1 && (rol_id === 1 || rol_id === 2)) {
       return Astro.redirect(Astro.url.pathname);
     }
     
@@ -47,7 +47,7 @@ if (Astro.request.method === 'POST') {
     const rol_id = Number(formData.get('rol_id'));
     
     // Si no es admin intentando modificar a un admin o a logistica, bloquear
-    if (loggedUser.id_rol !== 1 && (rol_id === 1 || rol_id === 4)) {
+    if (loggedUser.id_rol !== 1 && (rol_id === 1 || rol_id === 2)) {
       return Astro.redirect(Astro.url.pathname);
     }
 
@@ -80,9 +80,9 @@ if (Astro.request.method === 'POST') {
 }
 
 let roles = await db.select().from(Roles);
-roles = roles.filter(r => r.id === 1 || r.id === 2 || r.id === 4);
+roles = roles.filter(r => r.id === 1 || r.id === 2 || r.id === 3);
 if (loggedUser.id_rol !== 1) {
-  roles = roles.filter(r => r.id !== 1 && r.id !== 4);
+  roles = roles.filter(r => r.id !== 1 && r.id !== 2);
 }
 
 const usuariosList = await db
@@ -97,7 +97,7 @@ const usuariosList = await db
   })
   .from(Usuarios)
   .leftJoin(Roles, eq(Usuarios.id_rol, Roles.id))
-  .where(inArray(Usuarios.id_rol, [1, 2, 4]));
+  .where(inArray(Usuarios.id_rol, [1, 2, 3]));
 
 const q = Astro.url.searchParams.get('q');
 let usuariosFiltrados = usuariosList;
