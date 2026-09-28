@@ -1,7 +1,9 @@
 import type { APIRoute } from 'astro';
 import { db } from '../../db/db';
-import { Ventas, DetalleVentas, Clientes, Productos, Usuarios, EtapasCrm, Modelos, Proveedores, PedidosCompra, Notificaciones } from '../../db/schema';
-import { eq, sql, inArray, and } from 'drizzle-orm';
+import { Ventas, DetalleVentas, Clientes, Productos, Usuarios, EtapasCrm } from '../../db/schema';
+import { eq, sql } from 'drizzle-orm';
+import { procesarLogisticaStock } from '../../lib/stockLogistics';
+
 
 const getClientId = async (locals: App.Locals) => {
   if (!locals.user) return null;
@@ -136,79 +138,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
       return ventaId;
     });
 
-    // --- AUTO-EVALUATE PUSH/PULL POST-SALE ---
+    // Procesar reposición PULL automática o alerta PUSH para cada producto vendido
     try {
-      const soldProductIds = detallesProcesados.map(d => d.id_producto);
-      
-      const productsToCheck = await db.select({
-        id: Productos.id,
-        nombre: Modelos.nombre,
-        stock: Productos.stock,
-        stock_minimo: Productos.stock_minimo,
-        estrategia: Productos.estrategia_logistica,
-        id_proveedor: Productos.id_proveedor,
-      })
-      .from(Productos)
-      .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id))
-      .where(inArray(Productos.id, soldProductIds));
-
-      const now = new Date();
-
-      for (const prod of productsToCheck) {
-        if (prod.stock <= (prod.stock_minimo || 0) && (prod.stock_minimo || 0) > 0) {
-          
-          // Verificar si ya hay un pedido pendiente para no duplicar
-          const existingPedido = await db.select().from(PedidosCompra)
-            .where(and(eq(PedidosCompra.id_producto, prod.id), eq(PedidosCompra.estado, 'Pendiente')));
-          
-          if (existingPedido.length > 0) continue;
-
-          const cantidadReponer = Math.max((prod.stock_minimo || 0) * 2 - prod.stock, prod.stock_minimo || 1);
-          const estrategia = (prod.estrategia || 'PUSH').toUpperCase();
-
-          if (estrategia === 'PULL') {
-            // PULL: Auto-restock order + Notification
-            await db.insert(PedidosCompra).values({
-              id_producto: prod.id,
-              id_proveedor: prod.id_proveedor,
-              cantidad: cantidadReponer,
-              tipo: 'AUTOMATICO',
-              estado: 'Pendiente',
-              fecha_creacion: now,
-              stock_anterior: prod.stock,
-              stock_posterior: null,
-            });
-
-            await db.insert(Notificaciones).values({
-              tipo: 'pedido_auto',
-              titulo: `Pedido automático (PULL) — ${prod.nombre}`,
-              mensaje: `El stock bajó al límite (${prod.stock}). Se generó automáticamente un pedido de ${cantidadReponer} uds.`,
-              id_producto: prod.id,
-              leida: false,
-              fecha_creacion: now,
-            });
-          } else {
-            // PUSH: Manual alert Notification only
-            const existingNotif = await db.select().from(Notificaciones)
-              .where(and(eq(Notificaciones.id_producto, prod.id), eq(Notificaciones.leida, false), eq(Notificaciones.tipo, 'stock_bajo')));
-              
-            if (existingNotif.length === 0) {
-              await db.insert(Notificaciones).values({
-                tipo: 'stock_bajo',
-                titulo: `⚠️ Alerta PUSH: Stock crítico — ${prod.nombre}`,
-                mensaje: `El producto bajó de su mínimo (${prod.stock} uds). Evalúa si es necesario programar un lote de compra (PUSH).`,
-                id_producto: prod.id,
-                leida: false,
-                fecha_creacion: now,
-              });
-            }
-          }
-        }
+      for (const det of detallesProcesados) {
+        await procesarLogisticaStock({ id_producto: det.id_producto, id_usuario: locals.user?.id });
       }
     } catch (e) {
       console.error("Error auto-checking push/pull after sale:", e);
     }
-    // ------------------------------------------
 
     return new Response(JSON.stringify({ success: true, id_venta: resultVentaId }), {
       status: 201,

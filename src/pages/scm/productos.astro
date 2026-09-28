@@ -3,6 +3,7 @@ import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Usuarios, Modelos, Marcas, Categorias, Productos, Proveedores, Notificaciones, PedidosCompra } from '../../db/schema';
 import { eq, and } from 'drizzle-orm';
+import { procesarLogisticaStock } from '../../lib/stockLogistics';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -23,18 +24,16 @@ if (Astro.request.method === 'POST') {
   if (action === 'create_producto') {
     const nombre = formData.get('nombre') as string;
     const descripcion = formData.get('descripcion') as string;
-    const id_categoria = Number(formData.get('id_categoria'));
-    const id_proveedor = Number(formData.get('id_proveedor'));
-    const stock = Number(formData.get('stock'));
-    const stock_minimo = Number(formData.get('stock_minimo'));
-    const estrategia_logistica = formData.get('estrategia_logistica') as string;
-    const costo = formData.get('costo') as string;
-    const color = formData.get('color') as string;
-    const theme_class = formData.get('theme_class') as string;
-    const precio_venta = formData.get('precio_venta') as string;
-
-    // Dummy values for required schema fields that are hidden in this simplified view
-    const id_marca = Number(formData.get('id_marca'));
+    const id_categoria = formData.get('id_categoria') && Number(formData.get('id_categoria')) > 0 ? Number(formData.get('id_categoria')) : null;
+    const id_proveedor = formData.get('id_proveedor') && Number(formData.get('id_proveedor')) > 0 ? Number(formData.get('id_proveedor')) : null;
+    const id_marca = formData.get('id_marca') && Number(formData.get('id_marca')) > 0 ? Number(formData.get('id_marca')) : null;
+    const stock = Number(formData.get('stock')) || 0;
+    const stock_minimo = Number(formData.get('stock_minimo')) || 0;
+    const estrategia_logistica = ((formData.get('estrategia_logistica') as string) || 'PUSH').toUpperCase();
+    const costo = (formData.get('costo') as string) || '0.00';
+    const color = (formData.get('color') as string) || '';
+    const theme_class = (formData.get('theme_class') as string) || '';
+    const precio_venta = (formData.get('precio_venta') as string) || '0.00';
     const precio_base = '0.00';
     
     let imagen_url = null;
@@ -62,52 +61,26 @@ if (Astro.request.method === 'POST') {
       id_modelo, id_proveedor, sku, stock, stock_minimo, estrategia_logistica, costo, precio_venta, estado, color, theme_class
     });
     
-    // ---- PULL/PUSH stock check ----
-    if (stock <= stock_minimo && stock_minimo > 0) {
-      const newProductId = productoResult.insertId;
-      const cantidadReponer = Math.max(stock_minimo * 2 - stock, stock_minimo);
-      const now = new Date();
+    const newProductId = productoResult.insertId;
 
-      if (estrategia_logistica === 'PULL') {
-        // En modo PULL, el pedido se completa automáticamente y se refleja en el stock
-        await db.insert(PedidosCompra).values({
-          id_producto: newProductId, id_proveedor, cantidad: cantidadReponer,
-          tipo: 'AUTOMATICO', estado: 'Completado', fecha_creacion: now, fecha_completado: now
-        });
-        await db.update(Productos)
-          .set({ stock: stock + cantidadReponer })
-          .where(eq(Productos.id, newProductId));
-        await db.insert(Notificaciones).values({
-          tipo: 'pedido_auto',
-          titulo: `Pedido automático completado — ${nombre}`,
-          mensaje: `Se generó y completó un pedido automático de ${cantidadReponer} uds para "${nombre}". Nuevo stock: ${stock + cantidadReponer}.`,
-          id_producto: newProductId, leida: false, fecha_creacion: now,
-        });
-      } else {
-        await db.insert(Notificaciones).values({
-          tipo: 'stock_bajo',
-          titulo: `Stock bajo — ${nombre}`,
-          mensaje: `El producto "${nombre}" fue creado con stock bajo (${stock} uds, mín: ${stock_minimo}). Se requiere crear un pedido manualmente.`,
-          id_producto: newProductId, leida: false, fecha_creacion: now,
-        });
-      }
-    }
+    // Procesar PULL (reabastecimiento automático inmediato) o PUSH (alerta de stock bajo)
+    await procesarLogisticaStock({ id_producto: newProductId, id_usuario: Number(session) });
     
     return Astro.redirect(Astro.url.pathname);
   } else if (action === 'update_producto') {
     const id = Number(formData.get('id'));
     const nombre = formData.get('nombre') as string;
     const descripcion = formData.get('descripcion') as string;
-    const id_categoria = Number(formData.get('id_categoria'));
-    const id_proveedor = Number(formData.get('id_proveedor'));
-    const id_marca = Number(formData.get('id_marca'));
-    const stock = Number(formData.get('stock'));
-    const stock_minimo = Number(formData.get('stock_minimo'));
-    const estrategia_logistica = formData.get('estrategia_logistica') as string;
-    const costo = formData.get('costo') as string;
-    const precio_venta = formData.get('precio_venta') as string;
-    const color = formData.get('color') as string;
-    const theme_class = formData.get('theme_class') as string;
+    const id_categoria = formData.get('id_categoria') && Number(formData.get('id_categoria')) > 0 ? Number(formData.get('id_categoria')) : null;
+    const id_proveedor = formData.get('id_proveedor') && Number(formData.get('id_proveedor')) > 0 ? Number(formData.get('id_proveedor')) : null;
+    const id_marca = formData.get('id_marca') && Number(formData.get('id_marca')) > 0 ? Number(formData.get('id_marca')) : null;
+    const stock = Number(formData.get('stock')) || 0;
+    const stock_minimo = Number(formData.get('stock_minimo')) || 0;
+    const estrategia_logistica = ((formData.get('estrategia_logistica') as string) || 'PUSH').toUpperCase();
+    const costo = (formData.get('costo') as string) || '0.00';
+    const precio_venta = (formData.get('precio_venta') as string) || '0.00';
+    const color = (formData.get('color') as string) || '';
+    const theme_class = (formData.get('theme_class') as string) || '';
 
     let imagen_url = undefined;
     const imagenFile = formData.get('imagen_archivo') as File;
@@ -126,45 +99,8 @@ if (Astro.request.method === 'POST') {
       await db.update(Modelos).set({ id_marca, id_categoria, nombre, descripcion, ...(imagen_url ? { imagen_url } : {}) }).where(eq(Modelos.id, id_modelo));
       await db.update(Productos).set({ id_proveedor, stock, stock_minimo, estrategia_logistica, costo, precio_venta, color, theme_class }).where(eq(Productos.id, id));
 
-      // ---- PULL/PUSH stock check on update ----
-      if (stock <= stock_minimo && stock_minimo > 0) {
-        // Check no existing pending order
-        const existingPedido = await db.select().from(PedidosCompra)
-          .where(and(eq(PedidosCompra.id_producto, id), eq(PedidosCompra.estado, 'Pendiente')));
-        
-        if (existingPedido.length === 0) {
-          const cantidadReponer = Math.max(stock_minimo * 2 - stock, stock_minimo);
-          const now = new Date();
-
-          if (estrategia_logistica === 'PULL') {
-            await db.insert(PedidosCompra).values({
-              id_producto: id, id_proveedor, cantidad: cantidadReponer,
-              tipo: 'AUTOMATICO', estado: 'Completado', fecha_creacion: now, fecha_completado: now
-            });
-            await db.update(Productos)
-              .set({ stock: stock + cantidadReponer })
-              .where(eq(Productos.id, id));
-            await db.insert(Notificaciones).values({
-              tipo: 'pedido_auto',
-              titulo: `Pedido automático completado — ${nombre}`,
-              mensaje: `Se generó y completó un pedido automático de ${cantidadReponer} uds para "${nombre}". Nuevo stock: ${stock + cantidadReponer}.`,
-              id_producto: id, leida: false, fecha_creacion: now,
-            });
-          } else {
-            // Check no existing unread notification
-            const existingNotif = await db.select().from(Notificaciones)
-              .where(and(eq(Notificaciones.id_producto, id), eq(Notificaciones.leida, false), eq(Notificaciones.tipo, 'stock_bajo')));
-            if (existingNotif.length === 0) {
-              await db.insert(Notificaciones).values({
-                tipo: 'stock_bajo',
-                titulo: `Stock bajo — ${nombre}`,
-                mensaje: `El producto "${nombre}" tiene stock bajo (${stock} uds, mín: ${stock_minimo}). Se requiere crear un pedido manualmente.`,
-                id_producto: id, leida: false, fecha_creacion: now,
-              });
-            }
-          }
-        }
-      }
+      // Procesar PULL (reabastecimiento automático inmediato) o PUSH (alerta de stock bajo)
+      await procesarLogisticaStock({ id_producto: id, id_usuario: Number(session) });
     }
     return Astro.redirect(Astro.url.pathname);
   } else if (action === 'create_marca') {
@@ -186,6 +122,9 @@ if (Astro.request.method === 'POST') {
     return Astro.redirect(Astro.url.pathname);
   }
 }
+
+// Reabastecer automáticamente cualquier producto PULL que tenga stock bajo
+await procesarLogisticaStock({ id_usuario: Number(session) });
 
 const categoriasList = await db.select().from(Categorias);
 const proveedoresList = await db.select().from(Proveedores);

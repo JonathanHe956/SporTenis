@@ -813,23 +813,121 @@ const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
     </style>
 
     <script is:inline>
-      // Toggle notification dropdown
+      // Toggle and live-refresh notification dropdown
       document.addEventListener('DOMContentLoaded', () => {
         const bellBtn = document.getElementById('notifBellBtn');
         const dropdown = document.getElementById('notifDropdown');
         const wrapper = document.getElementById('notifWrapper');
+        const body = document.getElementById('notifDropdownBody');
+        const markAllBtn = document.getElementById('markAllReadBtn');
+
+        function updateBadge(count) {
+          let badge = document.getElementById('notifBadge');
+          if (count > 0) {
+            if (!badge && bellBtn) {
+              badge = document.createElement('span');
+              badge.className = 'notif-badge';
+              badge.id = 'notifBadge';
+              bellBtn.appendChild(badge);
+            }
+            if (badge) badge.textContent = count.toString();
+            if (markAllBtn) markAllBtn.style.display = 'inline-block';
+          } else {
+            if (badge) badge.remove();
+            if (markAllBtn) markAllBtn.style.display = 'none';
+          }
+        }
+
+        function renderNotificaciones(list) {
+          if (!body) return;
+          if (!list || list.length === 0) {
+            body.innerHTML = `
+              <div class="notif-empty">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                <p>No hay notificaciones</p>
+              </div>`;
+            updateBadge(0);
+            return;
+          }
+
+          body.innerHTML = list.map(n => {
+            const isAuto = n.tipo === 'pedido_auto';
+            const iconSvg = isAuto 
+              ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`
+              : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d93e2e" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+            
+            const actionBtn = n.tipo === 'stock_bajo' 
+              ? `<a href="/scm/pedidos" class="notif-action-btn">Crear Pedido Manual</a>` 
+              : '';
+
+            const dateStr = new Date(n.fecha_creacion).toLocaleString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+            return `
+              <div class="notif-item ${isAuto ? 'notif-auto' : 'notif-alerta'}" data-id="${n.id}">
+                <div class="notif-item-icon">${iconSvg}</div>
+                <div class="notif-item-content">
+                  <div class="notif-item-title">${n.titulo}</div>
+                  <div class="notif-item-msg">${n.mensaje}</div>
+                  <div class="notif-item-time">${dateStr}</div>
+                  ${actionBtn}
+                </div>
+                <button type="button" class="notif-dismiss" data-notif-id="${n.id}" title="Marcar como leída">×</button>
+              </div>`;
+          }).join('');
+
+          attachDismissListeners();
+          updateBadge(list.length);
+        }
+
+        async function fetchNotifications() {
+          try {
+            await fetch('/api/check-stock').catch(() => {});
+            const res = await fetch('/api/notificaciones');
+            if (res.ok) {
+              const data = await res.json();
+              if (data.ok && Array.isArray(data.notificaciones)) {
+                renderNotificaciones(data.notificaciones);
+              }
+            }
+          } catch (e) {
+            console.error('Error cargando notificaciones:', e);
+          }
+        }
+
+        function attachDismissListeners() {
+          document.querySelectorAll('.notif-dismiss').forEach(btn => {
+            btn.onclick = async (e) => {
+              e.stopPropagation();
+              const id = btn.getAttribute('data-notif-id');
+              await fetch('/api/notificaciones', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'marcar_leida', id }),
+              });
+              const item = btn.closest('.notif-item');
+              if (item) item.remove();
+              const remaining = document.querySelectorAll('.notif-item').length;
+              updateBadge(remaining);
+              if (remaining === 0 && body) {
+                body.innerHTML = `
+                  <div class="notif-empty">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    <p>No hay notificaciones</p>
+                  </div>`;
+              }
+            };
+          });
+        }
 
         if (bellBtn && dropdown) {
           bellBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            dropdown.classList.toggle('open');
-            // Trigger stock check when opening
-            if (dropdown.classList.contains('open')) {
-              fetch('/api/check-stock').catch(() => {});
+            const isOpen = dropdown.classList.toggle('open');
+            if (isOpen) {
+              fetchNotifications();
             }
           });
 
-          // Close on outside click
           document.addEventListener('click', (e) => {
             if (wrapper && !wrapper.contains(e.target)) {
               dropdown.classList.remove('open');
@@ -837,24 +935,6 @@ const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
           });
         }
 
-        // Mark individual notification as read
-        document.querySelectorAll('.notif-dismiss').forEach(btn => {
-          btn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            const id = btn.getAttribute('data-notif-id');
-            await fetch('/api/notificaciones', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'marcar_leida', id }),
-            });
-            const item = btn.closest('.notif-item');
-            if (item) item.remove();
-            updateBadge();
-          });
-        });
-
-        // Mark all as read
-        const markAllBtn = document.getElementById('markAllReadBtn');
         if (markAllBtn) {
           markAllBtn.addEventListener('click', async () => {
             await fetch('/api/notificaciones', {
@@ -862,26 +942,18 @@ const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ action: 'marcar_todas' }),
             });
-            const body = document.getElementById('notifDropdownBody');
             if (body) {
-              body.innerHTML = '<div class="notif-empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><p>No hay notificaciones</p></div>';
+              body.innerHTML = `
+                <div class="notif-empty">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                  <p>No hay notificaciones</p>
+                </div>`;
             }
-            updateBadge();
-            if (markAllBtn) markAllBtn.style.display = 'none';
+            updateBadge(0);
           });
         }
 
-        function updateBadge() {
-          const badge = document.getElementById('notifBadge');
-          const remaining = document.querySelectorAll('.notif-item').length;
-          if (badge) {
-            if (remaining > 0) {
-              badge.textContent = remaining.toString();
-            } else {
-              badge.remove();
-            }
-          }
-        }
+        attachDismissListeners();
       });
     </script>
   </body>

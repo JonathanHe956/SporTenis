@@ -6,6 +6,7 @@ import {
   MetodosPago, Productos, Modelos, Marcas,
 } from '../../db/schema';
 import { eq, desc, sql } from 'drizzle-orm';
+import { procesarLogisticaStock } from '../../lib/stockLogistics';
 
 const session = Astro.cookies.get('sportenis_session')?.value;
 if (!session) return Astro.redirect('/login');
@@ -102,6 +103,11 @@ if (Astro.request.method === 'POST') {
 
               return ventaId;
             });
+
+            // Procesar reposición PULL automática o alerta PUSH para cada producto vendido
+            for (const item of itemsAProcesar) {
+              await procesarLogisticaStock({ id_producto: item.id_producto, id_usuario: sessionUserId });
+            }
 
             return Astro.redirect(`/scm/ventas?detalle=${nuevaVentaId}&ok=1`);
           }
