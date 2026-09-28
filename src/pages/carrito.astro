@@ -62,7 +62,7 @@ const cartItems = [
                     <h3>{item.name}</h3>
                     <p class="variant">{item.variant}</p>
                     <span class="unit-price">${item.price.toLocaleString('es-MX')} c/u</span>
-                    <button type="button" class="btn-remove" aria-label={`Eliminar ${item.name}`}>
+                    <button type="button" class="btn-remove" aria-label={`Eliminar ${item.name}`} data-confirm-click={`¿Eliminar ${item.name} del carrito?`} data-confirm-title="Quitar del carrito" data-confirm-accept="Eliminar">
                       Eliminar
                     </button>
                   </div>
@@ -196,7 +196,13 @@ const cartItems = [
       recalculateCart();
     }
 
-    if (target.classList.contains('btn-remove')) {
+    if (target.classList.contains('btn-remove')) return;
+  });
+
+  itemsList?.addEventListener('app-confirmed', (e: Event) => {
+    const target = e.target as HTMLElement | null;
+    const row = target?.closest<HTMLElement>('.cart-row');
+    if (row) {
       row.remove();
       recalculateCart();
     }
@@ -204,9 +210,11 @@ const cartItems = [
 
   // Flujo de compra
   checkoutBtn?.addEventListener('click', () => {
-    alert('Redirigiendo a pasarela de pago segura... \n¡Gracias por probar el flujo de compra!');
-    // Opcionalmente redirigimos a la tienda al finalizar
-    window.location.href = '/';
+    const toast = document.createElement('div');
+    toast.className = 'app-toast';
+    toast.textContent = 'Redirigiendo a pasarela de pago segura. ¡Gracias por probar el flujo de compra!';
+    document.getElementById('appToastRegion')?.appendChild(toast);
+    window.setTimeout(() => { window.location.href = '/'; }, 1600);
   });
 
   // Inicializar cálculos al cargar la página

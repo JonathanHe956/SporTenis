@@ -464,12 +464,12 @@ if (q) {
             </div>
             ${isPendiente ? `
               <div style="display: flex; gap: 8px; margin-top: 10px;">
-                <form method="POST" style="margin:0;" onsubmit="return confirm('¿Completar pedido y registrar ALTA de stock?');">
+                <form method="POST" style="margin:0;" data-confirm="¿Completar pedido y registrar el alta de stock?" data-confirm-title="Completar pedido" data-confirm-accept="Completar">
                   <input type="hidden" name="action" value="completar_pedido" />
                   <input type="hidden" name="id" value="${p.id}" />
                   <button type="submit" style="background:#15803d; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:12px; cursor:pointer;">Marcar Completado (Alta)</button>
                 </form>
-                <form method="POST" style="margin:0;" onsubmit="return confirm('¿Cancelar pedido?');">
+                <form method="POST" style="margin:0;" data-confirm="¿Cancelar este pedido?" data-confirm-title="Cancelar pedido" data-confirm-accept="Cancelar pedido">
                   <input type="hidden" name="action" value="cancelar_pedido" />
                   <input type="hidden" name="id" value="${p.id}" />
                   <button type="submit" style="background:#dc2626; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:12px; cursor:pointer;">Cancelar</button>

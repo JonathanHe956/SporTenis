@@ -373,6 +373,125 @@ const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
       </div>
     </div>
 
+    <dialog class="app-dialog" id="appDialog" aria-labelledby="appDialogTitle" aria-describedby="appDialogMessage">
+      <form method="dialog" class="app-dialog-content">
+        <span class="app-dialog-mark" aria-hidden="true">!</span>
+        <h2 id="appDialogTitle">Confirmar acción</h2>
+        <p id="appDialogMessage"></p>
+        <div class="app-dialog-actions">
+          <button type="button" class="app-dialog-cancel" data-dialog-cancel>Cancelar</button>
+          <button type="button" class="app-dialog-accept" data-dialog-accept>Continuar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="app-toast-region" id="appToastRegion" aria-live="polite" aria-atomic="true"></div>
+
+    <style is:global>
+      .app-dialog {
+        width: min(420px, calc(100vw - 32px));
+        padding: 0;
+        border: 1px solid #d8d3c3;
+        border-radius: 8px;
+        color: #171717;
+        box-shadow: 0 24px 80px #17171740;
+      }
+      .app-dialog::backdrop { background: #17171780; backdrop-filter: blur(2px); }
+      .app-dialog-content { padding: 26px; }
+      .app-dialog-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: #fff1ef; color: #d93e2e; font-weight: 800; }
+      .app-dialog h2 { margin: 16px 0 8px; font-size: 19px; }
+      .app-dialog p { margin: 0; line-height: 1.5; color: #57534e; }
+      .app-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+      .app-dialog-actions button { min-height: 38px; padding: 0 14px; border: 1px solid #d8d3c3; border-radius: 5px; font: inherit; font-weight: 650; cursor: pointer; }
+      .app-dialog-cancel { background: #fff; color: #171717; }
+      .app-dialog-accept { border-color: #d93e2e !important; background: #d93e2e; color: #fff; }
+      .app-toast-region { position: fixed; z-index: 10000; right: 20px; bottom: 20px; display: grid; gap: 10px; width: min(360px, calc(100vw - 40px)); }
+      .app-toast { padding: 14px 16px; border-left: 4px solid #15803d; border-radius: 5px; background: #fff; color: #171717; box-shadow: 0 8px 28px #17171720; animation: app-toast-in .18s ease-out; }
+      .app-toast[data-kind="error"] { border-color: #d93e2e; }
+      @keyframes app-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      @media (prefers-reduced-motion: reduce) { .app-toast { animation: none; } }
+    </style>
+
+    <script is:inline>
+      (() => {
+        const dialog = document.getElementById('appDialog');
+        const title = document.getElementById('appDialogTitle');
+        const message = document.getElementById('appDialogMessage');
+        const accept = dialog?.querySelector('[data-dialog-accept]');
+        const cancel = dialog?.querySelector('[data-dialog-cancel]');
+        let pendingForm = null;
+        let pendingAction = null;
+
+        function closeDialog(confirmed) {
+          if (!dialog) return;
+          dialog.close();
+          if (confirmed && pendingForm) pendingForm.requestSubmit();
+          if (confirmed && pendingAction) pendingAction();
+          pendingForm = null;
+          pendingAction = null;
+        }
+
+        document.addEventListener('submit', (event) => {
+          const form = event.target;
+          const prompt = form instanceof HTMLFormElement && form.dataset.confirm;
+          if (!prompt || form.dataset.confirmed === 'true' || !dialog) return;
+          event.preventDefault();
+          pendingForm = form;
+          if (title) title.textContent = form.dataset.confirmTitle || 'Confirmar acción';
+          if (message) message.textContent = prompt;
+          if (accept) accept.textContent = form.dataset.confirmAccept || 'Continuar';
+          dialog.showModal();
+        });
+
+        document.addEventListener('click', (event) => {
+          const trigger = event.target.closest('[data-confirm-click]');
+          if (!trigger || !dialog) return;
+          event.preventDefault();
+          pendingForm = null;
+          pendingAction = () => trigger.dispatchEvent(new CustomEvent('app-confirmed', { bubbles: true }));
+          if (title) title.textContent = trigger.dataset.confirmTitle || 'Confirmar acción';
+          if (message) message.textContent = trigger.dataset.confirmClick;
+          if (accept) accept.textContent = trigger.dataset.confirmAccept || 'Continuar';
+          dialog.showModal();
+        });
+
+        accept?.addEventListener('click', () => {
+          if (pendingForm) pendingForm.dataset.confirmed = 'true';
+          closeDialog(true);
+        });
+        cancel?.addEventListener('click', () => closeDialog(false));
+        dialog?.addEventListener('cancel', () => { pendingForm = null; pendingAction = null; });
+
+        document.addEventListener('click', (event) => {
+          const trigger = event.target.closest('[data-app-message]');
+          if (!trigger) return;
+          const region = document.getElementById('appToastRegion');
+          if (!region) return;
+          const toast = document.createElement('div');
+          toast.className = 'app-toast';
+          toast.dataset.kind = trigger.dataset.messageKind || 'success';
+          toast.setAttribute('role', toast.dataset.kind === 'error' ? 'alert' : 'status');
+          toast.textContent = trigger.dataset.appMessage;
+          region.appendChild(toast);
+          window.setTimeout(() => toast.remove(), 4000);
+        });
+
+        document.addEventListener('click', (event) => {
+          const button = event.target.closest('[data-app-toast]');
+          if (!button) return;
+          const region = document.getElementById('appToastRegion');
+          if (!region) return;
+          const toast = document.createElement('div');
+          toast.className = 'app-toast';
+          toast.dataset.kind = button.dataset.toastKind || 'success';
+          toast.setAttribute('role', toast.dataset.kind === 'error' ? 'alert' : 'status');
+          toast.textContent = button.dataset.appToast;
+          region.appendChild(toast);
+          window.setTimeout(() => toast.remove(), 4000);
+        });
+      })();
+    </script>
+
     <style is:global>
       :root {
         --color-bg: #f6f4ed;

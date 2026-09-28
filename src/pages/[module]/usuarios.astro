@@ -160,7 +160,7 @@ if (q) {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
                 
-                <form method="POST" style="display:inline;" onsubmit="return confirm('¿Eliminar este usuario? Esto borrará sus interacciones asociadas.');">
+                <form method="POST" style="display:inline;" data-confirm="¿Eliminar este usuario? Esto borrará sus interacciones asociadas." data-confirm-title="Eliminar usuario" data-confirm-accept="Eliminar">
                   <input type="hidden" name="action" value="delete" />
                   <input type="hidden" name="id" value={usr.id} />
                   <button type="submit" class="action-btn text-danger" title="Eliminar" disabled={usr.id === 1}>

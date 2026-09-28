@@ -1304,7 +1304,13 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
         tr.remove();
         calcTotals();
       } else {
-        alert('Debe haber al menos un producto en la venta.');
+        const toast = document.createElement('div');
+        toast.className = 'app-toast';
+        toast.dataset.kind = 'error';
+        toast.setAttribute('role', 'alert');
+        toast.textContent = 'Debe haber al menos un producto en la venta.';
+        document.getElementById('appToastRegion')?.appendChild(toast);
+        window.setTimeout(() => toast.remove(), 4000);
       }
     });
 

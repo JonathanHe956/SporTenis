@@ -81,7 +81,7 @@ const nivelActual = scmSettingsRow.length > 0 ? scmSettingsRow[0].nivel_scm : 'I
         {etapas.map(e => (
           <li>
             <span>{e.nombre}</span>
-            <form method="POST" style="margin: 0;" onsubmit="return confirm('¿Eliminar esta etapa?');">
+            <form method="POST" style="margin: 0;" data-confirm="¿Eliminar esta etapa?" data-confirm-title="Eliminar etapa" data-confirm-accept="Eliminar">
               <input type="hidden" name="action" value="delete_etapa" />
               <input type="hidden" name="id" value={e.id} />
               <button type="submit" class="action-btn text-danger">×</button>
@@ -108,7 +108,7 @@ const nivelActual = scmSettingsRow.length > 0 ? scmSettingsRow[0].nivel_scm : 'I
         {tipos.map(t => (
           <li>
             <span>{t.nombre}</span>
-            <form method="POST" style="margin: 0;" onsubmit="return confirm('¿Eliminar este tipo de interacción?');">
+            <form method="POST" style="margin: 0;" data-confirm="¿Eliminar este tipo de interacción?" data-confirm-title="Eliminar tipo" data-confirm-accept="Eliminar">
               <input type="hidden" name="action" value="delete_tipo" />
               <input type="hidden" name="id" value={t.id} />
               <button type="submit" class="action-btn text-danger">×</button>

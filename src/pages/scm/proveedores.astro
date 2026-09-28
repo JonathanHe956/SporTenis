@@ -129,7 +129,9 @@ if (q) {
                   <form
                     method="POST"
                     style="display:inline;"
-                    onsubmit="return confirm('¿Eliminar este proveedor permanentemente?');"
+                    data-confirm="¿Eliminar este proveedor permanentemente?"
+                    data-confirm-title="Eliminar proveedor"
+                    data-confirm-accept="Eliminar"
                   >
                     <input
                       type="hidden"

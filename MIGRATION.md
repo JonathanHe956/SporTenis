@@ -17,7 +17,13 @@ Debes tener un servidor MySQL corriendo en tu computadora (puedes usar XAMPP, MA
 
 1. Abre tu gestor de base de datos favorito (phpMyAdmin, DBeaver, TablePlus, etc.).
 2. Crea una base de datos vacía llamada `sportenis_db`.
-3. Tienes que crear las tablas manualmente primero usando las sentencias SQL correspondientes (pide a quien hizo la migración el script SQL).
+3. Para una base existente con las tablas principales ya creadas, aplica la migración SCM incluida:
+	```bash
+	mysql -u root -p sportenis_db < db/migrations/0001_scm_inventory.sql
+	mysql -u root -p sportenis_db < db/migrations/0002_pedidos_stock.sql
+	```
+	La primera migración crea de forma idempotente las tablas de movimientos, auditorías y configuración SCM. La segunda agrega a `PedidosCompra` las columnas de stock que usa el código; ejecútala una sola vez.
+4. Para crear todas las tablas del esquema en una base nueva, ejecuta `npx drizzle-kit push` después de configurar `DATABASE_URL`.
 
 ## 3. Configurar tus variables de entorno (.env)
 En la raíz del proyecto, debes crear un archivo `.env` basándote en `.env.example` (o crearlo tú mismo) con la ruta a tu MySQL local:
