@@ -9,7 +9,7 @@ const globalForDb = globalThis as unknown as {
 };
 
 const connection = globalForDb.conn ?? mysql.createPool({
-  uri: process.env.DATABASE_URL || 'mysql://root:@localhost:3306/sportenis_db2',
+  uri: process.env.DATABASE_URL || 'mysql://root:@localhost:3306/sportenis_db',
 });
 
 if (process.env.NODE_ENV !== 'production') {

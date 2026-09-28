@@ -63,7 +63,7 @@ if (Astro.request.method === 'POST') {
     
     const newProductId = productoResult.insertId;
 
-    // Procesar PULL (reabastecimiento automático inmediato) o PUSH (alerta de stock bajo)
+    // PUSH repone automáticamente; PULL genera una alerta para pedido manual.
     await procesarLogisticaStock({ id_producto: newProductId, id_usuario: Number(session) });
     
     return Astro.redirect(Astro.url.pathname);
@@ -99,7 +99,7 @@ if (Astro.request.method === 'POST') {
       await db.update(Modelos).set({ id_marca, id_categoria, nombre, descripcion, ...(imagen_url ? { imagen_url } : {}) }).where(eq(Modelos.id, id_modelo));
       await db.update(Productos).set({ id_proveedor, stock, stock_minimo, estrategia_logistica, costo, precio_venta, color, theme_class }).where(eq(Productos.id, id));
 
-      // Procesar PULL (reabastecimiento automático inmediato) o PUSH (alerta de stock bajo)
+      // PUSH repone automáticamente; PULL genera una alerta para pedido manual.
       await procesarLogisticaStock({ id_producto: id, id_usuario: Number(session) });
     }
     return Astro.redirect(Astro.url.pathname);
@@ -123,7 +123,7 @@ if (Astro.request.method === 'POST') {
   }
 }
 
-// Reabastecer automáticamente cualquier producto PULL que tenga stock bajo
+// Procesar productos bajo mínimo: reabastecimiento PUSH automático o alerta PULL manual.
 await procesarLogisticaStock({ id_usuario: Number(session) });
 
 const categoriasList = await db.select().from(Categorias);
@@ -234,7 +234,7 @@ if (q) {
                 </span>
                 <span style="font-size: 11px; color: #a3a3a3; display: block; margin-top: 4px;">Min: {producto.stock_minimo || 0}</span>
               </td>
-              <td><span class={`badge ${producto.estrategia === 'PULL' ? 'badge-pull' : 'badge-push'}`}>{producto.estrategia === 'PULL' ? 'PULL (Auto)' : 'PUSH (Manual)'}</span></td>
+              <td><span class={`badge ${producto.estrategia === 'PULL' ? 'badge-pull' : 'badge-push'}`}>{producto.estrategia === 'PULL' ? 'PULL (Manual)' : 'PUSH (Auto)'}</span></td>
               <td>
                 Venta: ${producto.precio_venta}<br/>
                 <small style="color:#666;">Costo: ${producto.costo}</small>
@@ -353,8 +353,8 @@ if (q) {
           <label>Estrategia logistica</label>
           <div class="select-wrapper">
             <select name="estrategia_logistica" required>
-              <option value="PUSH" selected>PUSH</option>
-              <option value="PULL">PULL</option>
+              <option value="PUSH" selected>PUSH (Automático)</option>
+              <option value="PULL">PULL (Manual)</option>
             </select>
           </div>
         </div>
@@ -461,8 +461,8 @@ if (q) {
           <label>Estrategia logistica</label>
           <div class="select-wrapper">
             <select name="estrategia_logistica" id="edit_producto_estrategia" required>
-              <option value="PUSH">PUSH</option>
-              <option value="PULL">PULL</option>
+              <option value="PUSH">PUSH (Automático)</option>
+              <option value="PULL">PULL (Manual)</option>
             </select>
           </div>
         </div>

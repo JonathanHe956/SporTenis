@@ -138,7 +138,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       return ventaId;
     });
 
-    // Procesar reposición PULL automática o alerta PUSH para cada producto vendido
+    // Procesar reposición PUSH automática o alerta PULL para cada producto vendido
     try {
       for (const det of detallesProcesados) {
         await procesarLogisticaStock({ id_producto: det.id_producto, id_usuario: locals.user?.id });

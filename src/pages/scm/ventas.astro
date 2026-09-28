@@ -104,7 +104,7 @@ if (Astro.request.method === 'POST') {
               return ventaId;
             });
 
-            // Procesar reposición PULL automática o alerta PUSH para cada producto vendido
+            // Procesar reposición PUSH automática o alerta PULL para cada producto vendido
             for (const item of itemsAProcesar) {
               await procesarLogisticaStock({ id_producto: item.id_producto, id_usuario: sessionUserId });
             }

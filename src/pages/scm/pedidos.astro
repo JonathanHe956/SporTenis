@@ -260,8 +260,8 @@ if (q) {
                 )}
               </td>
               <td>
-                <span class={`badge ${prod.estrategia_logistica === 'AUTOMATICO' || prod.estrategia_logistica === 'PULL' ? 'badge-pull' : 'badge-push'}`}>
-                  {prod.estrategia_logistica || 'PUSH'}
+                <span class={`badge ${prod.estrategia_logistica === 'PULL' ? 'badge-pull' : 'badge-push'}`}>
+                  {prod.estrategia_logistica === 'PULL' ? 'PULL (Manual)' : 'PUSH (Auto)'}
                 </span>
               </td>
               <td style="text-align: center;">
