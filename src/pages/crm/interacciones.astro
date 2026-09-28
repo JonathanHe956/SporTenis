@@ -1,28 +1,58 @@
 ---
-import AdminLayout from '../../layouts/AdminLayout.astro';
+import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Interacciones, Clientes, TiposInteraccion, Usuarios, ActividadTienda } from '../../db/schema';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 
 const session = Astro.cookies.get('sportenis_session');
 const currentUserId = session ? Number(session.value) : 0;
 
-const actividadTienda = await db
-  .select({
-    id: ActividadTienda.id,
-    fecha: ActividadTienda.fecha_hora,
-    cliente: Usuarios.nombre, // Using Usuarios name if logged in
-    clienteId: ActividadTienda.id_usuario,
-    tipo: ActividadTienda.accion,
-    descripcion: ActividadTienda.detalles,
-    usuario: ActividadTienda.session_id, // We show session_id for guests
-    esActividad: true
-  })
-  .from(ActividadTienda)
-  .leftJoin(Usuarios, eq(ActividadTienda.id_usuario, Usuarios.id))
-  .orderBy(desc(ActividadTienda.fecha_hora));
+// 1. Interacciones Directas CRM
+let interaccionesCrm: any[] = [];
+try {
+  interaccionesCrm = await db
+    .select({
+      id: Interacciones.id,
+      fecha: Interacciones.fecha_hora,
+      cliente: Clientes.nombre,
+      clienteId: Interacciones.id_cliente,
+      tipo: TiposInteraccion.nombre,
+      descripcion: Interacciones.descripcion,
+      usuario: Usuarios.nombre,
+      esActividad: false
+    })
+    .from(Interacciones)
+    .leftJoin(Clientes, eq(Interacciones.id_cliente, Clientes.id))
+    .leftJoin(TiposInteraccion, eq(Interacciones.id_tipo_interaccion, TiposInteraccion.id))
+    .leftJoin(Usuarios, eq(Interacciones.id_usuario, Usuarios.id));
+} catch (e) {
+  interaccionesCrm = [];
+}
 
-const todasLasInteracciones = actividadTienda;
+// 2. Actividad de la Tienda Online
+let actividadTienda: any[] = [];
+try {
+  actividadTienda = await db
+    .select({
+      id: ActividadTienda.id,
+      fecha: ActividadTienda.fecha_hora,
+      cliente: Usuarios.nombre,
+      clienteId: ActividadTienda.id_usuario,
+      tipo: ActividadTienda.accion,
+      descripcion: ActividadTienda.detalles,
+      usuario: ActividadTienda.session_id,
+      esActividad: true
+    })
+    .from(ActividadTienda)
+    .leftJoin(Usuarios, eq(ActividadTienda.id_usuario, Usuarios.id));
+} catch (e) {
+  actividadTienda = [];
+}
+
+// Combinar y ordenar cronológicamente
+const todasLasInteracciones = [...interaccionesCrm, ...actividadTienda].sort(
+  (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
+);
 
 // Formatear tipo de actividad
 function formatAccion(accion: string) {
@@ -30,87 +60,157 @@ function formatAccion(accion: string) {
     'ver_producto': 'Vio Producto',
     'agregar_carrito': 'Agregó a Carrito',
     'favorito_agregado': 'Agregó a Favorito',
-    'favorito_removido': 'Quitó de Favorito'
+    'favorito_removido': 'Quitó de Favorito',
+    'compra_completada': 'Compra Realizada'
   };
   return map[accion] || accion;
 }
 
 const q = Astro.url.searchParams.get('q');
+const canalFiltro = Astro.url.searchParams.get('canal');
 let interaccionesFiltradas = todasLasInteracciones;
+
+if (canalFiltro === 'crm') {
+  interaccionesFiltradas = interaccionesFiltradas.filter(i => !i.esActividad);
+} else if (canalFiltro === 'tienda') {
+  interaccionesFiltradas = interaccionesFiltradas.filter(i => i.esActividad);
+}
 
 if (q) {
   const searchTerm = q.toLowerCase();
   interaccionesFiltradas = interaccionesFiltradas.filter((item) => 
-    (item.cliente && item.cliente.toLowerCase().includes(searchTerm)) || (item.notas && item.notas.toLowerCase().includes(searchTerm)) || (item.tipo && item.tipo.toLowerCase().includes(searchTerm))
+    (item.cliente && item.cliente.toLowerCase().includes(searchTerm)) || 
+    (item.descripcion && item.descripcion.toLowerCase().includes(searchTerm)) || 
+    (item.tipo && item.tipo.toLowerCase().includes(searchTerm)) ||
+    (item.usuario && item.usuario.toLowerCase().includes(searchTerm))
   );
 }
+
+const now = new Date();
+const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+const interaccionesEsteMes = todasLasInteracciones.filter(i => new Date(i.fecha) >= thirtyDaysAgo).length;
 ---
 
-<AdminLayout title="Interacciones Globales" activePath="/crm/interacciones">
+<CrmLayout title="Bitácora de Interacciones" activePath="/crm/interacciones">
   <div class="header-actions">
-    <h1 class="crm-title">Bitácora Global de Interacciones y Actividad</h1>
+    <div>
+      <h1 class="crm-title">Bitácora Global de Interacciones</h1>
+      <p class="subtitle">Monitoreo continuo de contacto directo con clientes y trazabilidad de actividad online.</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <a href="/crm/clientes" class="btn-primary">
+        + REGISTRAR EN CLIENTE
+      </a>
+    </div>
+  </div>
+
+  <!-- Stats Row estilo SCM -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-number">{todasLasInteracciones.length}</div>
+      <div class="stat-label">Total Registros</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-success">{interaccionesCrm.length}</div>
+      <div class="stat-label">Contacto Directo (CRM)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-auto">{actividadTienda.length}</div>
+      <div class="stat-label">Eventos en Tienda</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-warning">{interaccionesEsteMes}</div>
+      <div class="stat-label">Últimos 30 Días</div>
+    </div>
   </div>
 
   <div class="crm-card">
-          <!-- Buscador local funcional -->
-      <form method="GET" style="margin: 0; flex: 1; max-width: 400px; display: flex; position: relative; margin-bottom: 24px;" id="searchForm">
-        <input type="search" name="q" value={q || ""} placeholder="Buscar..." class="search-input" style="width: 100%; padding-right: 40px;" />
+    <!-- Buscador y Filtros estilo SCM -->
+    <div class="filters">
+      <form method="GET" style="margin: 0; flex: 1; max-width: 420px; display: flex; position: relative;" id="searchForm">
+        {canalFiltro && <input type="hidden" name="canal" value={canalFiltro} />}
+        <input type="search" name="q" value={q || ""} placeholder="Buscar por cliente, notas, tipo o agente..." class="search-input" style="width: 100%; padding-right: 40px;" />
         <button type="submit" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
       </form>
+
+      <form method="GET" style="margin: 0;" id="channelFilterForm">
+        {q && <input type="hidden" name="q" value={q} />}
+        <select name="canal" class="filter-select" onchange="document.getElementById('channelFilterForm').submit()">
+          <option value="todos" selected={!canalFiltro || canalFiltro === 'todos'}>Canal: Todos los eventos</option>
+          <option value="crm" selected={canalFiltro === 'crm'}>Solo Contacto CRM</option>
+          <option value="tienda" selected={canalFiltro === 'tienda'}>Solo Navegación Tienda</option>
+        </select>
+      </form>
+    </div>
+
     <div class="table-responsive">
       <table class="crm-table">
         <thead>
           <tr>
-            <th>Fecha</th>
-            <th>Agente / Sesión</th>
+            <th>Fecha y Hora</th>
             <th>Cliente / Usuario</th>
+            <th>Canal</th>
             <th>Tipo / Acción</th>
-            <th>Descripción / Detalles</th>
+            <th>Detalle / Notas</th>
+            <th>Responsable / Sesión</th>
           </tr>
         </thead>
         <tbody>
           {interaccionesFiltradas.map(act => (
             <tr>
-              <td style="white-space: nowrap">{act.fecha.toLocaleString()}</td>
-              <td>
-                {act.esActividad ? (
-                  <span title="ID de Sesión (Invitado)" style="color: var(--color-text-muted)">{act.usuario ? act.usuario : 'N/A'}</span>
-                ) : (
-                  <strong>{act.usuario}</strong>
-                )}
+              <td style="white-space: nowrap; font-size: 12px; color: var(--color-text-muted);">
+                {new Date(act.fecha).toLocaleString()}
               </td>
               <td>
                 {act.esActividad ? (
-                  act.cliente ? <span class="cliente-link">{act.cliente}</span> : <em>Invitado</em>
+                  act.cliente ? <strong>{act.cliente}</strong> : <em style="color: var(--color-text-muted);">Comprador Invitado</em>
                 ) : (
-                  <a href={`/crm/clientes/${act.clienteId}`} class="cliente-link">{act.cliente}</a>
+                  <a href={`/crm/clientes/${act.clienteId}`} class="cliente-link">
+                    <strong>{act.cliente}</strong>
+                  </a>
                 )}
+              </td>
+              <td>
+                <span class={`badge ${act.esActividad ? 'badge-pull' : 'badge-success'}`}>
+                  {act.esActividad ? 'Tienda Online' : 'CRM Directo'}
+                </span>
               </td>
               <td>
                 <span class={act.esActividad ? "badge badge-info" : "badge badge-neutral"}>
                   {act.esActividad ? formatAccion(act.tipo) : act.tipo}
                 </span>
               </td>
-              <td>
+              <td style="max-width: 320px;">
                 {act.esActividad && act.descripcion ? (
-                  <pre style="margin:0; font-family:inherit; font-size:12px; color: var(--color-text-muted)">{
-                    (() => {
-                      try { return JSON.stringify(JSON.parse(act.descripcion), null, 2); } 
-                      catch(e) { return act.descripcion; }
-                    })()
-                  }</pre>
+                  <div class="raw-details">
+                    {(() => {
+                      try {
+                        const parsed = JSON.parse(act.descripcion);
+                        return typeof parsed === 'object' ? JSON.stringify(parsed, null, 1) : act.descripcion;
+                      } catch(e) {
+                        return act.descripcion;
+                      }
+                    })()}
+                  </div>
                 ) : (
-                  act.descripcion
+                  <span style="line-height: 1.4;">{act.descripcion || '-'}</span>
+                )}
+              </td>
+              <td>
+                {act.esActividad ? (
+                  <span class="session-pill" title={act.usuario || ''}>{act.usuario ? (act.usuario.length > 12 ? act.usuario.slice(0, 10) + '…' : act.usuario) : 'Sesión'}</span>
+                ) : (
+                  <strong>{act.usuario || 'Agente'}</strong>
                 )}
               </td>
             </tr>
           ))}
           {interaccionesFiltradas.length === 0 && (
             <tr>
-              <td colspan="5" class="text-center" style="padding: 32px; color: var(--color-text-muted)">
-                No hay interacciones ni actividad registrada.
+              <td colspan="6" class="text-center" style="padding: 36px; color: var(--color-text-muted)">
+                {q ? `No se encontraron interacciones coincidentes con "${q}".` : 'No hay interacciones registradas en este período.'}
               </td>
             </tr>
           )}
@@ -119,106 +219,124 @@ if (q) {
     </div>
 
     <div class="pagination">
-      <span>Mostrando {todasLasInteracciones.length} registros en total</span>
+      <span>Mostrando {interaccionesFiltradas.length} de {todasLasInteracciones.length} registros</span>
     </div>
   </div>
-</AdminLayout>
+</CrmLayout>
 
 <style>
-  .badge-info {
-    background: #e0f2fe;
-    color: #0369a1;
+  .header-actions { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+  .crm-title { margin-bottom: 4px; }
+  .subtitle { margin: 0; font-size: 13px; color: var(--color-text-muted); }
+
+  /* Stats Row estilo SCM */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
   }
-  .badge-neutral {
-    background: #f1f5f9;
-    color: #475569;
+  @media (max-width: 800px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
   }
-  .header-actions {
+  .stat-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+  }
+  .stat-number {
+    font-size: 32px;
+    font-weight: 900;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .stat-warning { color: #d97706; }
+  .stat-success { color: var(--color-success); }
+  .stat-auto { color: #2563eb; }
+  .stat-label {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  /* Filtros y Buscador */
+  .filters {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 24px;
-    flex-wrap: wrap;
     gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
   }
-  .crm-title { margin-bottom: 0; }
-  
-  .date-filter-form { margin: 0; }
-  
-  .date-filter {
-    display: flex;
-    align-items: center;
-    padding: 6px 12px;
-    background: white;
+  .search-input {
+    padding: 9px 14px;
     border: 1px solid var(--color-border);
     border-radius: 6px;
     font-size: 13px;
-    font-weight: 700;
-    gap: 8px;
-  }
-  .date-filter input[type="date"] {
-    border: none;
     outline: none;
-    font-family: inherit;
-    font-size: 13px;
-    background: transparent;
-    cursor: pointer;
+    background: var(--color-surface);
     color: var(--color-text);
   }
-  .filter-btn {
-    background: var(--color-bg);
+  .search-input:focus { border-color: var(--color-text); }
+  .filter-select {
+    padding: 9px 14px;
     border: 1px solid var(--color-border);
-    border-radius: 4px;
-    padding: 6px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--color-text);
-    transition: background 0.2s;
-  }
-  .filter-btn:hover { background: var(--color-text); color: white; border-color: var(--color-text); }
-
-  .table-responsive {
-    overflow-x: auto;
-    margin: 0 -24px;
-  }
-  .crm-table {
-    width: 100%;
-    border-collapse: collapse;
+    border-radius: 6px;
     font-size: 13px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    outline: none;
+    cursor: pointer;
   }
-  .crm-table th {
-    text-align: left;
-    padding: 12px 24px;
-    border-bottom: 2px solid var(--color-border);
-    color: var(--color-text-muted);
-    font-weight: 700;
-  }
-  .crm-table td {
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--color-border);
-  }
+
+  /* Tablas SCM */
+  .table-responsive { overflow-x: auto; margin: 0 -24px; }
+  .crm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .crm-table th { text-align: left; padding: 12px 24px; border-bottom: 2px solid var(--color-border); color: var(--color-text-muted); font-weight: 700; }
+  .crm-table td { padding: 14px 24px; border-bottom: 1px solid var(--color-border); }
   .crm-table tbody tr:hover { background: var(--color-bg); }
-  
-  .cliente-link { color: var(--color-text); font-weight: 700; text-decoration: none; }
-  .cliente-link:hover { text-decoration: underline; color: var(--color-danger); }
-  
   .text-center { text-align: center; }
-  
+
+  .cliente-link {
+    color: var(--color-text);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .cliente-link:hover { color: #0284c7; text-decoration: underline; }
+
+  /* Badges estilo SCM */
+  .badge-pull { background: #dbeafe; color: #1e40af; }
+  .badge-info { background: #e0f2fe; color: #0369a1; }
+  .badge-neutral { background: #f1f5f9; color: #475569; }
+
+  .raw-details {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--color-text-muted);
+    background: var(--color-bg);
+    padding: 4px 8px;
+    border-radius: 4px;
+    max-height: 48px;
+    overflow: hidden;
+    white-space: pre-wrap;
+    text-overflow: ellipsis;
+  }
+
+  .session-pill {
+    background: #f1f5f9;
+    color: #64748b;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 11px;
+  }
+
   .pagination {
     margin-top: 16px;
-    display: flex;
-    justify-content: space-between;
+    font-size: 12px;
     color: var(--color-text-muted);
-    font-size: 13px;
-  }
-
-  .search-input {
-    flex: 1;
-    padding: 10px 16px;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    font-family: inherit;
   }
 </style>

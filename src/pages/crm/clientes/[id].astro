@@ -1,35 +1,37 @@
 ---
 import CrmLayout from '../../../layouts/CrmLayout.astro';
 import { db } from '../../../db/db';
-import { Clientes, Interacciones, EtapasCrm, TiposInteraccion, Usuarios, Evaluaciones } from '../../../db/schema';
+import { Clientes, EtapasCrm, Interacciones, TiposInteraccion, Evaluaciones, Usuarios } from '../../../db/schema';
 import { eq, desc } from 'drizzle-orm';
 
 const { id } = Astro.params;
-if (!id) return Astro.redirect('/crm/clientes');
+const clienteId = Number(id);
 
-// Manejo de POST (Formularios de Interacción, Cambio de Etapa y Edición)
+if (isNaN(clienteId)) {
+  return Astro.redirect('/crm/clientes');
+}
+
+// Manejo de peticiones POST (Agregar Interacción, Cambiar Etapa, Editar Cliente)
 if (Astro.request.method === 'POST') {
   const formData = await Astro.request.formData();
   const action = formData.get('action');
 
   if (action === 'new_interaction') {
-    const tipoId = Number(formData.get('tipo_id'));
-    const desc = formData.get('descripcion') as string;
-    const session = Astro.cookies.get('sportenis_session');
-    const currentUserId = session ? Number(session.value) : 1;
-    
+    const sessionId = Astro.cookies.get('sportenis_session')?.value;
+    const userId = sessionId ? Number(sessionId) : null;
+
     await db.insert(Interacciones).values({
-      id_cliente: Number(id),
-      id_usuario: currentUserId,
-      id_tipo_interaccion: tipoId,
-      descripcion: desc,
+      id_cliente: clienteId,
+      id_usuario: userId,
+      id_tipo_interaccion: Number(formData.get('tipo_id')),
+      descripcion: formData.get('descripcion') as string,
       fecha_hora: new Date()
     });
   } else if (action === 'change_stage') {
-    const nuevaEtapa = Number(formData.get('etapa_id'));
+    const newStageId = Number(formData.get('etapa_id'));
     await db.update(Clientes)
-      .set({ id_etapa_crm: nuevaEtapa })
-      .where(eq(Clientes.id, Number(id)));
+      .set({ id_etapa_crm: newStageId })
+      .where(eq(Clientes.id, clienteId));
   } else if (action === 'update_client') {
     await db.update(Clientes)
       .set({
@@ -38,233 +40,313 @@ if (Astro.request.method === 'POST') {
         correo: formData.get('correo') as string,
         telefono: formData.get('telefono') as string,
       })
-      .where(eq(Clientes.id, Number(id)));
+      .where(eq(Clientes.id, clienteId));
   }
-  
-  return Astro.redirect(Astro.url.pathname);
+
+  return Astro.redirect(`/crm/clientes/${clienteId}`);
 }
 
-// Cargar Datos del Cliente
-const clienteData = await db.select().from(Clientes).where(eq(Clientes.id, Number(id)));
-if (!clienteData || clienteData.length === 0) return Astro.redirect('/crm/clientes');
+// Obtener datos del cliente
+const clienteData = await db.select().from(Clientes).where(eq(Clientes.id, clienteId));
+if (clienteData.length === 0) {
+  return Astro.redirect('/crm/clientes');
+}
 const cliente = clienteData[0];
 
-// Cargar Catálogos
+// Obtener etapas disponibles
 const etapas = await db.select().from(EtapasCrm);
-const etapaActual = etapas.find(e => e.id === cliente.id_etapa_crm)?.nombre;
+const etapaActualObj = etapas.find(e => e.id === cliente.id_etapa_crm);
+const etapaActual = etapaActualObj ? etapaActualObj.nombre : 'Sin etapa';
+
+// Obtener tipos de interacción
 const tiposInteraccion = await db.select().from(TiposInteraccion);
 
-// Cargar Interacciones
+// Obtener historial de interacciones
 const historial = await db
   .select({
     id: Interacciones.id,
-    descripcion: Interacciones.descripcion,
     fecha: Interacciones.fecha_hora,
+    descripcion: Interacciones.descripcion,
     tipo: TiposInteraccion.nombre,
     usuario: Usuarios.nombre
   })
   .from(Interacciones)
   .leftJoin(TiposInteraccion, eq(Interacciones.id_tipo_interaccion, TiposInteraccion.id))
   .leftJoin(Usuarios, eq(Interacciones.id_usuario, Usuarios.id))
-  .where(eq(Interacciones.id_cliente, Number(id)))
+  .where(eq(Interacciones.id_cliente, clienteId))
   .orderBy(desc(Interacciones.fecha_hora));
 
-// Cargar Evaluaciones
+// Obtener evaluaciones del cliente
 const evaluaciones = await db
   .select({
+    id: Evaluaciones.id,
+    fecha: Evaluaciones.fecha_evaluacion,
     calificacion: Evaluaciones.calificacion,
     comentarios: Evaluaciones.comentarios,
-    fecha: Evaluaciones.fecha_evaluacion,
     usuario: Usuarios.nombre
   })
   .from(Evaluaciones)
   .leftJoin(Usuarios, eq(Evaluaciones.id_usuario, Usuarios.id))
-  .where(eq(Evaluaciones.id_cliente, Number(id)))
+  .where(eq(Evaluaciones.id_cliente, clienteId))
   .orderBy(desc(Evaluaciones.fecha_evaluacion));
 
-function getStageBadge(stage: string | undefined) {
+function getStageBadge(stage: string | null) {
   switch (stage) {
     case 'Activo': return 'badge-success';
-    case 'Prospecto': return 'badge-neutral';
-    case 'Frecuente': return 'badge-success';
+    case 'Prospecto': return 'badge-warning';
+    case 'Frecuente': return 'badge-pull';
     case 'Inactivo': return 'badge-danger';
     default: return 'badge-neutral';
   }
 }
 
-const initials = cliente.nombre.substring(0, 2).toUpperCase();
+const initials = (cliente.nombre || 'C').substring(0, 2).toUpperCase();
 ---
 
 <CrmLayout title={`Cliente: ${cliente.nombre}`} activePath="/crm/clientes">
-  <div class="breadcrumb">
-    <a href="/crm/clientes">‹ Volver a clientes</a>
+  <!-- Breadcrumb -->
+  <div class="breadcrumb-bar">
+    <a href="/crm/clientes" class="back-link">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      Volver al Directorio de Clientes
+    </a>
   </div>
 
-  <div class="profile-header">
-    <div class="profile-avatar">{initials}</div>
-    <div class="profile-info">
-      <h1 class="crm-title" style="margin-bottom: 8px;">{cliente.nombre} <span class={`badge ${getStageBadge(etapaActual)}`}>{etapaActual}</span></h1>
-      <p>{cliente.empresa || 'Sin empresa'} • Registrado el {cliente.fecha_registro.toLocaleDateString()}</p>
-    </div>
-    <div class="profile-actions">
-      <button class="btn-outline" onclick="document.getElementById('modalEdit').showModal()">Editar cliente</button>
-      <button class="btn-primary" onclick="document.getElementById('modalStage').showModal()">Cambiar etapa</button>
+  <!-- Header Perfil Ficha Cliente -->
+  <div class="profile-card">
+    <div class="profile-header-flex">
+      <div class="profile-left">
+        <div class="profile-avatar">{initials}</div>
+        <div class="profile-info">
+          <div class="profile-tags">
+            <span class="id-pill">CLIENTE #{cliente.id}</span>
+            <span class={`badge ${getStageBadge(etapaActual)}`}>{etapaActual}</span>
+            <span class={`badge ${cliente.estado?.toLowerCase() === 'activo' ? 'badge-success' : 'badge-danger'}`}>{cliente.estado}</span>
+          </div>
+          <h1 class="crm-title" style="margin: 4px 0 6px 0;">{cliente.nombre}</h1>
+          <p class="profile-meta">
+            <span><strong>Empresa:</strong> {cliente.empresa || 'Particular'}</span> &bull;
+            <span><strong>Correo:</strong> {cliente.correo}</span> &bull;
+            <span><strong>Teléfono:</strong> {cliente.telefono || 'Sin teléfono'}</span> &bull;
+            <span><strong>Registrado:</strong> {new Date(cliente.fecha_registro).toLocaleDateString()}</span>
+          </p>
+        </div>
+      </div>
+      <div class="profile-actions">
+        <button type="button" class="btn-secondary-action" onclick="document.getElementById('modalEdit').showModal()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Editar Cliente
+        </button>
+        <button type="button" class="btn-primary" onclick="document.getElementById('modalStage').showModal()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          Cambiar Etapa
+        </button>
+      </div>
     </div>
   </div>
 
-  <div class="crm-card">
-    <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab('info', this)">Información</button>
-      <button class="tab-btn" onclick="switchTab('interacciones', this)">Interacciones</button>
-      <button class="tab-btn" onclick="switchTab('evaluaciones', this)">Evaluaciones</button>
+  <!-- Pestañas y Contenido -->
+  <div class="crm-card" style="margin-top: 24px;">
+    <div class="tabs-header">
+      <button type="button" class="tab-btn active" onclick="switchTab('info', this)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        Información General
+      </button>
+      <button type="button" class="tab-btn" onclick="switchTab('interacciones', this)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Historial de Interacciones ({historial.length})
+      </button>
+      <button type="button" class="tab-btn" onclick="switchTab('evaluaciones', this)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        Evaluaciones CSAT ({evaluaciones.length})
+      </button>
     </div>
 
     <!-- Contenido de Pestaña: Información -->
     <div class="tab-content" id="tab-info" style="display: block;">
       <div class="info-grid">
-        <div class="info-item">
-          <strong>Nombre completo</strong>
-          <p>{cliente.nombre}</p>
+        <div class="info-item-card">
+          <span class="info-label">Nombre Completo</span>
+          <p class="info-val">{cliente.nombre}</p>
         </div>
-        <div class="info-item">
-          <strong>Correo electrónico</strong>
-          <p>{cliente.correo}</p>
+        <div class="info-item-card">
+          <span class="info-label">Correo Electrónico</span>
+          <p class="info-val">{cliente.correo}</p>
         </div>
-        <div class="info-item">
-          <strong>Teléfono</strong>
-          <p>{cliente.telefono || 'No registrado'}</p>
+        <div class="info-item-card">
+          <span class="info-label">Teléfono de Contacto</span>
+          <p class="info-val">{cliente.telefono || 'No registrado'}</p>
         </div>
-        <div class="info-item">
-          <strong>Empresa / Club</strong>
-          <p>{cliente.empresa || 'No registrado'}</p>
+        <div class="info-item-card">
+          <span class="info-label">Empresa / Organización</span>
+          <p class="info-val">{cliente.empresa || 'Particular / Sin empresa'}</p>
         </div>
-        <div class="info-item">
-          <strong>Estado de la cuenta</strong>
-          <p>{cliente.estado}</p>
+        <div class="info-item-card">
+          <span class="info-label">Etapa en el Embudo CRM</span>
+          <p class="info-val"><span class={`badge ${getStageBadge(etapaActual)}`}>{etapaActual}</span></p>
         </div>
-        <div class="info-item">
-          <strong>Fecha de registro</strong>
-          <p>{cliente.fecha_registro.toLocaleDateString()}</p>
+        <div class="info-item-card">
+          <span class="info-label">Estado de Cuenta</span>
+          <p class="info-val"><span class={`badge ${cliente.estado?.toLowerCase() === 'activo' ? 'badge-success' : 'badge-danger'}`}>{cliente.estado}</span></p>
+        </div>
+        <div class="info-item-card">
+          <span class="info-label">Fecha de Alta</span>
+          <p class="info-val">{new Date(cliente.fecha_registro).toLocaleString()}</p>
+        </div>
+        <div class="info-item-card">
+          <span class="info-label">Total de Interacciones</span>
+          <p class="info-val">{historial.length} registradas</p>
         </div>
       </div>
     </div>
 
     <!-- Contenido de Pestaña: Interacciones -->
     <div class="tab-content" id="tab-interacciones" style="display: none;">
-      <div class="timeline-header">
-        <h3>Historial de interacciones</h3>
-        <button class="btn-primary" onclick="document.getElementById('modalInteraction').showModal()">+ Nueva interacción</button>
+      <div class="section-actions-bar">
+        <div>
+          <h3 style="margin: 0; font-size: 15px; font-weight: 700;">Bitácora de Contacto</h3>
+          <p style="margin: 2px 0 0 0; font-size: 12px; color: var(--color-text-muted);">Registro cronológico de llamadas, correos y visitas</p>
+        </div>
+        <button type="button" class="btn-primary" onclick="document.getElementById('modalInteraction').showModal()">
+          + NUEVA INTERACCIÓN
+        </button>
       </div>
 
       <div class="timeline">
         {historial.map(item => (
           <div class="timeline-item">
-            <div class="timeline-icon" set:html={item.tipo === 'Llamada' ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>' : item.tipo === 'Correo' ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'}></div>
+            <div class="timeline-icon">
+              {item.tipo === 'Llamada' ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+              ) : item.tipo === 'Correo' ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              )}
+            </div>
             <div class="timeline-content">
               <div class="timeline-meta">
-                <strong>{item.tipo}</strong>
-                <span>{item.fecha.toLocaleString()}</span>
+                <span class="badge badge-neutral">{item.tipo}</span>
+                <span class="timeline-date">{new Date(item.fecha).toLocaleString()}</span>
               </div>
-              <p>{item.descripcion}</p>
-              <small>Usuario: {item.usuario}</small>
+              <p class="timeline-desc">{item.descripcion}</p>
+              <div class="timeline-user">Registrado por: <strong>{item.usuario || 'Agente'}</strong></div>
             </div>
           </div>
         ))}
-        {historial.length === 0 && <p class="text-muted">No hay interacciones registradas.</p>}
+        {historial.length === 0 && (
+          <div class="empty-state">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <p>No hay interacciones registradas aún con este cliente.</p>
+          </div>
+        )}
       </div>
     </div>
 
     <!-- Contenido de Pestaña: Evaluaciones -->
     <div class="tab-content" id="tab-evaluaciones" style="display: none;">
-      <div class="timeline-header">
-        <h3>Evaluaciones (NPS)</h3>
+      <div class="section-actions-bar">
+        <div>
+          <h3 style="margin: 0; font-size: 15px; font-weight: 700;">Evaluaciones y Satisfacción CSAT</h3>
+          <p style="margin: 2px 0 0 0; font-size: 12px; color: var(--color-text-muted);">Calificaciones brindadas por el cliente</p>
+        </div>
       </div>
+
       <div class="timeline">
         {evaluaciones.map(ev => (
           <div class="timeline-item">
-            <div class="timeline-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>
+            <div class="timeline-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </div>
             <div class="timeline-content">
               <div class="timeline-meta">
-                <strong>Calificación: {ev.calificacion} / 5</strong>
-                <span>{ev.fecha.toLocaleDateString()}</span>
+                <span class="badge badge-warning" style="font-size: 13px;">{ev.calificacion} ★ / 5.0</span>
+                <span class="timeline-date">{new Date(ev.fecha).toLocaleDateString()}</span>
               </div>
-              <p>{ev.comentarios || 'Sin comentarios adicionales.'}</p>
-              <small>Registrado por: {ev.usuario}</small>
+              <p class="timeline-desc">{ev.comentarios || <em style="color: var(--color-text-muted);">Sin comentarios adicionales.</em>}</p>
+              <div class="timeline-user">Registrado por: <strong>{ev.usuario || 'Sistema'}</strong></div>
             </div>
           </div>
         ))}
-        {evaluaciones.length === 0 && <p class="text-muted" style="padding: 16px;">Este cliente aún no tiene evaluaciones registradas.</p>}
+        {evaluaciones.length === 0 && (
+          <div class="empty-state">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <p>Este cliente aún no cuenta con evaluaciones registradas.</p>
+          </div>
+        )}
       </div>
     </div>
   </div>
 
-  <!-- Modal: Registrar Interacción (Pantalla 6) -->
-  <dialog id="modalInteraction" class="crm-modal">
+  <!-- Modal: Registrar Interacción -->
+  <dialog id="modalInteraction" class="scm-modal">
     <div class="modal-content">
       <div class="modal-header">
         <h2>Nueva Interacción</h2>
-        <button class="close-btn" onclick="document.getElementById('modalInteraction').close()">×</button>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalInteraction').close()">×</button>
       </div>
       <form method="POST">
         <input type="hidden" name="action" value="new_interaction" />
         
         <div class="form-group">
-          <label>Tipo de interacción</label>
-          <select name="tipo_id" required>
+          <label>Canal o Tipo de Interacción *</label>
+          <select name="tipo_id" class="form-control" required>
             {tiposInteraccion.map(t => <option value={t.id}>{t.nombre}</option>)}
           </select>
         </div>
 
         <div class="form-group">
-          <label>Descripción</label>
-          <textarea name="descripcion" rows="4" required placeholder="Detalles de la interacción..."></textarea>
+          <label>Notas / Descripción de la Interacción *</label>
+          <textarea name="descripcion" class="form-control" rows="4" required placeholder="Describe los acuerdos, dudas del cliente o seguimiento acordado..."></textarea>
         </div>
 
-        <div class="modal-footer">
-          <button type="button" class="btn-outline" onclick="document.getElementById('modalInteraction').close()">Cancelar</button>
-          <button type="submit" class="btn-primary">Guardar</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" onclick="document.getElementById('modalInteraction').close()">Cancelar</button>
+          <button type="submit" class="btn-save">Guardar Interacción</button>
         </div>
       </form>
     </div>
   </dialog>
 
-  <!-- Modal: Clasificación (Pantalla 7) -->
-  <dialog id="modalStage" class="crm-modal">
+  <!-- Modal: Clasificación / Cambiar Etapa -->
+  <dialog id="modalStage" class="scm-modal">
     <div class="modal-content">
       <div class="modal-header">
-        <h2>Editar etapa CRM</h2>
-        <button class="close-btn" onclick="document.getElementById('modalStage').close()">×</button>
+        <h2>Cambiar Etapa CRM</h2>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalStage').close()">×</button>
       </div>
       <form method="POST">
         <input type="hidden" name="action" value="change_stage" />
         
         <div class="form-group">
           <label>Cliente</label>
-          <input type="text" value={cliente.nombre} disabled />
+          <input type="text" class="form-control" value={cliente.nombre} disabled />
         </div>
 
         <div class="form-group">
-          <label>Nueva etapa</label>
-          <select name="etapa_id" required>
+          <label>Nueva Etapa del Embudo</label>
+          <select name="etapa_id" class="form-control" required>
             {etapas.map(e => <option value={e.id} selected={e.id === cliente.id_etapa_crm}>{e.nombre}</option>)}
           </select>
         </div>
 
-        <p class="help-text">Los cambios en la etapa ayudan a dar mejor seguimiento y priorizar a tus clientes.</p>
+        <p class="help-text" style="font-size: 12px; color: var(--color-text-muted); margin-bottom: 20px;">
+          Actualizar la etapa permite medir el progreso en el funnel de fidelización y disparar flujos comerciales adecuados.
+        </p>
 
-        <div class="modal-footer">
-          <button type="button" class="btn-outline" onclick="document.getElementById('modalStage').close()">Cancelar</button>
-          <button type="submit" class="btn-primary">Guardar cambios</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" onclick="document.getElementById('modalStage').close()">Cancelar</button>
+          <button type="submit" class="btn-save">Actualizar Etapa</button>
         </div>
       </form>
     </div>
   </dialog>
 
   <!-- Modal: Editar Cliente -->
-  <dialog id="modalEdit" class="crm-modal">
+  <dialog id="modalEdit" class="scm-modal">
     <div class="modal-content">
       <div class="modal-header">
-        <h2>Editar Cliente</h2>
+        <h2>Editar Datos del Cliente</h2>
         <button type="button" class="close-btn" onclick="document.getElementById('modalEdit').close()">×</button>
       </div>
       <form method="POST">
@@ -272,27 +354,29 @@ const initials = cliente.nombre.substring(0, 2).toUpperCase();
         
         <div class="form-group">
           <label>Nombre del Cliente *</label>
-          <input type="text" name="nombre" value={cliente.nombre} required />
+          <input type="text" name="nombre" class="form-control" value={cliente.nombre} required />
         </div>
 
         <div class="form-group">
           <label>Empresa / Club</label>
-          <input type="text" name="empresa" value={cliente.empresa || ''} />
+          <input type="text" name="empresa" class="form-control" value={cliente.empresa || ''} />
         </div>
 
-        <div class="form-group">
-          <label>Correo Electrónico *</label>
-          <input type="email" name="correo" value={cliente.correo} required />
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>Correo Electrónico *</label>
+            <input type="email" name="correo" class="form-control" value={cliente.correo} required />
+          </div>
+
+          <div class="form-group">
+            <label>Teléfono</label>
+            <input type="tel" name="telefono" class="form-control" value={cliente.telefono || ''} oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
+          </div>
         </div>
 
-        <div class="form-group">
-          <label>Teléfono</label>
-          <input type="tel" name="telefono" value={cliente.telefono || ''} oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
-        </div>
-
-        <div class="modal-footer">
-          <button type="button" class="btn-outline" onclick="document.getElementById('modalEdit').close()">Cancelar</button>
-          <button type="submit" class="btn-primary">Actualizar cambios</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" onclick="document.getElementById('modalEdit').close()">Cancelar</button>
+          <button type="submit" class="btn-save">Guardar Cambios</button>
         </div>
       </form>
     </div>
@@ -301,181 +385,316 @@ const initials = cliente.nombre.substring(0, 2).toUpperCase();
 
 <script is:inline>
   function switchTab(tabId, btnElement) {
-    // Ocultar todos los contenidos de pestaña
     document.querySelectorAll('.tab-content').forEach(el => {
       el.style.display = 'none';
     });
-    // Quitar clase active de todos los botones
     document.querySelectorAll('.tab-btn').forEach(el => {
       el.classList.remove('active');
     });
-    // Mostrar el contenido seleccionado y marcar botón
     document.getElementById('tab-' + tabId).style.display = 'block';
     btnElement.classList.add('active');
   }
 </script>
 
 <style>
-  .breadcrumb { margin-bottom: 24px; }
-  .breadcrumb a { color: var(--color-text-muted); text-decoration: none; font-size: 14px; font-weight: 700; }
-  .breadcrumb a:hover { color: var(--color-text); }
+  .breadcrumb-bar { margin-bottom: 20px; }
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-text-muted);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 700;
+    transition: color 0.15s;
+  }
+  .back-link:hover { color: var(--color-text); }
 
-  .profile-header {
+  /* Profile Card */
+  .profile-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 24px 28px;
+  }
+  .profile-header-flex {
     display: flex;
+    justify-content: space-between;
     align-items: center;
     gap: 24px;
-    margin-bottom: 32px;
+    flex-wrap: wrap;
+  }
+  .profile-left {
+    display: flex;
+    align-items: center;
+    gap: 20px;
   }
   .profile-avatar {
-    width: 80px;
-    height: 80px;
-    background: #e9c8bd;
-    border-radius: 50%;
+    width: 68px;
+    height: 68px;
+    background: #171717;
+    color: #ffffff;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 28px;
+    font-size: 24px;
     font-weight: 900;
+    letter-spacing: -1px;
+    flex-shrink: 0;
   }
-  .profile-info { flex: 1; }
-  .profile-info p { margin: 0; color: var(--color-text-muted); font-size: 14px; }
+  .profile-tags {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .id-pill {
+    background: #f1f5f9;
+    color: #475569;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 11px;
+    font-weight: 800;
+  }
+  .profile-meta {
+    margin: 0;
+    font-size: 13px;
+    color: var(--color-text-muted);
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .profile-meta span strong { color: var(--color-text); }
 
   .profile-actions {
     display: flex;
-    gap: 12px;
+    gap: 10px;
   }
-
-  .btn-outline {
-    background: transparent;
-    border: 1px solid var(--color-border);
-    color: var(--color-text);
+  .btn-secondary-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
     padding: 10px 16px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
     font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
-    border-radius: 6px;
     cursor: pointer;
+    color: var(--color-text);
   }
-  .btn-outline:hover { background: var(--color-bg); }
+  .btn-secondary-action:hover { background: var(--color-bg); }
+
+  /* Badges estilo SCM */
+  .badge-pull { background: #dbeafe; color: #1e40af; }
+  .badge-warning { background: #fef3c7; color: #92400e; }
+  .badge-neutral { background: #f1f5f9; color: #475569; }
 
   /* Tabs */
-  .tabs {
+  .tabs-header {
     display: flex;
     border-bottom: 1px solid var(--color-border);
     margin: -24px -24px 24px;
     padding: 0 24px;
+    overflow-x: auto;
   }
   .tab-btn {
     background: none;
     border: none;
-    padding: 16px 24px;
-    font-size: 14px;
+    padding: 14px 20px;
+    font-size: 13px;
     font-weight: 700;
     color: var(--color-text-muted);
     border-bottom: 2px solid transparent;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    transition: color 0.15s;
   }
+  .tab-btn:hover { color: var(--color-text); }
   .tab-btn.active {
     color: var(--color-text);
-    border-bottom-color: var(--color-text);
+    border-bottom-color: var(--color-primary);
   }
-  
+
+  /* Info Grid */
   .info-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 24px;
-    padding: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
   }
-  .info-item strong {
+  .info-item-card {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 14px 18px;
+  }
+  .info-label {
     display: block;
-    font-size: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
     color: var(--color-text-muted);
-    margin-bottom: 4px;
+    margin-bottom: 6px;
   }
-  .info-item p { margin: 0; font-size: 14px; font-weight: 700; }
+  .info-val {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--color-text);
+  }
 
   /* Timeline */
-  .timeline-header {
+  .section-actions-bar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
   }
-  .timeline-header h3 { margin: 0; font-size: 18px; }
-
   .timeline {
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 14px;
   }
   .timeline-item {
     display: flex;
-    gap: 16px;
+    gap: 14px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 16px;
   }
   .timeline-icon {
-    width: 40px;
-    height: 40px;
-    background: var(--color-bg);
-    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 18px;
     flex-shrink: 0;
+    color: var(--color-text);
   }
-  .timeline-content {
-    flex: 1;
-    background: var(--color-bg);
-    padding: 16px;
-    border-radius: 8px;
-  }
+  .timeline-content { flex: 1; }
   .timeline-meta {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 8px;
+    align-items: center;
+    margin-bottom: 6px;
   }
-  .timeline-meta span { color: var(--color-text-muted); font-size: 12px; }
-  .timeline-content p { margin: 0 0 8px 0; font-size: 14px; line-height: 1.5; }
-  .timeline-content small { color: var(--color-text-muted); }
+  .timeline-date { font-size: 12px; color: var(--color-text-muted); }
+  .timeline-desc {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text);
+  }
+  .timeline-user { font-size: 11px; color: var(--color-text-muted); }
 
-  /* Modals */
-  .crm-modal {
+  .empty-state {
+    text-align: center;
+    padding: 36px 20px;
+    color: var(--color-text-muted);
+    font-size: 13px;
+  }
+  .empty-state svg { margin-bottom: 8px; }
+
+  /* Modales estilo SCM */
+  .scm-modal {
     border: none;
     border-radius: 12px;
     padding: 0;
     width: 100%;
-    max-width: 500px;
-    box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+    max-width: 520px;
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
   }
-  .crm-modal::backdrop { background: rgba(0,0,0,0.5); }
-  .modal-content { padding: 24px; }
+  .scm-modal::backdrop {
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(3px);
+  }
+  .modal-content {
+    padding: 32px;
+    background: #ffffff;
+    border-radius: 12px;
+  }
   .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 24px;
   }
-  .modal-header h2 { margin: 0; font-size: 20px; }
-  .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: var(--color-text-muted); }
-  
-  .form-group { margin-bottom: 16px; }
-  .form-group label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
-  .form-group select, .form-group input, .form-group textarea {
+  .modal-header h2 { margin: 0; font-size: 18px; color: #001632; font-weight: 700; }
+  .close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #64748b;
+    font-weight: bold;
+    line-height: 1;
+  }
+  .close-btn:hover { color: #001632; }
+
+  .form-group { margin-bottom: 18px; }
+  .form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .form-control {
     width: 100%;
-    padding: 10px 12px;
+    padding: 10px 14px;
     border: 1px solid var(--color-border);
     border-radius: 6px;
-    font-family: inherit;
     font-size: 14px;
+    outline: none;
+    background: #ffffff;
+    color: var(--color-text);
   }
-  .form-group input:disabled { background: var(--color-bg); }
-  
-  .help-text { font-size: 12px; color: var(--color-text-muted); margin-bottom: 24px; padding: 12px; background: #fff3cd; border-radius: 6px; color: #856404; }
+  .form-control:focus { border-color: var(--color-text); }
+  .form-grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
 
-  .modal-footer {
+  .modal-actions {
     display: flex;
     justify-content: flex-end;
     gap: 12px;
     margin-top: 24px;
   }
+  .btn-cancel {
+    background: #f1f5f9;
+    border: 1px solid var(--color-border);
+    padding: 9px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--color-text);
+  }
+  .btn-cancel:hover { background: #e2e8f0; }
+  .btn-save {
+    background: #001632;
+    color: #ffffff;
+    border: none;
+    padding: 9px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 13px;
+  }
+  .btn-save:hover { background: #002b66; }
 </style>

@@ -1,8 +1,8 @@
 ---
-import AdminLayout from '../../layouts/AdminLayout.astro';
+import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Interacciones, Clientes, TiposInteraccion } from '../../db/schema';
-import { eq, desc, and, gte, lte } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 
 const session = Astro.cookies.get('sportenis_session');
 const usuarioActualId = session ? Number(session.value) : 0;
@@ -11,6 +11,7 @@ let queryConditions = [eq(Interacciones.id_usuario, usuarioActualId)];
 
 const actividades = await db
   .select({
+    id: Interacciones.id,
     fecha: Interacciones.fecha_hora,
     cliente: Clientes.nombre,
     clienteId: Clientes.id,
@@ -24,52 +25,126 @@ const actividades = await db
   .orderBy(desc(Interacciones.fecha_hora));
 
 const q = Astro.url.searchParams.get('q');
+const tipoFiltro = Astro.url.searchParams.get('tipo');
 let actividadesFiltradas = actividades;
+
+if (tipoFiltro && tipoFiltro !== 'todos') {
+  actividadesFiltradas = actividadesFiltradas.filter(a => (a.tipo || '').toLowerCase() === tipoFiltro.toLowerCase());
+}
 
 if (q) {
   const searchTerm = q.toLowerCase();
-  actividadesFiltradas = actividadesFiltradas.filter((item: any) => 
-    (item.usuario_nombre && item.usuario_nombre.toLowerCase().includes(searchTerm)) || (item.descripcion && item.descripcion.toLowerCase().includes(searchTerm))
+  actividadesFiltradas = actividadesFiltradas.filter((item) => 
+    (item.cliente && item.cliente.toLowerCase().includes(searchTerm)) || 
+    (item.descripcion && item.descripcion.toLowerCase().includes(searchTerm)) ||
+    (item.tipo && item.tipo.toLowerCase().includes(searchTerm))
   );
 }
+
+// Métricas de actividad
+const totalActividades = actividades.length;
+const clientesUnicos = new Set(actividades.map(a => a.clienteId).filter(Boolean)).size;
+const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+const actividadesMes = actividades.filter(a => new Date(a.fecha) >= thirtyDaysAgo).length;
+
+const tiposSet = Array.from(new Set(actividades.map(a => a.tipo).filter(Boolean)));
 ---
 
-<AdminLayout title="Mi Actividad" activePath="/crm/actividad">
+<CrmLayout title="Mi Actividad" activePath="/crm/actividad">
   <div class="header-actions">
-    <h1 class="crm-title">Mi Actividad</h1>
+    <div>
+      <h1 class="crm-title">Mi Bitácora de Actividad</h1>
+      <p class="subtitle">Historial de gestiones, llamadas, seguimientos y acuerdos alcanzados con clientes.</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <a href="/crm/clientes" class="btn-primary">
+        + NUEVO CONTACTO
+      </a>
+    </div>
+  </div>
+
+  <!-- Stats Row estilo SCM -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-number">{totalActividades}</div>
+      <div class="stat-label">Gestiones Realizadas</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-success">{clientesUnicos}</div>
+      <div class="stat-label">Clientes Atendidos</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-warning">{actividadesMes}</div>
+      <div class="stat-label">Últimos 30 Días</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-auto">{tiposSet.length}</div>
+      <div class="stat-label">Canales Utilizados</div>
+    </div>
   </div>
 
   <div class="crm-card">
-          <!-- Buscador local funcional -->
-      <form method="GET" style="margin: 0; flex: 1; max-width: 400px; display: flex; position: relative; margin-bottom: 24px;" id="searchForm">
-        <input type="search" name="q" value={q || ""} placeholder="Buscar..." class="search-input" style="width: 100%; padding-right: 40px;" />
+    <div class="filters">
+      <!-- Buscador -->
+      <form method="GET" style="margin: 0; flex: 1; max-width: 420px; display: flex; position: relative;" id="searchForm">
+        {tipoFiltro && <input type="hidden" name="tipo" value={tipoFiltro} />}
+        <input type="search" name="q" value={q || ""} placeholder="Buscar por cliente o detalles..." class="search-input" style="width: 100%; padding-right: 40px;" />
         <button type="submit" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
       </form>
+
+      <!-- Filtro por Tipo -->
+      <form method="GET" style="margin: 0;" id="tipoFilterForm">
+        {q && <input type="hidden" name="q" value={q} />}
+        <select name="tipo" class="filter-select" onchange="document.getElementById('tipoFilterForm').submit()">
+          <option value="todos" selected={!tipoFiltro || tipoFiltro === 'todos'}>Canal: Todos</option>
+          {tiposSet.map(t => (
+            <option value={t} selected={tipoFiltro === t}>{t}</option>
+          ))}
+        </select>
+      </form>
+    </div>
+
     <div class="table-responsive">
       <table class="crm-table">
         <thead>
           <tr>
-            <th>Fecha</th>
-            <th>Cliente</th>
-            <th>Tipo</th>
-            <th>Descripción</th>
+            <th>Fecha y Hora</th>
+            <th>Cliente Contactado</th>
+            <th>Canal / Tipo</th>
+            <th>Descripción del Seguimiento</th>
+            <th class="text-center">Ficha</th>
           </tr>
         </thead>
         <tbody>
           {actividadesFiltradas.map(act => (
             <tr>
-              <td style="white-space: nowrap">{act.fecha.toLocaleString()}</td>
-              <td><a href={`/crm/clientes/${act.clienteId}`} class="cliente-link">{act.cliente}</a></td>
-              <td><span class="badge badge-neutral">{act.tipo}</span></td>
-              <td>{act.descripcion}</td>
+              <td style="white-space: nowrap; font-size: 12px; color: var(--color-text-muted);">
+                {new Date(act.fecha).toLocaleString()}
+              </td>
+              <td>
+                <a href={`/crm/clientes/${act.clienteId}`} class="cliente-link">
+                  <strong>{act.cliente}</strong>
+                </a>
+              </td>
+              <td>
+                <span class="badge badge-neutral">{act.tipo}</span>
+              </td>
+              <td>
+                <span style="line-height: 1.4;">{act.descripcion || '-'}</span>
+              </td>
+              <td class="text-center">
+                <a href={`/crm/clientes/${act.clienteId}`} class="action-btn action-view" title="Ver ficha del cliente">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </a>
+              </td>
             </tr>
           ))}
           {actividadesFiltradas.length === 0 && (
             <tr>
-              <td colspan="4" class="text-center" style="padding: 32px; color: var(--color-text-muted)">
-                No tienes actividad registrada.
+              <td colspan="5" class="text-center" style="padding: 36px; color: var(--color-text-muted)">
+                {q ? `No se encontraron actividades que coincidan con "${q}".` : 'Aún no tienes actividades registradas en tu bitácora.'}
               </td>
             </tr>
           )}
@@ -77,93 +152,119 @@ if (q) {
       </table>
     </div>
 
-    <div class="pagination" style="margin-top: 16px; display: flex; justify-content: space-between; color: var(--color-text-muted); font-size: 13px;">
-      <span>Mostrando {actividades.length} actividades encontradas</span>
+    <div class="pagination">
+      <span>Mostrando {actividadesFiltradas.length} de {totalActividades} actividades</span>
     </div>
   </div>
-</AdminLayout>
+</CrmLayout>
 
 <style>
-  .header-actions {
+  .header-actions { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+  .crm-title { margin-bottom: 4px; }
+  .subtitle { margin: 0; font-size: 13px; color: var(--color-text-muted); }
+
+  /* Stats Row estilo SCM */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 800px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+  }
+  .stat-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+  }
+  .stat-number {
+    font-size: 32px;
+    font-weight: 900;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .stat-warning { color: #d97706; }
+  .stat-success { color: var(--color-success); }
+  .stat-auto { color: #2563eb; }
+  .stat-label {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  /* Filtros y Buscador */
+  .filters {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 24px;
-    flex-wrap: wrap;
     gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
   }
-  .crm-title { margin-bottom: 0; }
-  
-  .date-filter-form {
-    margin: 0;
-  }
-  
-  .date-filter {
-    display: flex;
-    align-items: center;
-    padding: 6px 12px;
-    background: white;
+  .search-input {
+    padding: 9px 14px;
     border: 1px solid var(--color-border);
     border-radius: 6px;
     font-size: 13px;
-    font-weight: 700;
-    gap: 8px;
-  }
-  .date-filter input[type="date"] {
-    border: none;
     outline: none;
-    font-family: inherit;
-    font-size: 13px;
-    background: transparent;
-    cursor: pointer;
+    background: var(--color-surface);
     color: var(--color-text);
   }
-  .filter-btn {
-    background: var(--color-bg);
+  .search-input:focus { border-color: var(--color-text); }
+  .filter-select {
+    padding: 9px 14px;
     border: 1px solid var(--color-border);
-    border-radius: 4px;
-    padding: 6px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--color-text);
-    transition: background 0.2s;
-  }
-  .filter-btn:hover { background: var(--color-text); color: white; border-color: var(--color-text); }
-
-  .table-responsive {
-    overflow-x: auto;
-    margin: 0 -24px;
-  }
-  .crm-table {
-    width: 100%;
-    border-collapse: collapse;
+    border-radius: 6px;
     font-size: 13px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    outline: none;
+    cursor: pointer;
   }
-  .crm-table th {
-    text-align: left;
-    padding: 12px 24px;
-    border-bottom: 2px solid var(--color-border);
-    color: var(--color-text-muted);
-    font-weight: 700;
-  }
-  .crm-table td {
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--color-border);
-  }
+
+  /* Tablas SCM */
+  .table-responsive { overflow-x: auto; margin: 0 -24px; }
+  .crm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .crm-table th { text-align: left; padding: 12px 24px; border-bottom: 2px solid var(--color-border); color: var(--color-text-muted); font-weight: 700; }
+  .crm-table td { padding: 14px 24px; border-bottom: 1px solid var(--color-border); }
   .crm-table tbody tr:hover { background: var(--color-bg); }
-  
-  .cliente-link { color: var(--color-text); font-weight: 700; text-decoration: none; }
-  .cliente-link:hover { text-decoration: underline; color: var(--color-danger); }
-  
   .text-center { text-align: center; }
 
-  .search-input {
-    flex: 1;
-    padding: 10px 16px;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    font-family: inherit;
+  .cliente-link {
+    color: var(--color-text);
+    text-decoration: none;
+  }
+  .cliente-link:hover { color: #0284c7; text-decoration: underline; }
+
+  /* Badges estilo SCM */
+  .badge-neutral { background: #f1f5f9; color: #475569; }
+
+  .action-btn { 
+    background: none; 
+    border: none; 
+    cursor: pointer; 
+    font-size: 16px; 
+    opacity: 0.65; 
+    color: inherit; 
+    transition: all 0.2s ease; 
+    padding: 4px; 
+    border-radius: 4px; 
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+  }
+  .action-btn:hover { opacity: 1; transform: scale(1.1); }
+  .action-view { color: #0284c7; }
+  .action-view:hover { color: #0369a1 !important; background: #e0f2fe; }
+
+  .pagination {
+    margin-top: 16px;
+    font-size: 12px;
+    color: var(--color-text-muted);
   }
 </style>

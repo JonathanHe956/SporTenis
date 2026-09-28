@@ -1,5 +1,5 @@
 ---
-import AdminLayout from '../../../layouts/AdminLayout.astro';
+import CrmLayout from '../../../layouts/CrmLayout.astro';
 import { db } from '../../../db/db';
 import { Clientes, EtapasCrm, Interacciones } from '../../../db/schema';
 import { eq, like, or } from 'drizzle-orm';
@@ -76,27 +76,59 @@ if (estadoFiltro && estadoFiltro !== 'todos') {
   clientesFiltrados = clientesFiltrados.filter(c => c.estado.toLowerCase() === estadoFiltro.toLowerCase());
 }
 
+const totalClientes = clientes.length;
+const totalActivos = clientes.filter(c => (c.estado || '').toLowerCase() === 'activo').length;
+const totalProspectos = clientes.filter(c => (c.etapa || '').toLowerCase() === 'prospecto').length;
+const totalInactivos = totalClientes - totalActivos;
+
 function getStageBadge(stage: string | null) {
   switch (stage) {
     case 'Activo': return 'badge-success';
-    case 'Prospecto': return 'badge-neutral';
-    case 'Frecuente': return 'badge-success';
+    case 'Prospecto': return 'badge-warning';
+    case 'Frecuente': return 'badge-pull';
     case 'Inactivo': return 'badge-danger';
     default: return 'badge-neutral';
   }
 }
 ---
 
-<AdminLayout title="Clientes" activePath="/crm/clientes">
+<CrmLayout title="Clientes" activePath="/crm/clientes">
   <div class="header-actions">
-    <h1 class="crm-title">Clientes</h1>
-    <button class="btn-primary" onclick="document.getElementById('modalCreate').showModal()">+ Nuevo cliente</button>
+    <div>
+      <h1 class="crm-title">Directorio de Clientes</h1>
+      <p class="subtitle">Gestión centralizada de cuentas, etapas del embudo comercial y contactos.</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <button class="btn-primary" onclick="document.getElementById('modalCreate').showModal()">
+        + NUEVO CLIENTE
+      </button>
+    </div>
+  </div>
+
+  <!-- Stats Row estilo SCM -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-number">{totalClientes}</div>
+      <div class="stat-label">Total Clientes</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-success">{totalActivos}</div>
+      <div class="stat-label">Clientes Activos</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-warning">{totalProspectos}</div>
+      <div class="stat-label">Prospectos</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-danger">{totalInactivos}</div>
+      <div class="stat-label">Inactivos</div>
+    </div>
   </div>
 
   <div class="crm-card">
     <div class="filters">
       <!-- Buscador local funcional -->
-      <form method="GET" style="margin: 0; flex: 1; max-width: 400px; display: flex; position: relative;" id="searchForm">
+      <form method="GET" style="margin: 0; flex: 1; max-width: 420px; display: flex; position: relative;" id="searchForm">
         {estadoFiltro && <input type="hidden" name="estado" value={estadoFiltro} />}
         <input type="search" name="q" value={q || ''} placeholder="Buscar por nombre, correo o empresa..." class="search-input" style="width: 100%; padding-right: 40px;" />
         <button type="submit" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);">
@@ -108,7 +140,7 @@ function getStageBadge(stage: string | null) {
       <form method="GET" style="margin: 0;" id="statusFilterForm">
         {q && <input type="hidden" name="q" value={q} />}
         <select name="estado" class="filter-select" onchange="document.getElementById('statusFilterForm').submit()">
-          <option value="todos" selected={!estadoFiltro || estadoFiltro === 'todos'}>Filtrar por estado: Todos</option>
+          <option value="todos" selected={!estadoFiltro || estadoFiltro === 'todos'}>Estado: Todos</option>
           <option value="activo" selected={estadoFiltro === 'activo'}>Activos</option>
           <option value="inactivo" selected={estadoFiltro === 'inactivo'}>Inactivos</option>
         </select>
@@ -120,42 +152,52 @@ function getStageBadge(stage: string | null) {
         <thead>
           <tr>
             <th>ID</th>
-            <th>Nombre</th>
-            <th>Empresa</th>
+            <th>Nombre del Cliente</th>
+            <th>Empresa / Club</th>
             <th>Correo</th>
             <th>Teléfono</th>
             <th>Etapa CRM</th>
             <th>Estado</th>
-            <th class="text-right">Acciones</th>
+            <th class="text-center">Acciones</th>
           </tr>
         </thead>
         <tbody>
           {clientesFiltrados.map(cliente => (
             <tr>
-              <td>{cliente.id}</td>
-              <td><strong>{cliente.nombre}</strong></td>
-              <td>{cliente.empresa || '-'}</td>
+              <td><span class="id-pill">#{cliente.id}</span></td>
+              <td>
+                <div class="client-cell">
+                  <div class="client-avatar">{(cliente.nombre || 'C').substring(0, 2).toUpperCase()}</div>
+                  <strong class="client-name">{cliente.nombre}</strong>
+                </div>
+              </td>
+              <td>{cliente.empresa || <span class="text-muted">-</span>}</td>
               <td>{cliente.correo}</td>
-              <td>{cliente.telefono || '-'}</td>
+              <td>{cliente.telefono || <span class="text-muted">-</span>}</td>
               <td><span class={`badge ${getStageBadge(cliente.etapa)}`}>{cliente.etapa || '-'}</span></td>
-              <td>{cliente.estado}</td>
-              <td class="text-right" style="white-space: nowrap;">
-                <a href={`/crm/clientes/${cliente.id}`} class="action-btn" title="Ver detalle">
+              <td>
+                <span class={`badge ${cliente.estado?.toLowerCase() === 'activo' ? 'badge-success' : 'badge-danger'}`}>
+                  {cliente.estado}
+                </span>
+              </td>
+              <td class="text-center" style="white-space: nowrap;">
+                <a href={`/crm/clientes/${cliente.id}`} class="action-btn action-view" title="Ver ficha y actividad">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 </a>
                 
                 <button 
+                  type="button"
                   class="action-btn" 
-                  title="Editar" 
+                  title="Editar cliente" 
                   onclick={`openEditModal(${cliente.id}, '${cliente.nombre}', '${cliente.empresa || ''}', '${cliente.correo}', '${cliente.telefono || ''}', ${cliente.id_etapa || 1})`}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
                 
-                <form method="POST" style="display:inline;" onsubmit="return confirm('¿Estás seguro de eliminar este cliente? Esto borrará sus interacciones asociadas.');">
+                <form method="POST" style="display:inline;" onsubmit="return confirm('¿Estás seguro de eliminar este cliente? Se borrarán sus interacciones asociadas.');">
                   <input type="hidden" name="action" value="delete" />
                   <input type="hidden" name="id" value={cliente.id} />
-                  <button type="submit" class="action-btn text-danger" title="Eliminar">
+                  <button type="submit" class="action-btn text-danger" title="Eliminar cliente">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                   </button>
                 </form>
@@ -164,8 +206,8 @@ function getStageBadge(stage: string | null) {
           ))}
           {clientesFiltrados.length === 0 && (
             <tr>
-              <td colspan="8" class="text-center" style="padding: 32px; color: var(--color-text-muted)">
-                {q ? `No se encontraron clientes coincidiendo con "${q}".` : 'No hay clientes registrados aún.'}
+              <td colspan="8" class="text-center" style="padding: 36px; color: var(--color-text-muted)">
+                {q ? `No se encontraron clientes que coincidan con "${q}".` : 'No hay clientes registrados en el catálogo.'}
               </td>
             </tr>
           )}
@@ -174,17 +216,12 @@ function getStageBadge(stage: string | null) {
     </div>
 
     <div class="pagination">
-      <span>Mostrando {clientesFiltrados.length} clientes</span>
-      <div class="page-controls">
-        <button disabled>‹</button>
-        <button class="active">1</button>
-        <button disabled>›</button>
-      </div>
+      <span>Mostrando {clientesFiltrados.length} de {totalClientes} clientes</span>
     </div>
   </div>
 
-  <!-- Modal: Crear Cliente -->
-  <dialog id="modalCreate" class="crm-modal">
+  <!-- Modal: Crear Cliente (Estilo SCM) -->
+  <dialog id="modalCreate" class="scm-modal">
     <div class="modal-content">
       <div class="modal-header">
         <h2>Nuevo Cliente</h2>
@@ -195,41 +232,43 @@ function getStageBadge(stage: string | null) {
         
         <div class="form-group">
           <label>Nombre del Cliente *</label>
-          <input type="text" name="nombre" required placeholder="Ej. Carlos Alcaraz" />
+          <input type="text" name="nombre" class="form-control" required placeholder="Ej. Carlos Alcaraz" />
         </div>
 
         <div class="form-group">
           <label>Empresa / Club</label>
-          <input type="text" name="empresa" placeholder="Ej. Club Valle Verde" />
+          <input type="text" name="empresa" class="form-control" placeholder="Ej. Club Valle Verde" />
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>Correo Electrónico *</label>
+            <input type="email" name="correo" class="form-control" required placeholder="correo@ejemplo.com" />
+          </div>
+
+          <div class="form-group">
+            <label>Teléfono</label>
+            <input type="tel" name="telefono" class="form-control" placeholder="555-123-4567" oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
+          </div>
         </div>
 
         <div class="form-group">
-          <label>Correo Electrónico *</label>
-          <input type="email" name="correo" required placeholder="correo@ejemplo.com" />
-        </div>
-
-        <div class="form-group">
-          <label>Teléfono</label>
-          <input type="tel" name="telefono" placeholder="555-123-4567" oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
-        </div>
-
-        <div class="form-group">
-          <label>Etapa CRM</label>
-          <select name="etapa_id" required>
+          <label>Etapa CRM Inicial</label>
+          <select name="etapa_id" class="form-control" required>
             {etapas.map(e => <option value={e.id}>{e.nombre}</option>)}
           </select>
         </div>
 
-        <div class="modal-footer">
-          <button type="button" class="btn-outline" onclick="document.getElementById('modalCreate').close()">Cancelar</button>
-          <button type="submit" class="btn-primary">Guardar</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" onclick="document.getElementById('modalCreate').close()">Cancelar</button>
+          <button type="submit" class="btn-save">Guardar Cliente</button>
         </div>
       </form>
     </div>
   </dialog>
 
-  <!-- Modal: Editar Cliente -->
-  <dialog id="modalEdit" class="crm-modal">
+  <!-- Modal: Editar Cliente (Estilo SCM) -->
+  <dialog id="modalEdit" class="scm-modal">
     <div class="modal-content">
       <div class="modal-header">
         <h2>Editar Cliente</h2>
@@ -241,39 +280,41 @@ function getStageBadge(stage: string | null) {
         
         <div class="form-group">
           <label>Nombre del Cliente *</label>
-          <input type="text" name="nombre" id="edit_nombre" required />
+          <input type="text" name="nombre" id="edit_nombre" class="form-control" required />
         </div>
 
         <div class="form-group">
           <label>Empresa / Club</label>
-          <input type="text" name="empresa" id="edit_empresa" />
+          <input type="text" name="empresa" id="edit_empresa" class="form-control" />
         </div>
 
-        <div class="form-group">
-          <label>Correo Electrónico *</label>
-          <input type="email" name="correo" id="edit_correo" required />
-        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>Correo Electrónico *</label>
+            <input type="email" name="correo" id="edit_correo" class="form-control" required />
+          </div>
 
-        <div class="form-group">
-          <label>Teléfono</label>
-          <input type="tel" name="telefono" id="edit_telefono" oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
+          <div class="form-group">
+            <label>Teléfono</label>
+            <input type="tel" name="telefono" id="edit_telefono" class="form-control" oninput="this.value = this.value.replace(/[^0-9]/g, '')" />
+          </div>
         </div>
 
         <div class="form-group">
           <label>Etapa CRM</label>
-          <select name="etapa_id" id="edit_etapa" required>
+          <select name="etapa_id" id="edit_etapa" class="form-control" required>
             {etapas.map(e => <option value={e.id}>{e.nombre}</option>)}
           </select>
         </div>
 
-        <div class="modal-footer">
-          <button type="button" class="btn-outline" onclick="document.getElementById('modalEdit').close()">Cancelar</button>
-          <button type="submit" class="btn-primary">Actualizar cambios</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" onclick="document.getElementById('modalEdit').close()">Cancelar</button>
+          <button type="submit" class="btn-save">Guardar Cambios</button>
         </div>
       </form>
     </div>
   </dialog>
-</AdminLayout>
+</CrmLayout>
 
 <script is:inline>
   function openEditModal(id, nombre, empresa, correo, telefono, etapaId) {
@@ -289,144 +330,239 @@ function getStageBadge(stage: string | null) {
 </script>
 
 <style>
-  .header-actions {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 24px;
-  }
-  .crm-title { margin-bottom: 0; }
-  
-  .filters {
-    display: flex;
+  /* Header y Subtítulos */
+  .header-actions { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+  .crm-title { margin-bottom: 4px; }
+  .subtitle { margin: 0; font-size: 13px; color: var(--color-text-muted); }
+
+  /* Stats Row idéntico a SCM */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     gap: 16px;
     margin-bottom: 24px;
   }
-  .search-input {
-    flex: 1;
-    padding: 10px 16px;
+  @media (max-width: 800px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+  }
+  .stat-card {
+    background: var(--color-surface);
     border: 1px solid var(--color-border);
-    border-radius: 6px;
-    font-family: inherit;
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
   }
-  .filter-select {
-    padding: 10px 16px;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: white;
-    font-family: inherit;
+  .stat-number {
+    font-size: 32px;
+    font-weight: 900;
+    line-height: 1;
+    margin-bottom: 6px;
   }
-
-  .table-responsive {
-    overflow-x: auto;
-    margin: 0 -24px;
-  }
-  .crm-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-  .crm-table th {
-    text-align: left;
-    padding: 12px 24px;
-    border-bottom: 2px solid var(--color-border);
+  .stat-warning { color: #d97706; }
+  .stat-success { color: var(--color-success); }
+  .stat-danger { color: var(--color-danger); }
+  .stat-label {
+    font-size: 12px;
     color: var(--color-text-muted);
     font-weight: 700;
+    text-transform: uppercase;
   }
-  .crm-table td {
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--color-border);
-  }
-  .crm-table tbody tr:hover {
-    background: var(--color-bg);
-  }
-  
-  .text-right { text-align: right; }
-  .text-center { text-align: center; }
 
-  .action-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 16px;
-    opacity: 0.6;
-    margin-left: 8px;
-    color: inherit;
-  }
-  .action-btn:hover { opacity: 1; color: var(--color-text); }
-  .action-btn.text-danger:hover { color: var(--color-danger); }
-
-  .pagination {
+  /* Filtros y Buscador */
+  .filters {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding-top: 24px;
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .search-input {
+    padding: 9px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 13px;
+    outline: none;
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+  .search-input:focus { border-color: var(--color-text); }
+  .filter-select {
+    padding: 9px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 13px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    outline: none;
+    cursor: pointer;
+  }
+
+  /* Tablas SCM */
+  .table-responsive { overflow-x: auto; margin: 0 -24px; }
+  .crm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .crm-table th { text-align: left; padding: 12px 24px; border-bottom: 2px solid var(--color-border); color: var(--color-text-muted); font-weight: 700; }
+  .crm-table td { padding: 14px 24px; border-bottom: 1px solid var(--color-border); }
+  .crm-table tbody tr:hover { background: var(--color-bg); }
+  .text-center { text-align: center; }
+  .text-muted { color: var(--color-text-muted); }
+
+  .id-pill {
+    background: #f1f5f9;
+    color: #475569;
+    padding: 3px 7px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .client-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .client-avatar {
+    width: 28px;
+    height: 28px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--color-text);
+  }
+  .client-name { font-size: 13px; }
+
+  /* Badges estilo SCM */
+  .badge-pull { background: #dbeafe; color: #1e40af; }
+  .badge-warning { background: #fef3c7; color: #92400e; }
+  .badge-neutral { background: #f1f5f9; color: #475569; }
+
+  /* Action Buttons estilo SCM */
+  .action-btn { 
+    background: none; 
+    border: none; 
+    cursor: pointer; 
+    font-size: 16px; 
+    opacity: 0.65; 
+    margin: 0 3px; 
+    color: inherit; 
+    transition: all 0.2s ease; 
+    vertical-align: middle; 
+    padding: 4px; 
+    border-radius: 4px; 
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+  }
+  .action-btn:hover { opacity: 1; transform: scale(1.1); }
+  .action-view { color: #0284c7; }
+  .action-view:hover { color: #0369a1 !important; background: #e0f2fe; }
+  .action-btn.text-danger:hover { color: var(--color-danger); background: #fee2e2; }
+
+  .pagination {
+    margin-top: 16px;
     font-size: 12px;
     color: var(--color-text-muted);
   }
-  .page-controls {
-    display: flex;
-    gap: 4px;
-  }
-  .page-controls button {
-    background: transparent;
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    padding: 4px 10px;
-    cursor: pointer;
-    font-family: inherit;
-  }
-  .page-controls button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .page-controls button.active { background: var(--color-text); color: white; border-color: var(--color-text); }
 
-  /* Modals */
-  .crm-modal {
+  /* Modales estilo SCM */
+  .scm-modal {
     border: none;
     border-radius: 12px;
     padding: 0;
     width: 100%;
-    max-width: 500px;
-    box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+    max-width: 520px;
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
   }
-  .crm-modal::backdrop { background: rgba(0,0,0,0.5); }
-  .modal-content { padding: 24px; }
+  .scm-modal::backdrop {
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(3px);
+  }
+  .modal-content {
+    padding: 32px;
+    background: #ffffff;
+    border-radius: 12px;
+  }
   .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 24px;
   }
-  .modal-header h2 { margin: 0; font-size: 20px; }
-  .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: var(--color-text-muted); }
-  
-  .form-group { margin-bottom: 16px; text-align: left; }
-  .form-group label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
-  .form-group select, .form-group input, .form-group textarea {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    font-family: inherit;
-    font-size: 14px;
+  .modal-header h2 { margin: 0; font-size: 18px; color: #001632; font-weight: 700; }
+  .close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #64748b;
+    font-weight: bold;
+    line-height: 1;
   }
-  
-  .btn-outline {
-    background: transparent;
-    border: 1px solid var(--color-border);
-    color: var(--color-text);
-    padding: 10px 16px;
+  .close-btn:hover { color: #001632; }
+
+  .form-group {
+    margin-bottom: 18px;
+  }
+  .form-group label {
+    display: block;
     font-size: 12px;
     font-weight: 700;
+    color: var(--color-text-muted);
     text-transform: uppercase;
-    border-radius: 6px;
-    cursor: pointer;
+    margin-bottom: 6px;
   }
-  .btn-outline:hover { background: var(--color-bg); }
+  .form-control {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 14px;
+    outline: none;
+    background: #ffffff;
+    color: var(--color-text);
+  }
+  .form-control:focus {
+    border-color: var(--color-text);
+  }
+  .form-grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
 
-  .modal-footer {
+  .modal-actions {
     display: flex;
     justify-content: flex-end;
     gap: 12px;
     margin-top: 24px;
   }
+  .btn-cancel {
+    background: #f1f5f9;
+    border: 1px solid var(--color-border);
+    padding: 9px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--color-text);
+  }
+  .btn-cancel:hover { background: #e2e8f0; }
+  .btn-save {
+    background: #001632;
+    color: #ffffff;
+    border: none;
+    padding: 9px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 13px;
+  }
+  .btn-save:hover { background: #002b66; }
 </style>
