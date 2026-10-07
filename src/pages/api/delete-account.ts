@@ -10,18 +10,17 @@ import {
   DetalleCarritos,
 } from '../../db/schema';
 import { eq } from 'drizzle-orm';
+import { SESSION_COOKIE } from '../../lib/session';
 
-export const POST: APIRoute = async ({ cookies }) => {
-  const sessionId = cookies.get('sportenis_session')?.value;
-
-  if (!sessionId || !/^\d+$/.test(sessionId)) {
+export const POST: APIRoute = async ({ cookies, locals }) => {
+  if (!locals.user) {
     return new Response(JSON.stringify({ error: 'No autorizado' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const userId = Number(sessionId);
+  const userId = locals.user.id;
 
   try {
     // Buscar el cliente asociado al usuario
@@ -70,7 +69,7 @@ export const POST: APIRoute = async ({ cookies }) => {
     await db.delete(Usuarios).where(eq(Usuarios.id, userId));
 
     // Limpiar cookie de sesión
-    cookies.delete('sportenis_session', { path: '/' });
+    cookies.delete(SESSION_COOKIE, { path: '/' });
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,

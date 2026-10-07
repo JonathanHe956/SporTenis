@@ -4,15 +4,17 @@ import Layout from "../layouts/Layout.astro";
 import { db } from "../db/db";
 import { Usuarios } from "../db/schema";
 import { eq } from "drizzle-orm";
+import { getRoleById, homeForRole, isUsuarioActivo } from "../lib/auth";
+import { hashPassword, isPasswordHash, verifyPassword } from "../lib/password";
+import { cerrarSesion, iniciarSesion } from "../lib/session";
 
-const session = Astro.cookies.get("sportenis_session");
 let errorMsg = "";
 
 if (Astro.request.method === "POST") {
   const formData = await Astro.request.formData();
 
   if (formData.get("action") === "logout") {
-    Astro.cookies.delete("sportenis_session", { path: "/" });
+    await cerrarSesion(Astro.cookies);
     return Astro.redirect("/");
   }
 
@@ -24,23 +26,27 @@ if (Astro.request.method === "POST") {
       .select()
       .from(Usuarios)
       .where(eq(Usuarios.correo, email));
-    if (userResult.length > 0 && userResult[0].password_hash === password) {
-      Astro.cookies.set("sportenis_session", userResult[0].id.toString(), {
-        path: "/",
-      });
+    const user = userResult[0];
 
-      if (userResult[0].id_rol === 1 || userResult[0].id_rol === 2) {
-        return Astro.redirect("/crm");
+    if (user && isUsuarioActivo(user.estado) && (await verifyPassword(password, user.password_hash))) {
+      if (!isPasswordHash(user.password_hash)) {
+        await db
+          .update(Usuarios)
+          .set({ password_hash: await hashPassword(password) })
+          .where(eq(Usuarios.id, user.id));
       }
-      return Astro.redirect("/");
+
+      await iniciarSesion(Astro.cookies, user.id);
+
+      return Astro.redirect(homeForRole(await getRoleById(user.id_rol)));
     } else {
       errorMsg = "Correo o contraseña incorrectos.";
     }
   }
 } else {
   // Si es GET y ya hay sesión, redirigir
-  if (session) {
-    return Astro.redirect("/");
+  if (Astro.locals.user) {
+    return Astro.redirect(homeForRole(Astro.locals.user.role));
   }
 }
 ---

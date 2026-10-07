@@ -1,4 +1,5 @@
 import { db } from '../src/db/db.js';
+import { hashPassword } from '../src/lib/password.js';
 import { Categorias, Marcas, Modelos, Productos, Roles, Usuarios, EtapasCrm, Clientes, TiposInteraccion, Interacciones } from '../src/db/schema.js';
 
 async function main() {
@@ -60,10 +61,11 @@ async function main() {
   ]);
 
   const fechaHoy = new Date();
+  const passwordDemo = await hashPassword('password123');
 
   await db.insert(Usuarios).values([
-    { id: 1, id_rol: 1, nombre: 'Admin', correo: 'admin@sportenis.com', password_hash: 'password123', estado: 'activo', fecha_creacion: fechaHoy },
-    { id: 2, id_rol: 2, nombre: 'Vendedor 1', correo: 'ventas1@sportenis.com', password_hash: 'password123', estado: 'activo', fecha_creacion: fechaHoy }
+    { id: 1, id_rol: 1, nombre: 'Admin', correo: 'admin@sportenis.com', password_hash: passwordDemo, estado: 'activo', fecha_creacion: fechaHoy },
+    { id: 2, id_rol: 2, nombre: 'Vendedor 1', correo: 'ventas1@sportenis.com', password_hash: passwordDemo, estado: 'activo', fecha_creacion: fechaHoy }
   ]);
 
   await db.insert(Clientes).values([

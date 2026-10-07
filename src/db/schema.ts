@@ -261,3 +261,11 @@ export const TransportistasLogistica = mysqlTable('TransportistasLogistica', {
   estado: varchar('estado', { length: 50 }).default('Activo'),
   api_key: varchar('api_key', { length: 255 })
 });
+
+export const Sesiones = mysqlTable('Sesiones', {
+  id: int('id').autoincrement().primaryKey(),
+  token_hash: varchar('token_hash', { length: 64 }).unique().notNull(),
+  id_usuario: int('id_usuario').references(() => Usuarios.id, { onDelete: 'cascade' }).notNull(),
+  fecha_creacion: datetime('fecha_creacion').notNull(),
+  fecha_expiracion: datetime('fecha_expiracion').notNull(),
+});

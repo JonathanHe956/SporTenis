@@ -6,7 +6,7 @@ function generateSessionId() {
   return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 }
 
-export const POST: APIRoute = async ({ request, cookies }) => {
+export const POST: APIRoute = async ({ request, cookies, locals }) => {
   try {
     const data = await request.json();
     const { accion, detalles } = data;
@@ -16,8 +16,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     }
 
     // Identificar usuario
-    const session = cookies.get('sportenis_session');
-    const id_usuario = session ? Number(session.value) : null;
+    const id_usuario = locals.user?.id ?? null;
 
     // Identificar sesión anónima
     let session_id = cookies.get('sportenis_guest_session')?.value;

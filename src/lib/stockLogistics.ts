@@ -1,6 +1,6 @@
 import { db } from '../db/db';
 import { Productos, Modelos, Proveedores, Notificaciones, PedidosCompra, MovimientosInventario, Configuraciones } from '../db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 
 export interface ResultadoLogistica {
   ok: boolean;
@@ -17,6 +17,19 @@ export interface ResultadoLogistica {
     accion: 'REPOSICION_PUSH' | 'ALERTA_PULL' | 'SIN_CAMBIO';
   }>;
 }
+
+/** Un producto requiere reposición cuando tiene mínimo configurado y su stock no lo supera. */
+export const requiereReposicion = (stock: number, stockMinimo: number): boolean =>
+  stockMinimo > 0 && stock <= stockMinimo;
+
+/**
+ * Cantidad a reponer: usa la configuración global o la fórmula óptima
+ * (el doble del mínimo menos lo que queda).
+ */
+export const calcularCantidadReponer = (stockActual: number, stockMinimo: number, reordenConfig = 0): number =>
+  reordenConfig > 0
+    ? Math.max(reordenConfig, stockMinimo)
+    : Math.max(stockMinimo * 2 - stockActual, stockMinimo, 5);
 
 /**
  * Revisa el inventario y ejecuta:
@@ -72,7 +85,7 @@ export async function procesarLogisticaStock(options?: {
 
     // Filtrar los que tienen stock bajo (stock <= stock_minimo y stock_minimo > 0)
     const productosBajoStock = productos.filter(
-      p => p.stock <= (p.stock_minimo || 0) && (p.stock_minimo || 0) > 0
+      p => requiereReposicion(p.stock, p.stock_minimo || 0)
     );
 
     for (const prod of productosBajoStock) {
@@ -82,20 +95,17 @@ export async function procesarLogisticaStock(options?: {
       const nombreProd = prod.nombre || `Producto #${prod.id}`;
       const idProveedor = prod.id_proveedor && prod.id_proveedor > 0 ? prod.id_proveedor : null;
 
-      // Cantidad a reponer: usa la configuración global o la fórmula óptima (el doble del mínimo menos lo que queda)
-      const cantidadReponer = reordenConfig > 0 
-        ? Math.max(reordenConfig, stockMinimo)
-        : Math.max(stockMinimo * 2 - stockActual, stockMinimo, 5);
+      const cantidadReponer = calcularCantidadReponer(stockActual, stockMinimo, reordenConfig);
 
       if (estrategia === 'PUSH') {
         // === ESTRATEGIA PUSH: REABASTECIMIENTO AUTOMÁTICO INMEDIATO ===
         const stockAnterior = stockActual;
         const stockPosterior = stockAnterior + cantidadReponer;
 
-        // 1. Actualizar el stock del producto
+        // 1. Actualizar el stock del producto (incremento relativo para no pisar ventas simultáneas)
         await db
           .update(Productos)
-          .set({ stock: stockPosterior })
+          .set({ stock: sql`${Productos.stock} + ${cantidadReponer}` })
           .where(eq(Productos.id, prod.id));
 
         // 2. Registrar el pedido de compra como COMPLETADO

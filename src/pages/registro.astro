@@ -3,9 +3,11 @@ import Layout from '../layouts/Layout.astro';
 import { db } from '../db/db';
 import { Usuarios, Clientes } from '../db/schema';
 import { eq } from 'drizzle-orm';
+import { getOrCreateRoleId } from '../lib/auth';
+import { hashPassword } from '../lib/password';
+import { iniciarSesion } from '../lib/session';
 
-const session = Astro.cookies.get('sportenis_session');
-if (session) {
+if (Astro.locals.user) {
   return Astro.redirect('/');
 }
 
@@ -27,10 +29,10 @@ if (Astro.request.method === 'POST') {
       const now = new Date();
       
       await db.insert(Usuarios).values({
-        id_rol: 3, // Cliente
+        id_rol: await getOrCreateRoleId('cliente'),
         nombre: fullName,
         correo: correo,
-        password_hash: password,
+        password_hash: await hashPassword(password),
         estado: 'activo',
         fecha_creacion: now
       });
@@ -48,7 +50,7 @@ if (Astro.request.method === 'POST') {
         fecha_registro: now
       });
 
-      Astro.cookies.set('sportenis_session', userId.toString(), { path: '/' });
+      await iniciarSesion(Astro.cookies, userId);
       return Astro.redirect('/cuenta');
     }
   } catch (e) {

@@ -1,8 +1,8 @@
 ---
 import { db } from "../db/db";
-import { Usuarios, Notificaciones } from "../db/schema";
+import { Notificaciones } from "../db/schema";
 import { eq, desc } from "drizzle-orm";
-import { canAccessCrm, canAccessScm } from "../lib/auth";
+import { canAccessCrm, canAccessScm, userRoles } from "../lib/auth";
 
 interface Props {
   title: string;
@@ -12,36 +12,23 @@ interface Props {
 const { title, activePath = "/crm" } = Astro.props;
 const currentModule = activePath.startsWith("/scm") ? "scm" : "crm";
 
-const sessionId = Astro.cookies.get("sportenis_session")?.value;
+const sessionUser = Astro.locals.user;
 let userName = "Admin";
 let userInitial = "A";
 let userRolId = 0;
 let roleStr = "";
 
-if (sessionId) {
-  const user = await db
-    .select()
-    .from(Usuarios)
-    .where(eq(Usuarios.id, Number(sessionId)));
-  if (user.length > 0) {
-    userName = user[0].nombre?.trim() || "Admin";
-    const initials = userName
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase())
-      .join("")
-      .slice(0, 2);
-    userInitial = initials || "A";
-    userRolId = user[0].id_rol;
-    roleStr =
-      userRolId === 1
-        ? "administrador"
-        : userRolId === 2
-          ? "vendedor"
-          : userRolId === 4
-            ? "logistica"
-            : "cliente";
-  }
+if (sessionUser) {
+  userName = sessionUser.nombre?.trim() || "Admin";
+  const initials = userName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("")
+    .slice(0, 2);
+  userInitial = initials || "A";
+  roleStr = sessionUser.role;
+  userRolId = userRoles.indexOf(sessionUser.role) + 1;
 }
 
 // Redirect if accessing a module they don't have permission for

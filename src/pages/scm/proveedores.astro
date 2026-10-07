@@ -4,8 +4,7 @@ import { db } from "../../db/db";
 import { Proveedores } from "../../db/schema";
 import { eq } from "drizzle-orm";
 
-const session = Astro.cookies.get("sportenis_session")?.value;
-if (!session) return Astro.redirect("/login");
+if (!Astro.locals.user) return Astro.redirect("/login");
 
 if (Astro.request.method === "POST") {
   const formData = await Astro.request.formData();

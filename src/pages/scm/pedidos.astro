@@ -4,9 +4,9 @@ import { db } from '../../db/db';
 import { Productos, Modelos, Proveedores, Marcas, Categorias, PedidosCompra, MovimientosInventario } from '../../db/schema';
 import { eq, desc, or, and, isNull } from 'drizzle-orm';
 
-const session = Astro.cookies.get('sportenis_session')?.value;
-if (!session) return Astro.redirect('/login');
-const sessionUserId = Number(session);
+const sessionUser = Astro.locals.user;
+if (!sessionUser) return Astro.redirect('/login');
+const sessionUserId = sessionUser.id;
 
 if (Astro.request.method === 'POST') {
   const formData = await Astro.request.formData();

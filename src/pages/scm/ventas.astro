@@ -5,12 +5,12 @@ import {
   Ventas, DetalleVentas, Clientes, Usuarios,
   MetodosPago, Productos, Modelos, Marcas,
 } from '../../db/schema';
-import { eq, desc, sql } from 'drizzle-orm';
-import { procesarLogisticaStock } from '../../lib/stockLogistics';
+import { eq, desc } from 'drizzle-orm';
+import { registrarVenta } from '../../lib/ventas';
 
-const session = Astro.cookies.get('sportenis_session')?.value;
-if (!session) return Astro.redirect('/login');
-const sessionUserId = Number(session);
+const sessionUser = Astro.locals.user;
+if (!sessionUser) return Astro.redirect('/login');
+const sessionUserId = sessionUser.id;
 
 // Manejo de Registro de Venta (POST)
 let errorMsg = '';
@@ -47,70 +47,17 @@ if (Astro.request.method === 'POST') {
         if (itemsAProcesar.length === 0) {
           errorMsg = 'Debes ingresar al menos un artículo con cantidad válida.';
         } else {
-          // Validar stock antes de guardar
-          let stockError = '';
-          for (const item of itemsAProcesar) {
-            const pCheck = await db.select({ stock: Productos.stock, sku: Productos.sku }).from(Productos).where(eq(Productos.id, item.id_producto));
-            if (!pCheck[0]) {
-              stockError = `El producto ID ${item.id_producto} no existe en el catálogo.`;
-              break;
-            }
-            if (pCheck[0].stock < item.cantidad) {
-              stockError = `Stock insuficiente para SKU ${pCheck[0].sku}. Disponible: ${pCheck[0].stock}, Solicitado: ${item.cantidad}.`;
-              break;
-            }
-          }
+          // registrarVenta valida y descuenta el stock dentro de la misma transacción
+          const venta = await registrarVenta({
+            id_cliente,
+            id_usuario: sessionUserId,
+            id_metodo_pago,
+            items: itemsAProcesar,
+            envio,
+            cupon_descuento: cupon,
+          });
 
-          if (stockError) {
-            errorMsg = stockError;
-          } else {
-            // Calcular subtotal
-            let subtotal = 0;
-            for (const item of itemsAProcesar) {
-              subtotal += item.cantidad * item.precio;
-            }
-            const total = subtotal + envio;
-
-            // Iniciar transacción para garantizar persistencia y descuento de stock
-            const nuevaVentaId = await db.transaction(async (tx) => {
-              const [resVenta] = await tx.insert(Ventas).values({
-                id_cliente,
-                id_usuario: sessionUserId || null,
-                id_metodo_pago,
-                fecha_venta: new Date(),
-                subtotal: subtotal.toFixed(2),
-                envio: envio.toFixed(2),
-                total: total.toFixed(2),
-                cupon_descuento: cupon,
-              });
-
-              const ventaId = Number(resVenta.insertId);
-
-              for (const item of itemsAProcesar) {
-                await tx.insert(DetalleVentas).values({
-                  id_venta: ventaId,
-                  id_producto: item.id_producto,
-                  cantidad: item.cantidad,
-                  precio_unitario: item.precio.toFixed(2),
-                  subtotal: (item.cantidad * item.precio).toFixed(2),
-                });
-
-                // Descontar inventario
-                await tx.update(Productos)
-                  .set({ stock: sql`GREATEST(0, ${Productos.stock} - ${item.cantidad})` })
-                  .where(eq(Productos.id, item.id_producto));
-              }
-
-              return ventaId;
-            });
-
-            // Procesar reposición PUSH automática o alerta PULL para cada producto vendido
-            for (const item of itemsAProcesar) {
-              await procesarLogisticaStock({ id_producto: item.id_producto, id_usuario: sessionUserId });
-            }
-
-            return Astro.redirect(`/scm/ventas?detalle=${nuevaVentaId}&ok=1`);
-          }
+          return Astro.redirect(`/scm/ventas?detalle=${venta.id_venta}&ok=1`);
         }
       }
     }

@@ -2,42 +2,44 @@
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Usuarios, Roles, Interacciones } from '../../db/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
+import { roleFromName } from '../../lib/auth';
+import { hashPassword } from '../../lib/password';
+import { cerrarSesionesDeUsuario } from '../../lib/session';
 const { module } = Astro.params;
 if (module !== 'crm' && module !== 'scm') return Astro.redirect('/404');
 const activePath = `/${module}/usuarios`;
 
 
-const session = Astro.cookies.get('sportenis_session')?.value;
-if (!session) return Astro.redirect('/login');
+const sessionUser = Astro.locals.user;
+if (!sessionUser) return Astro.redirect('/login');
 
-const currentUser = await db.select().from(Usuarios).where(eq(Usuarios.id, Number(session)));
-if (currentUser.length === 0) {
+const isAdmin = sessionUser.role === 'administrador';
+if (!isAdmin) {
   return Astro.redirect(`/${module}`);
 }
-const loggedUser = currentUser[0];
-if (loggedUser.id_rol !== 1) {
-  return Astro.redirect(`/${module}`);
-}
+
+// Solo se administra al personal interno; los ids de rol salen de la tabla Roles
+const staffRoles = (await db.select().from(Roles)).filter((r) => {
+  const role = roleFromName(r.nombre);
+  return role !== undefined && role !== 'cliente';
+});
+const staffRoleIds = staffRoles.map((r) => r.id);
 
 if (Astro.request.method === 'POST') {
-  if (loggedUser.id_rol !== 1) {
-    return Astro.redirect(Astro.url.pathname);
-  }
-
   const formData = await Astro.request.formData();
   const action = formData.get('action');
 
   if (action === 'create') {
     const rol_id = Number(formData.get('rol_id'));
-    if (loggedUser.id_rol !== 1 && (rol_id === 1 || rol_id === 2)) {
+    if (!staffRoleIds.includes(rol_id)) {
       return Astro.redirect(Astro.url.pathname);
     }
     
     await db.insert(Usuarios).values({
       nombre: formData.get('nombre') as string,
       correo: formData.get('correo') as string,
-      password_hash: formData.get('password') as string,
+      password_hash: await hashPassword(formData.get('password') as string),
       id_rol: rol_id,
       estado: formData.get('estado') as string,
       fecha_creacion: new Date()
@@ -46,8 +48,7 @@ if (Astro.request.method === 'POST') {
     const id = Number(formData.get('id'));
     const rol_id = Number(formData.get('rol_id'));
     
-    // Si no es admin intentando modificar a un admin o a logistica, bloquear
-    if (loggedUser.id_rol !== 1 && (rol_id === 1 || rol_id === 2)) {
+    if (!staffRoleIds.includes(rol_id)) {
       return Astro.redirect(Astro.url.pathname);
     }
 
@@ -60,7 +61,8 @@ if (Astro.request.method === 'POST') {
     
     const password = formData.get('password') as string;
     if (password) {
-      updateData.password_hash = password;
+      updateData.password_hash = await hashPassword(password);
+      await cerrarSesionesDeUsuario(id);
     }
 
     await db.update(Usuarios)
@@ -68,10 +70,6 @@ if (Astro.request.method === 'POST') {
       .where(eq(Usuarios.id, id));
   } else if (action === 'delete') {
     const id = Number(formData.get('id'));
-    // Vendedores no pueden eliminar a otros usuarios, opcional
-    if (loggedUser.id_rol !== 1) {
-       return Astro.redirect(Astro.url.pathname);
-    }
     await db.delete(Interacciones).where(eq(Interacciones.id_usuario, id));
     await db.delete(Usuarios).where(eq(Usuarios.id, id));
   }
@@ -79,11 +77,7 @@ if (Astro.request.method === 'POST') {
   return Astro.redirect(Astro.url.pathname);
 }
 
-let roles = await db.select().from(Roles);
-roles = roles.filter(r => r.id === 1 || r.id === 2 || r.id === 3);
-if (loggedUser.id_rol !== 1) {
-  roles = roles.filter(r => r.id !== 1 && r.id !== 2);
-}
+const roles = staffRoles;
 
 const usuariosList = await db
   .select({
@@ -97,7 +91,7 @@ const usuariosList = await db
   })
   .from(Usuarios)
   .leftJoin(Roles, eq(Usuarios.id_rol, Roles.id))
-  .where(inArray(Usuarios.id_rol, [1, 2, 3]));
+  .where(staffRoleIds.length > 0 ? inArray(Usuarios.id_rol, staffRoleIds) : sql`false`);
 
 const q = Astro.url.searchParams.get('q');
 let usuariosFiltrados = usuariosList;
@@ -113,7 +107,7 @@ if (q) {
 <CrmLayout title="Usuarios" activePath={activePath}>
   <div class="header-actions">
     <h1 class="crm-title">Directorio de Equipo</h1>
-    {loggedUser.id_rol === 1 && (
+    {isAdmin && (
       <button class="btn-primary" onclick="document.getElementById('modalCreate').showModal()">+ Nuevo usuario</button>
     )}
   </div>
@@ -135,7 +129,7 @@ if (q) {
             <th>Rol</th>
             <th>Estado</th>
             <th>Fecha Creación</th>
-            {loggedUser.id_rol === 1 && <th class="text-right">Acciones</th>}
+            {isAdmin && <th class="text-right">Acciones</th>}
           </tr>
         </thead>
         <tbody>
@@ -150,7 +144,7 @@ if (q) {
                 </span>
               </td>
               <td>{usr.fecha.toLocaleDateString()}</td>
-              {loggedUser.id_rol === 1 && (
+              {isAdmin && (
               <td class="text-right" style="white-space: nowrap;">
                 <button 
                   class="action-btn" 

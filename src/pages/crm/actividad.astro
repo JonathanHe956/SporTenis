@@ -4,8 +4,7 @@ import { db } from '../../db/db';
 import { Interacciones, Clientes, TiposInteraccion } from '../../db/schema';
 import { eq, desc, and } from 'drizzle-orm';
 
-const session = Astro.cookies.get('sportenis_session');
-const usuarioActualId = session ? Number(session.value) : 0;
+const usuarioActualId = Astro.locals.user?.id ?? 0;
 
 let queryConditions = [eq(Interacciones.id_usuario, usuarioActualId)];
 

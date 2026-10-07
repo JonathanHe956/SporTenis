@@ -4,8 +4,7 @@ import { db } from '../../db/db';
 import { Interacciones, Clientes, TiposInteraccion, Usuarios, ActividadTienda } from '../../db/schema';
 import { eq, desc } from 'drizzle-orm';
 
-const session = Astro.cookies.get('sportenis_session');
-const currentUserId = session ? Number(session.value) : 0;
+const currentUserId = Astro.locals.user?.id ?? 0;
 
 // 1. Interacciones Directas CRM
 let interaccionesCrm: any[] = [];

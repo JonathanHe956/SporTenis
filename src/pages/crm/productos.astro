@@ -1,20 +1,17 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
-import { Usuarios, Modelos, Marcas, Categorias, Productos } from '../../db/schema';
+import { Modelos, Marcas, Categorias, Productos } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 
 const isScm = Astro.url.pathname.startsWith('/scm');
 if (!isScm) return Astro.redirect('/scm/productos');
 
-const session = Astro.cookies.get('sportenis_session')?.value;
-if (!session) return Astro.redirect('/login');
-
-const currentUser = await db.select().from(Usuarios).where(eq(Usuarios.id, Number(session)));
-if (currentUser.length === 0 || (currentUser[0].id_rol !== 1 && currentUser[0].id_rol !== 2)) {
+const sessionUser = Astro.locals.user;
+if (!sessionUser) return Astro.redirect('/login');
+if (sessionUser.role !== 'administrador' && sessionUser.role !== 'vendedor') {
   return Astro.redirect('/scm');
 }
-const loggedUser = currentUser[0];
 
 if (Astro.request.method === 'POST') {
   const formData = await Astro.request.formData();

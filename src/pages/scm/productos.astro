@@ -1,21 +1,15 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
-import { Usuarios, Modelos, Marcas, Categorias, Productos, Proveedores, Notificaciones, PedidosCompra } from '../../db/schema';
+import { Modelos, Marcas, Categorias, Productos, Proveedores, Notificaciones, PedidosCompra } from '../../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { procesarLogisticaStock } from '../../lib/stockLogistics';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const session = Astro.cookies.get('sportenis_session')?.value;
-if (!session) return Astro.redirect('/login');
-
-const currentUser = await db.select().from(Usuarios).where(eq(Usuarios.id, Number(session)));
-if (currentUser.length === 0 || currentUser[0].id_rol === 4) {
-  // If not admin, vendedor or logistica, they shouldn't be here
-  // Actually role 4 is logistica, which uses SCM. So logistica can view SCM.
-  // We'll let role 1 (admin) and role 4 (logistica) access.
-}
+// El middleware ya limita /scm a administrador y logística
+const sessionUser = Astro.locals.user;
+if (!sessionUser) return Astro.redirect('/login');
 
 if (Astro.request.method === 'POST') {
   const formData = await Astro.request.formData();
@@ -64,7 +58,7 @@ if (Astro.request.method === 'POST') {
     const newProductId = productoResult.insertId;
 
     // PUSH repone automáticamente; PULL genera una alerta para pedido manual.
-    await procesarLogisticaStock({ id_producto: newProductId, id_usuario: Number(session) });
+    await procesarLogisticaStock({ id_producto: newProductId, id_usuario: sessionUser.id });
     
     return Astro.redirect(Astro.url.pathname);
   } else if (action === 'update_producto') {
@@ -100,7 +94,7 @@ if (Astro.request.method === 'POST') {
       await db.update(Productos).set({ id_proveedor, stock, stock_minimo, estrategia_logistica, costo, precio_venta, color, theme_class }).where(eq(Productos.id, id));
 
       // PUSH repone automáticamente; PULL genera una alerta para pedido manual.
-      await procesarLogisticaStock({ id_producto: id, id_usuario: Number(session) });
+      await procesarLogisticaStock({ id_producto: id, id_usuario: sessionUser.id });
     }
     return Astro.redirect(Astro.url.pathname);
   } else if (action === 'create_marca') {
@@ -124,7 +118,7 @@ if (Astro.request.method === 'POST') {
 }
 
 // Procesar productos bajo mínimo: reabastecimiento PUSH automático o alerta PULL manual.
-await procesarLogisticaStock({ id_usuario: Number(session) });
+await procesarLogisticaStock({ id_usuario: sessionUser.id });
 
 const categoriasList = await db.select().from(Categorias);
 const proveedoresList = await db.select().from(Proveedores);

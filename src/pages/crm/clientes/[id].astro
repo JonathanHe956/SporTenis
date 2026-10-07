@@ -17,8 +17,8 @@ if (Astro.request.method === 'POST') {
   const action = formData.get('action');
 
   if (action === 'new_interaction') {
-    const sessionId = Astro.cookies.get('sportenis_session')?.value;
-    const userId = sessionId ? Number(sessionId) : null;
+    const userId = Astro.locals.user?.id;
+    if (!userId) return Astro.redirect('/login');
 
     await db.insert(Interacciones).values({
       id_cliente: clienteId,

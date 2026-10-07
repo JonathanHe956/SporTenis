@@ -4,11 +4,12 @@ import { db } from '../db/db';
 import { Usuarios, Clientes } from '../db/schema';
 import { eq } from 'drizzle-orm';
 
-const sessionId = Astro.cookies.get('sportenis_session')?.value;
+const sessionUser = Astro.locals.user;
 
-if (!sessionId) {
+if (!sessionUser) {
   return Astro.redirect('/login');
 }
+const sessionUserId = sessionUser.id;
 
 let showSuccess = false;
 
@@ -22,11 +23,11 @@ if (Astro.request.method === 'POST') {
 
   await db.update(Usuarios)
     .set({ nombre: fullName })
-    .where(eq(Usuarios.id, Number(sessionId)));
+    .where(eq(Usuarios.id, sessionUserId));
 
   await db.update(Clientes)
     .set({ telefono: formTelefono, nombre: fullName })
-    .where(eq(Clientes.id_usuario, Number(sessionId)));
+    .where(eq(Clientes.id_usuario, sessionUserId));
 
   showSuccess = true;
 }
@@ -38,14 +39,14 @@ let userData = {
   correo: ''
 };
 
-const user = await db.select().from(Usuarios).where(eq(Usuarios.id, Number(sessionId)));
+const user = await db.select().from(Usuarios).where(eq(Usuarios.id, sessionUserId));
 if (user.length > 0) {
   const nombresSplit = user[0].nombre.split(' ');
   userData.nombre = nombresSplit[0];
   userData.apellidos = nombresSplit.slice(1).join(' ') || '';
   userData.correo = user[0].correo;
   
-  const client = await db.select().from(Clientes).where(eq(Clientes.id_usuario, Number(sessionId)));
+  const client = await db.select().from(Clientes).where(eq(Clientes.id_usuario, sessionUserId));
   if (client.length > 0) {
     userData.telefono = client[0].telefono || '';
   }
@@ -720,9 +721,11 @@ if (user.length > 0) {
     }
   });
 
-  logoutBtn && logoutBtn.addEventListener('click', () => {
-    // En una app real esto llamaría al endpoint de logout o limpiaría cookies
-    document.cookie = "sportenis_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+  logoutBtn && logoutBtn.addEventListener('click', async () => {
+    // La cookie de sesión es httpOnly: solo el servidor puede cerrarla
+    const body = new FormData();
+    body.set('action', 'logout');
+    await fetch('/login', { method: 'POST', body }).catch(() => {});
     window.location.href = '/';
   });
 
@@ -771,7 +774,6 @@ if (user.length > 0) {
     try {
       const res = await fetch('/api/delete-account', { method: 'POST' });
       if (res.ok) {
-        document.cookie = "sportenis_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
         window.location.href = '/';
       } else {
         throw new Error('Error del servidor');
