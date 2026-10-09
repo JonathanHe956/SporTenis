@@ -22,9 +22,11 @@ Debes tener un servidor MySQL corriendo en tu computadora (puedes usar XAMPP, MA
 	mysql -u root -p sportenis_db < db/migrations/0001_scm_inventory.sql
 	mysql -u root -p sportenis_db < db/migrations/0002_pedidos_stock.sql
 	mysql -u root -p sportenis_db < db/migrations/0003_sesiones.sql
+	mysql -u root -p sportenis_db < db/migrations/0004_ordenes_erp.sql
 	```
 	La primera migración crea de forma idempotente las tablas de movimientos, auditorías y configuración SCM. La segunda agrega a `PedidosCompra` las columnas de stock que usa el código; ejecútala una sola vez.
 	La tercera crea la tabla `Sesiones`; sin ella no se puede iniciar sesión. Las contraseñas que ya existan en texto plano se convierten a hash la primera vez que cada usuario inicia sesión.
+	La cuarta agrega a `Ventas` las columnas `estado` y `fecha_entrega` para las órdenes del ERP (Etapa 3); las ventas existentes quedan como `Confirmada`. Ejecútala una sola vez.
 4. Para crear todas las tablas del esquema en una base nueva, ejecuta `npx drizzle-kit push` después de configurar `DATABASE_URL`.
 
 ## 3. Configurar tus variables de entorno (.env)

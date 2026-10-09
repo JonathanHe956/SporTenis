@@ -164,6 +164,9 @@ export const Ventas = mysqlTable('Ventas', {
   envio: decimal('envio', { precision: 10, scale: 2 }).notNull(),
   total: decimal('total', { precision: 10, scale: 2 }).notNull(),
   cupon_descuento: varchar('cupon_descuento', { length: 100 }),
+  // Etapa 3 (ERP): estado de la orden y fecha en que se entregó
+  estado: varchar('estado', { length: 50 }).default('Confirmada').notNull(),
+  fecha_entrega: datetime('fecha_entrega'),
 });
 
 export const DetalleVentas = mysqlTable('DetalleVentas', {
