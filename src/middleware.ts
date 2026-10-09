@@ -1,5 +1,5 @@
 import { defineMiddleware } from 'astro:middleware';
-import { canAccessCrm, canAccessScm, getAuthenticatedUser } from './lib/auth';
+import { canAccessCrm, canAccessErp, canAccessScm, getAuthenticatedUser } from './lib/auth';
 import { SESSION_COOKIE } from './lib/session';
 
 const startsWithSegment = (pathname: string, prefix: string): boolean =>
@@ -49,8 +49,11 @@ export const onRequest = defineMiddleware(async (context, next) => {
     if (isCrmRoute && !canAccessCrm(user.role)) {
       return context.redirect(canAccessScm(user.role) ? '/scm' : '/');
     }
-    if ((isScmRoute || isErpRoute) && !canAccessScm(user.role)) {
+    if (isScmRoute && !canAccessScm(user.role)) {
       return context.redirect(canAccessCrm(user.role) ? '/crm' : '/');
+    }
+    if (isErpRoute && !canAccessErp(user.role)) {
+      return context.redirect(canAccessCrm(user.role) ? '/crm' : canAccessScm(user.role) ? '/scm' : '/');
     }
   }
 

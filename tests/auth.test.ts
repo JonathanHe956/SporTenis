@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 // Las reglas probadas son puras: se evita abrir el pool de MySQL
 vi.mock('../src/db/db', () => ({ db: {} }));
 
-import { canAccessCrm, canAccessScm, homeForRole, roleFromName } from '../src/lib/auth';
+import { canAccessCrm, canAccessErp, canAccessScm, homeForRole, roleFromName } from '../src/lib/auth';
 
 describe('roleFromName', () => {
   it('reconoce los nombres de la tabla Roles sin importar mayúsculas ni acentos', () => {
@@ -40,5 +40,28 @@ describe('acceso por rol', () => {
     expect(homeForRole('vendedor')).toBe('/crm');
     expect(homeForRole('logistica')).toBe('/scm');
     expect(homeForRole('cliente')).toBe('/');
+  });
+
+  it('solo admin y logística acceden al ERP', () => {
+    expect(canAccessErp('administrador')).toBe(true);
+    expect(canAccessErp('logistica')).toBe(true);
+    expect(canAccessErp('vendedor')).toBe(false);
+    expect(canAccessErp('cliente')).toBe(false);
+  });
+
+  it('la matriz completa de acceso es consistente', () => {
+    //                        CRM     SCM     ERP
+    const expected: Record<string, [boolean, boolean, boolean]> = {
+      administrador:         [true,  true,  true],
+      vendedor:              [true,  false, false],
+      logistica:             [false, true,  true],
+      cliente:               [false, false, false],
+    };
+
+    for (const [role, [crm, scm, erp]] of Object.entries(expected)) {
+      expect(canAccessCrm(role as any)).toBe(crm);
+      expect(canAccessScm(role as any)).toBe(scm);
+      expect(canAccessErp(role as any)).toBe(erp);
+    }
   });
 });

@@ -47,6 +47,9 @@ export const canAccessCrm = (role: UserRole | null | undefined): boolean =>
 export const canAccessScm = (role: UserRole | null | undefined): boolean =>
   role === 'administrador' || role === 'logistica';
 
+export const canAccessErp = (role: UserRole | null | undefined): boolean =>
+  role === 'administrador' || role === 'logistica';
+
 export const isUsuarioActivo = (estado: string): boolean => estado.toLowerCase() !== 'inactivo';
 
 export const homeForRole = (role: UserRole | undefined): string =>

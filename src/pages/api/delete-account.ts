@@ -20,6 +20,15 @@ export const POST: APIRoute = async ({ cookies, locals }) => {
     });
   }
 
+  // Solo los clientes pueden eliminar su propia cuenta;
+  // el personal interno debe ser desactivado por un administrador.
+  if (locals.user.role !== 'cliente') {
+    return new Response(
+      JSON.stringify({ error: 'El personal interno no puede eliminar su cuenta desde aquí.' }),
+      { status: 403, headers: { 'Content-Type': 'application/json' } },
+    );
+  }
+
   const userId = locals.user.id;
 
   try {

@@ -2,7 +2,7 @@
 import { db } from "../db/db";
 import { Notificaciones } from "../db/schema";
 import { eq, desc } from "drizzle-orm";
-import { canAccessCrm, canAccessScm, userRoles } from "../lib/auth";
+import { canAccessCrm, canAccessScm } from "../lib/auth";
 
 interface Props {
   title: string;
@@ -15,8 +15,8 @@ const currentModule = activePath.startsWith("/scm") || activePath.startsWith("/e
 const sessionUser = Astro.locals.user;
 let userName = "Admin";
 let userInitial = "A";
-let userRolId = 0;
 let roleStr = "";
+let isAdmin = false;
 
 if (sessionUser) {
   userName = sessionUser.nombre?.trim() || "Admin";
@@ -28,7 +28,7 @@ if (sessionUser) {
     .slice(0, 2);
   userInitial = initials || "A";
   roleStr = sessionUser.role;
-  userRolId = userRoles.indexOf(sessionUser.role) + 1;
+  isAdmin = sessionUser.role === 'administrador';
 }
 
 // Redirect if accessing a module they don't have permission for
@@ -156,7 +156,7 @@ let menuScm = [
   },
 ];
 
-if (userRolId !== 1) {
+if (!isAdmin) {
   menuCrm = menuCrm.filter((item) => item.path !== "/crm/configuracion" && item.path !== "/crm/usuarios");
   menuScm = menuScm.filter((item) => item.path !== "/scm/configuracion" && item.path !== "/scm/usuarios");
 }
@@ -166,7 +166,7 @@ const moduleTitle =
   currentModule === "scm"
     ? "SCM - Cadena de Suministros"
     : "CRM - Administración";
-const showModuleSwitcher = userRolId === 1; // Solo admin ve ambas
+const showModuleSwitcher = canAccessCrm(roleStr as any) && canAccessScm(roleStr as any);
 ---
 
 <!doctype html>
