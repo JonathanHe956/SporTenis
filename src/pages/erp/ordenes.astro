@@ -1,0 +1,296 @@
+---
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db } from '../../db/db';
+import { Clientes, DetalleVentas, MetodosPago, Productos, Usuarios, Ventas } from '../../db/schema';
+
+const estadosOrden = ['Procesando', 'Confirmada', 'Entregada', 'Cancelada'] as const;
+type EstadoOrden = (typeof estadosOrden)[number];
+const isEstadoOrden = (value: string): value is EstadoOrden =>
+  estadosOrden.includes(value as EstadoOrden);
+
+class OrdenError extends Error {}
+
+let errorMsg = '';
+const successMsg = Astro.url.searchParams.get('actualizada') === '1'
+  ? 'El estado de la orden se actualizó correctamente.'
+  : '';
+
+if (Astro.request.method === 'POST') {
+  try {
+    const form = await Astro.request.formData();
+    const idOrden = Number(form.get('id_orden'));
+    const nextStatusValue = form.get('estado')?.toString() ?? '';
+
+    if (!Number.isSafeInteger(idOrden) || idOrden <= 0 || !isEstadoOrden(nextStatusValue)) {
+      throw new OrdenError('La orden o el estado seleccionado no son válidos.');
+    }
+
+    await db.transaction(async (tx) => {
+      const [orden] = await tx
+        .select({ estado: Ventas.estado })
+        .from(Ventas)
+        .where(eq(Ventas.id, idOrden));
+
+      if (!orden) throw new OrdenError('No se encontró la orden solicitada.');
+      if (!isEstadoOrden(orden.estado)) throw new OrdenError('La orden tiene un estado no reconocido.');
+
+      const currentStatus = orden.estado;
+      const canConfirm = currentStatus === 'Procesando' && nextStatusValue === 'Confirmada';
+      const canDeliver = currentStatus === 'Confirmada' && nextStatusValue === 'Entregada';
+      const canCancel = (currentStatus === 'Procesando' || currentStatus === 'Confirmada')
+        && nextStatusValue === 'Cancelada';
+
+      if (!canConfirm && !canDeliver && !canCancel) {
+        throw new OrdenError('La transición de estado solicitada no está permitida.');
+      }
+
+      const [updated] = await tx
+        .update(Ventas)
+        .set({
+          estado: nextStatusValue,
+          fecha_entrega: canDeliver ? new Date() : null,
+        })
+        .where(and(eq(Ventas.id, idOrden), eq(Ventas.estado, currentStatus)));
+
+      if (updated.affectedRows !== 1) {
+        throw new OrdenError('La orden cambió mientras se procesaba. Actualiza la página e inténtalo de nuevo.');
+      }
+
+      if (canConfirm || (canCancel && currentStatus === 'Confirmada')) {
+        const lineas = await tx
+          .select({ id_producto: DetalleVentas.id_producto, cantidad: DetalleVentas.cantidad })
+          .from(DetalleVentas)
+          .where(eq(DetalleVentas.id_venta, idOrden));
+
+        if (canConfirm && lineas.length === 0) {
+          throw new OrdenError('No se puede confirmar una orden sin productos.');
+        }
+
+        for (const linea of lineas) {
+          const [stockChange] = await tx
+            .update(Productos)
+            .set({
+              stock: canConfirm
+                ? sql`${Productos.stock} - ${linea.cantidad}`
+                : sql`${Productos.stock} + ${linea.cantidad}`,
+            })
+            .where(canConfirm
+              ? and(eq(Productos.id, linea.id_producto), gte(Productos.stock, linea.cantidad))
+              : eq(Productos.id, linea.id_producto));
+
+          if (stockChange.affectedRows !== 1) {
+            throw new OrdenError(canConfirm
+              ? `Stock insuficiente para uno de los productos de la orden #${idOrden}.`
+              : `No se pudo devolver al inventario un producto de la orden #${idOrden}.`);
+          }
+        }
+      }
+    });
+
+    const params = new URLSearchParams();
+    const q = Astro.url.searchParams.get('q');
+    const status = Astro.url.searchParams.get('estado');
+    if (q) params.set('q', q);
+    if (status && isEstadoOrden(status)) params.set('estado', status);
+    params.set('actualizada', '1');
+    return Astro.redirect(`/erp/ordenes?${params.toString()}`, 303);
+  } catch (error: unknown) {
+    if (error instanceof OrdenError) {
+      errorMsg = error.message;
+    } else {
+      console.error('Error al actualizar el estado de la orden:', error);
+      errorMsg = 'No se pudo actualizar la orden. Inténtalo de nuevo.';
+    }
+  }
+}
+
+const qParam = Astro.url.searchParams.get('q')?.trim() ?? '';
+const estadoParam = Astro.url.searchParams.get('estado') ?? '';
+const ventas = await db
+  .select({
+    id: Ventas.id,
+    fecha_venta: Ventas.fecha_venta,
+    fecha_entrega: Ventas.fecha_entrega,
+    estado: Ventas.estado,
+    total: Ventas.total,
+    cliente: Clientes.nombre,
+    correo: Clientes.correo,
+    empresa: Clientes.empresa,
+    vendedor: Usuarios.nombre,
+    metodoPago: MetodosPago.nombre,
+  })
+  .from(Ventas)
+  .leftJoin(Clientes, eq(Ventas.id_cliente, Clientes.id))
+  .leftJoin(Usuarios, eq(Ventas.id_usuario, Usuarios.id))
+  .leftJoin(MetodosPago, eq(Ventas.id_metodo_pago, MetodosPago.id))
+  .orderBy(desc(Ventas.fecha_venta));
+
+const ordenesFiltradas = ventas.filter((venta) => {
+  const matchesSearch = !qParam || [
+    String(venta.id),
+    venta.cliente ?? '',
+    venta.correo ?? '',
+    venta.empresa ?? '',
+    venta.vendedor ?? '',
+  ].some((value) => value.toLowerCase().includes(qParam.toLowerCase()));
+  return matchesSearch && (!estadoParam || venta.estado === estadoParam);
+});
+
+const totalOrdenes = ventas.length;
+const countEstado = (estado: EstadoOrden) => ventas.filter((venta) => venta.estado === estado).length;
+const fmt = (value: number | string | null) =>
+  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(value) || 0);
+const fmtDate = (date: Date | null) =>
+  date ? new Date(date).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+---
+
+<CrmLayout title="Órdenes ERP" activePath="/erp/ordenes">
+  <main class="orders-page">
+    <header class="page-heading">
+      <div>
+        <h1>Órdenes ERP</h1>
+        <p>Seguimiento de pedidos, confirmaciones y entregas.</p>
+      </div>
+      <a class="sales-link" href="/scm/ventas">Ir al historial de ventas</a>
+    </header>
+
+    {successMsg && <p class="alert success" role="status">{successMsg}</p>}
+    {errorMsg && <p class="alert error" role="alert">{errorMsg}</p>}
+
+    <section class="stats" aria-label="Resumen de órdenes">
+      <article><strong>{totalOrdenes}</strong><span>Total de órdenes</span></article>
+      <article><strong>{countEstado('Procesando')}</strong><span>Procesando</span></article>
+      <article><strong>{countEstado('Confirmada')}</strong><span>Confirmadas</span></article>
+      <article><strong>{countEstado('Entregada')}</strong><span>Entregadas</span></article>
+    </section>
+
+    <section class="orders-card">
+      <form method="GET" action="/erp/ordenes" class="filters">
+        <label class="visually-hidden" for="search-orders">Buscar órdenes</label>
+        <input id="search-orders" type="search" name="q" value={qParam} placeholder="Buscar por folio, cliente o correo" />
+        <label class="visually-hidden" for="filter-status">Filtrar por estado</label>
+        <select id="filter-status" name="estado">
+          <option value="">Todos los estados</option>
+          {estadosOrden.map((estado) => <option value={estado} selected={estadoParam === estado}>{estado}</option>)}
+        </select>
+        <button type="submit">Filtrar</button>
+        {(qParam || estadoParam) && <a href="/erp/ordenes">Limpiar</a>}
+      </form>
+
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Orden</th>
+              <th>Fecha</th>
+              <th>Cliente</th>
+              <th>Pago</th>
+              <th>Estado</th>
+              <th class="numeric">Total</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ordenesFiltradas.map((orden) => (
+              <tr>
+                <td><strong>#{String(orden.id).padStart(5, '0')}</strong></td>
+                <td>{fmtDate(orden.fecha_venta)}</td>
+                <td>
+                  <strong>{orden.cliente || 'Cliente general'}</strong>
+                  <small>{orden.correo || orden.empresa || '—'}</small>
+                </td>
+                <td>{orden.metodoPago || '—'}</td>
+                <td><span class={`status status-${orden.estado.toLowerCase()}`}>{orden.estado}</span>
+                  {orden.fecha_entrega && <small>Entregada: {fmtDate(orden.fecha_entrega)}</small>}
+                </td>
+                <td class="numeric">{fmt(orden.total)}</td>
+                <td>
+                  <div class="row-actions">
+                    <a href={`/scm/ventas?detalle=${orden.id}`}>Detalle</a>
+                    {orden.estado === 'Procesando' && (
+                      <>
+                        <form method="POST">
+                          <input type="hidden" name="id_orden" value={orden.id} />
+                          <input type="hidden" name="estado" value="Confirmada" />
+                          <button type="submit">Confirmar</button>
+                        </form>
+                        <form method="POST">
+                          <input type="hidden" name="id_orden" value={orden.id} />
+                          <input type="hidden" name="estado" value="Cancelada" />
+                          <button class="cancel" type="submit">Cancelar</button>
+                        </form>
+                      </>
+                    )}
+                    {orden.estado === 'Confirmada' && (
+                      <>
+                        <form method="POST">
+                          <input type="hidden" name="id_orden" value={orden.id} />
+                          <input type="hidden" name="estado" value="Entregada" />
+                          <button type="submit">Marcar entregada</button>
+                        </form>
+                        <form method="POST">
+                          <input type="hidden" name="id_orden" value={orden.id} />
+                          <input type="hidden" name="estado" value="Cancelada" />
+                          <button class="cancel" type="submit">Cancelar</button>
+                        </form>
+                      </>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {ordenesFiltradas.length === 0 && (
+              <tr><td class="empty" colspan="7">No hay órdenes que coincidan con los filtros.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <footer>Mostrando {ordenesFiltradas.length} de {totalOrdenes} órdenes</footer>
+    </section>
+  </main>
+
+  <style>
+    .orders-page { display: grid; gap: 20px; color: var(--color-text); }
+    .page-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+    h1 { margin: 0 0 5px; font: 400 28px Georgia, serif; }
+    .page-heading p { margin: 0; color: var(--color-text-muted); font-size: 13px; }
+    .sales-link, .filters a, .row-actions a { color: var(--color-text); font-size: 13px; font-weight: 650; }
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+    .stats article, .orders-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px; }
+    .stats article { display: grid; gap: 5px; padding: 18px; }
+    .stats strong { font-size: 24px; }
+    .stats span, small { color: var(--color-text-muted); font-size: 12px; }
+    .orders-card { padding: 20px; }
+    .filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+    .filters input, .filters select, .filters button { min-height: 38px; border: 1px solid var(--color-border); border-radius: 5px; padding: 7px 10px; font: inherit; }
+    .filters input { flex: 1; min-width: 220px; }
+    .filters button, .row-actions button { cursor: pointer; background: var(--color-text); color: var(--color-surface); border: 1px solid var(--color-text); border-radius: 5px; padding: 7px 10px; font: inherit; font-size: 12px; font-weight: 650; }
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 12px 10px; border-bottom: 1px solid var(--color-border); text-align: left; vertical-align: middle; }
+    th { color: var(--color-text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+    td small { display: block; margin-top: 4px; }
+    .numeric { text-align: right; white-space: nowrap; }
+    .status { display: inline-block; padding: 4px 8px; border-radius: 20px; background: #e5e7eb; color: #374151; font-size: 11px; font-weight: 700; }
+    .status-procesando { background: #fef3c7; color: #92400e; }
+    .status-confirmada { background: #dbeafe; color: #1e40af; }
+    .status-entregada { background: #dcfce7; color: #166534; }
+    .status-cancelada { background: #fee2e2; color: #991b1b; }
+    .row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 170px; }
+    .row-actions form { margin: 0; }
+    .row-actions button { padding: 5px 8px; }
+    .row-actions button.cancel { color: #991b1b; border-color: #fecaca; background: transparent; }
+    .empty { padding: 32px; text-align: center; color: var(--color-text-muted); }
+    .orders-card footer { padding-top: 14px; color: var(--color-text-muted); font-size: 12px; }
+    .alert { margin: 0; border-radius: 6px; padding: 12px 14px; font-size: 13px; }
+    .success { background: #dcfce7; color: #166534; }
+    .error { background: #fee2e2; color: #991b1b; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    @media (max-width: 760px) {
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .page-heading { align-items: flex-start; flex-direction: column; }
+      .orders-card { padding: 14px; }
+    }
+  </style>
+</CrmLayout>

@@ -20,6 +20,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   // Rutas que requieren autenticación
   const isCrmRoute = startsWithSegment(pathname, '/crm');
   const isScmRoute = startsWithSegment(pathname, '/scm');
+  const isErpRoute = startsWithSegment(pathname, '/erp');
   const isAccountRoute = startsWithSegment(pathname, '/cuenta');
   const isStaffApiRoute = staffApiRoutes.some((route) => startsWithSegment(pathname, route));
 
@@ -43,12 +44,12 @@ export const onRequest = defineMiddleware(async (context, next) => {
     if (!canAccessCrm(user.role) && !canAccessScm(user.role)) return jsonError(403, 'Sin permisos');
   }
 
-  if (isCrmRoute || isScmRoute || isAccountRoute) {
+  if (isCrmRoute || isScmRoute || isErpRoute || isAccountRoute) {
     if (!user) return context.redirect('/login');
     if (isCrmRoute && !canAccessCrm(user.role)) {
       return context.redirect(canAccessScm(user.role) ? '/scm' : '/');
     }
-    if (isScmRoute && !canAccessScm(user.role)) {
+    if ((isScmRoute || isErpRoute) && !canAccessScm(user.role)) {
       return context.redirect(canAccessCrm(user.role) ? '/crm' : '/');
     }
   }
