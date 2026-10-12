@@ -1,7 +1,7 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
-import { Productos, Modelos, Proveedores, Marcas, Categorias, PedidosCompra, MovimientosInventario } from '../../db/schema';
+import { Productos, Modelos, Proveedores, Marcas, Categorias, PedidosCompra, MovimientosInventario, Ventas } from '../../db/schema';
 import { eq, desc, or, and, isNull } from 'drizzle-orm';
 
 const sessionUser = Astro.locals.user;
@@ -147,7 +147,24 @@ const productosList = await db
   .leftJoin(Proveedores, eq(Productos.id_proveedor, Proveedores.id));
 
 const pedidosRaw = await db.select().from(PedidosCompra).orderBy(desc(PedidosCompra.fecha_creacion));
-const movimientosRaw = await db.select().from(MovimientosInventario).orderBy(desc(MovimientosInventario.fecha));
+const movimientosBase = await db
+  .select()
+  .from(MovimientosInventario)
+  .orderBy(desc(MovimientosInventario.fecha), desc(MovimientosInventario.id));
+
+// La baja de una venta cancelada se marca como anulada: su stock ya regresó al inventario.
+// El movimiento se liga a la venta por el folio que lleva en el motivo ("Venta #12").
+const ventasCanceladas = new Set(
+  (await db.select({ id: Ventas.id }).from(Ventas).where(eq(Ventas.estado, 'Cancelada'))).map(v => v.id)
+);
+const movimientosRaw = movimientosBase.map(m => {
+  const folioVenta = m.tipo === 'Salida' ? m.motivo.match(/^Venta #(\d+)$/) : null;
+  return {
+    ...m,
+    ventaCancelada: folioVenta ? ventasCanceladas.has(Number(folioVenta[1])) : false,
+    esDevolucion: m.tipo === 'Entrada' && /^Cancelación de venta #\d+$/.test(m.motivo),
+  };
+});
 const proveedoresList = await db.select().from(Proveedores);
 
 const productosAgrupados = productosList.map(prod => {
@@ -496,7 +513,9 @@ if (q) {
             </div>
             <div>
               <div style="font-size: 14px; font-weight: 600; color: #1e293b;">
-                ${isEntrada ? 'ALTA' : 'BAJA'} de ${m.cantidad} uds
+                <span style="${m.ventaCancelada ? 'text-decoration: line-through; color: #94a3b8;' : ''}">${isEntrada ? 'ALTA' : 'BAJA'} de ${m.cantidad} uds</span>
+                ${m.ventaCancelada ? '<span class="badge badge-danger" style="margin-left: 6px;">Venta cancelada · stock devuelto</span>' : ''}
+                ${m.esDevolucion ? '<span class="badge badge-success" style="margin-left: 6px;">Devolución al stock</span>' : ''}
               </div>
               <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
                 ${m.motivo}

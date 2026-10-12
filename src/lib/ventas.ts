@@ -1,6 +1,6 @@
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { db } from '../db/db';
-import { Clientes, DetalleVentas, MetodosPago, Productos, Ventas } from '../db/schema';
+import { Clientes, DetalleVentas, MetodosPago, MovimientosInventario, Productos, Ventas } from '../db/schema';
 import { procesarLogisticaStock } from './stockLogistics';
 
 // Regla de envío de la tienda: gratis a partir de ENVIO_GRATIS_DESDE
@@ -86,7 +86,8 @@ export interface NuevaVenta {
 }
 
 /**
- * Registra la venta, sus detalles y el descuento de stock en una sola transacción.
+ * Registra la venta, sus detalles, el descuento de stock y la salida de inventario
+ * en una sola transacción.
  * El stock se descuenta con `WHERE stock >= cantidad`, así dos ventas simultáneas
  * no pueden vender la misma unidad ni dejar el inventario en negativo.
  */
@@ -157,6 +158,18 @@ export async function registrarVenta(venta: NuevaVenta): Promise<TotalesVenta & 
         cantidad: linea.cantidad,
         precio_unitario: linea.precio.toFixed(2),
         subtotal: calcularSubtotal([linea]).toFixed(2),
+      })),
+    );
+
+    // La salida queda en el historial de altas y bajas de /scm/pedidos
+    await tx.insert(MovimientosInventario).values(
+      lineas.map((linea) => ({
+        id_producto: linea.id_producto,
+        tipo: 'Salida',
+        cantidad: linea.cantidad,
+        motivo: `Venta #${id_venta}`,
+        fecha: new Date(),
+        id_usuario: venta.id_usuario,
       })),
     );
 

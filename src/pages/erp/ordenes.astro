@@ -2,7 +2,7 @@
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
-import { Clientes, DetalleVentas, MetodosPago, Productos, Usuarios, Ventas } from '../../db/schema';
+import { Clientes, DetalleVentas, MetodosPago, MovimientosInventario, Productos, Usuarios, Ventas } from '../../db/schema';
 
 const estadosOrden = ['Procesando', 'Confirmada', 'Entregada', 'Cancelada'] as const;
 type EstadoOrden = (typeof estadosOrden)[number];
@@ -84,6 +84,19 @@ if (Astro.request.method === 'POST') {
               ? `Stock insuficiente para uno de los productos de la orden #${idOrden}.`
               : `No se pudo devolver al inventario un producto de la orden #${idOrden}.`);
           }
+        }
+
+        if (lineas.length > 0) {
+          await tx.insert(MovimientosInventario).values(
+            lineas.map((linea) => ({
+              id_producto: linea.id_producto,
+              tipo: canConfirm ? 'Salida' : 'Entrada',
+              cantidad: linea.cantidad,
+              motivo: canConfirm ? `Venta #${idOrden}` : `Cancelación de venta #${idOrden}`,
+              fecha: new Date(),
+              id_usuario: Astro.locals.user?.id ?? null,
+            })),
+          );
         }
       }
     });

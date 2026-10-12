@@ -108,6 +108,7 @@ const ventasList = await db
   .select({
     id: Ventas.id,
     fecha_venta: Ventas.fecha_venta,
+    estado: Ventas.estado,
     subtotal: Ventas.subtotal,
     envio: Ventas.envio,
     total: Ventas.total,
@@ -160,13 +161,16 @@ if (metodoPagoParam) {
 }
 
 // Estadísticas
-const totalVentas   = ventasList.length;
-const totalIngresos = ventasList.reduce((s, v) => s + Number(v.total), 0);
+// Las ventas canceladas se siguen listando, pero no cuentan como venta ni como ingreso
+const ventasVigentes  = ventasList.filter(v => v.estado !== 'Cancelada');
+const totalCanceladas = ventasList.length - ventasVigentes.length;
+const totalVentas   = ventasVigentes.length;
+const totalIngresos = ventasVigentes.reduce((s, v) => s + Number(v.total), 0);
 const promedioVenta = totalVentas > 0 ? (totalIngresos / totalVentas) : 0;
 
 const now = new Date();
 const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-const ingresosMes = ventasList
+const ingresosMes = ventasVigentes
   .filter(v => v.fecha_venta && new Date(v.fecha_venta) >= startOfMonth)
   .reduce((s, v) => s + Number(v.total), 0);
 
@@ -460,6 +464,27 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
       font-size: 11px;
       font-weight: 700;
       color: #334155;
+    }
+
+    .estado-pill {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 20px;
+      background: #e5e7eb;
+      color: #374151;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .estado-procesando { background: #fef3c7; color: #92400e; }
+    .estado-confirmada { background: #dbeafe; color: #1e40af; }
+    .estado-entregada  { background: #dcfce7; color: #166534; }
+    .estado-cancelada  { background: #fee2e2; color: #991b1b; }
+
+    .row-cancelada .amount-display,
+    .amount-cancelada {
+      text-decoration: line-through;
+      color: var(--color-text-muted);
     }
 
     .seller-text {
@@ -850,6 +875,7 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
       <div class="kpi-box">
         <div class="kpi-val">{totalVentas}</div>
         <div class="kpi-title">Total de Ventas</div>
+        {totalCanceladas > 0 && <div class="shipping-hint">{totalCanceladas} cancelada{totalCanceladas === 1 ? '' : 's'}</div>}
       </div>
       <div class="kpi-box">
         <div class="kpi-val val-success">{fmt(totalIngresos)}</div>
@@ -911,6 +937,7 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
               <th>Fecha y Hora</th>
               <th>Cliente</th>
               <th>Método de Pago</th>
+              <th>Estado</th>
               <th>Atendido por</th>
               <th class="col-right">Total</th>
               <th class="col-center">Acciones</th>
@@ -918,7 +945,7 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
           </thead>
           <tbody>
             {ventasFiltradas.map(v => (
-              <tr>
+              <tr class={v.estado === 'Cancelada' ? 'row-cancelada' : undefined}>
                 <td>
                   <span class="tag-folio">#{String(v.id).padStart(5, '0')}</span>
                 </td>
@@ -932,6 +959,9 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
                 </td>
                 <td>
                   <span class="method-pill">{v.metodo_pago || 'General'}</span>
+                </td>
+                <td>
+                  <span class={`estado-pill estado-${v.estado.toLowerCase()}`}>{v.estado}</span>
                 </td>
                 <td>
                   <span class="seller-text">{v.vendedor || 'Sistema / Online'}</span>
@@ -953,7 +983,7 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
 
             {ventasFiltradas.length === 0 && (
               <tr>
-                <td colspan="7" class="empty-state-cell">
+                <td colspan="8" class="empty-state-cell">
                   <p>No se encontraron ventas registradas con los filtros actuales.</p>
                   <button
                     type="button"
@@ -1078,7 +1108,11 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
           <div class="modal-head">
             <div>
               <h2>Detalle de Venta #{String(detalleVenta.id).padStart(5, '0')}</h2>
-              <p>Fecha: {fmtDate(detalleVenta.fecha_venta)} a las {fmtTime(detalleVenta.fecha_venta)}</p>
+              <p>
+                Fecha: {fmtDate(detalleVenta.fecha_venta)} a las {fmtTime(detalleVenta.fecha_venta)}
+                {' · '}
+                <span class={`estado-pill estado-${detalleVenta.estado.toLowerCase()}`}>{detalleVenta.estado}</span>
+              </p>
             </div>
             <a href={backHref} class="btn-dismiss-modal">×</a>
           </div>
@@ -1146,8 +1180,8 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
               <span>{fmt(detalleVenta.envio)}</span>
             </div>
             <div class="totals-row final-total-row">
-              <span>Total pagado:</span>
-              <strong class="val-success" style="font-size: 18px;">{fmt(detalleVenta.total)}</strong>
+              <span>{detalleVenta.estado === 'Cancelada' ? 'Total cancelado:' : 'Total pagado:'}</span>
+              <strong class={detalleVenta.estado === 'Cancelada' ? 'amount-cancelada' : 'val-success'} style="font-size: 18px;">{fmt(detalleVenta.total)}</strong>
             </div>
           </div>
 
