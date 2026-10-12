@@ -1,6 +1,6 @@
 import { db } from '../src/db/db.js';
 import { hashPassword } from '../src/lib/password.js';
-import { Categorias, Marcas, Modelos, Productos, Roles, Usuarios, EtapasCrm, Clientes, TiposInteraccion, Interacciones } from '../src/db/schema.js';
+import { Categorias, Marcas, Modelos, Productos, Roles, Usuarios, EtapasCrm, Clientes, TiposInteraccion, Interacciones, MetodosPago } from '../src/db/schema.js';
 
 async function main() {
   console.log('Iniciando seed...');
@@ -44,7 +44,14 @@ async function main() {
   await db.insert(Roles).values([
     { id: 1, nombre: 'Admin' },
     { id: 2, nombre: 'Vendedor' },
-    { id: 3, nombre: 'Cliente' }
+    { id: 3, nombre: 'Cliente' },
+    { id: 4, nombre: 'Logistica' }
+  ]);
+
+  await db.insert(MetodosPago).values([
+    { id: 1, nombre: 'Efectivo' },
+    { id: 2, nombre: 'Tarjeta' },
+    { id: 3, nombre: 'Transferencia' }
   ]);
 
   await db.insert(EtapasCrm).values([
@@ -65,7 +72,8 @@ async function main() {
 
   await db.insert(Usuarios).values([
     { id: 1, id_rol: 1, nombre: 'Admin', correo: 'admin@sportenis.com', password_hash: passwordDemo, estado: 'activo', fecha_creacion: fechaHoy },
-    { id: 2, id_rol: 2, nombre: 'Vendedor 1', correo: 'ventas1@sportenis.com', password_hash: passwordDemo, estado: 'activo', fecha_creacion: fechaHoy }
+    { id: 2, id_rol: 2, nombre: 'Vendedor 1', correo: 'ventas1@sportenis.com', password_hash: passwordDemo, estado: 'activo', fecha_creacion: fechaHoy },
+    { id: 3, id_rol: 4, nombre: 'Logistica 1', correo: 'logistica1@sportenis.com', password_hash: passwordDemo, estado: 'activo', fecha_creacion: fechaHoy }
   ]);
 
   await db.insert(Clientes).values([
