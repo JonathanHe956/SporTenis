@@ -3,6 +3,7 @@ import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Clientes, DetalleVentas, MetodosPago, MovimientosInventario, Productos, Usuarios, Ventas } from '../../db/schema';
+import { procesarLogisticaStock } from '../../lib/stockLogistics';
 
 const estadosOrden = ['Procesando', 'Confirmada', 'Entregada', 'Cancelada'] as const;
 type EstadoOrden = (typeof estadosOrden)[number];
@@ -26,11 +27,13 @@ if (Astro.request.method === 'POST') {
       throw new OrdenError('La orden o el estado seleccionado no son válidos.');
     }
 
-    await db.transaction(async (tx) => {
+    const productosConfirmados = await db.transaction(async (tx) => {
+      // Se bloquea la orden para no confirmarla mientras alguien la modifica
       const [orden] = await tx
         .select({ estado: Ventas.estado })
         .from(Ventas)
-        .where(eq(Ventas.id, idOrden));
+        .where(eq(Ventas.id, idOrden))
+        .for('update');
 
       if (!orden) throw new OrdenError('No se encontró la orden solicitada.');
       if (!isEstadoOrden(orden.estado)) throw new OrdenError('La orden tiene un estado no reconocido.');
@@ -81,7 +84,7 @@ if (Astro.request.method === 'POST') {
 
           if (stockChange.affectedRows !== 1) {
             throw new OrdenError(canConfirm
-              ? `Stock insuficiente para uno de los productos de la orden #${idOrden}.`
+              ? `Stock insuficiente para uno de los productos de la orden #${idOrden}. Modifica la orden o repón el inventario antes de confirmarla.`
               : `No se pudo devolver al inventario un producto de la orden #${idOrden}.`);
           }
         }
@@ -98,8 +101,17 @@ if (Astro.request.method === 'POST') {
             })),
           );
         }
+
+        if (canConfirm) return lineas.map((linea) => linea.id_producto);
       }
+
+      return [];
     });
+
+    // Reposición PUSH automática o alerta PULL para los productos que salieron del inventario
+    for (const id_producto of new Set(productosConfirmados)) {
+      await procesarLogisticaStock({ id_producto, id_usuario: Astro.locals.user?.id });
+    }
 
     const params = new URLSearchParams();
     const q = Astro.url.searchParams.get('q');
@@ -223,6 +235,7 @@ const fmtDate = (date: Date | null) =>
                     <a href={`/scm/ventas?detalle=${orden.id}`}>Detalle</a>
                     {orden.estado === 'Procesando' && (
                       <>
+                        <a href={`/scm/ventas?detalle=${orden.id}&editar=1`}>Modificar</a>
                         <form method="POST">
                           <input type="hidden" name="id_orden" value={orden.id} />
                           <input type="hidden" name="estado" value="Confirmada" />

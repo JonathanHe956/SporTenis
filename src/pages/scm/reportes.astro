@@ -1,8 +1,9 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
-import { DetalleVentas, Modelos, Productos } from '../../db/schema';
-import { eq } from 'drizzle-orm';
+import { DetalleVentas, Modelos, Productos, Ventas } from '../../db/schema';
+import { eq, inArray } from 'drizzle-orm';
+import { ESTADOS_VENTA_EFECTIVA } from '../../lib/ventas';
 
 const productos = await db
   .select({
@@ -17,7 +18,10 @@ const productos = await db
 
 const ventas = await db
   .select({ idProducto: DetalleVentas.id_producto, cantidad: DetalleVentas.cantidad })
-  .from(DetalleVentas);
+  .from(DetalleVentas)
+  .innerJoin(Ventas, eq(DetalleVentas.id_venta, Ventas.id))
+  // Las órdenes en Procesando o canceladas no cuentan como unidades vendidas
+  .where(inArray(Ventas.estado, ESTADOS_VENTA_EFECTIVA));
 
 const ventasPorProducto = new Map<number, number>();
 for (const venta of ventas) {

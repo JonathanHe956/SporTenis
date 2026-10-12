@@ -6,7 +6,7 @@ import {
   MetodosPago, Productos, Modelos, Marcas,
 } from '../../db/schema';
 import { eq, desc } from 'drizzle-orm';
-import { registrarVenta } from '../../lib/ventas';
+import { ESTADOS_VENTA_EFECTIVA, actualizarOrden, registrarVenta } from '../../lib/ventas';
 
 const sessionUser = Astro.locals.user;
 if (!sessionUser) return Astro.redirect('/login');
@@ -21,7 +21,7 @@ if (Astro.request.method === 'POST') {
     const form = await Astro.request.formData();
     const action = form.get('action')?.toString() || 'create_venta';
 
-    if (action === 'create_venta') {
+    if (action === 'create_venta' || action === 'update_venta') {
       const id_cliente     = Number(form.get('id_cliente'));
       const id_metodo_pago = Number(form.get('id_metodo_pago'));
       const envio          = Math.max(0, parseFloat(form.get('envio')?.toString() || '0') || 0);
@@ -46,8 +46,21 @@ if (Astro.request.method === 'POST') {
 
         if (itemsAProcesar.length === 0) {
           errorMsg = 'Debes ingresar al menos un artículo con cantidad válida.';
+        } else if (action === 'update_venta') {
+          // Solo las órdenes en Procesando se pueden modificar; el stock no se toca
+          const venta = await actualizarOrden({
+            id_venta: Number(form.get('id_venta')),
+            id_cliente,
+            id_metodo_pago,
+            items: itemsAProcesar,
+            envio,
+            cupon_descuento: cupon,
+          });
+
+          return Astro.redirect(`/scm/ventas?detalle=${venta.id_venta}&ok=2`);
         } else {
-          // registrarVenta valida y descuenta el stock dentro de la misma transacción
+          // La orden nace en Procesando: se valida la disponibilidad y el stock
+          // se descuenta al confirmarla en /erp/ordenes
           const venta = await registrarVenta({
             id_cliente,
             id_usuario: sessionUserId,
@@ -55,6 +68,7 @@ if (Astro.request.method === 'POST') {
             items: itemsAProcesar,
             envio,
             cupon_descuento: cupon,
+            estado: 'Procesando',
           });
 
           return Astro.redirect(`/scm/ventas?detalle=${venta.id_venta}&ok=1`);
@@ -76,7 +90,9 @@ const okParam         = Astro.url.searchParams.get('ok')     || '';
 const detalleId       = Astro.url.searchParams.get('detalle');
 
 if (okParam === '1') {
-  successMsg = '¡Venta registrada y guardada exitosamente en el sistema!';
+  successMsg = 'Orden registrada en Procesando. Puedes modificarla; el inventario se descuenta al confirmarla en Órdenes ERP.';
+} else if (okParam === '2') {
+  successMsg = 'La orden se modificó correctamente.';
 }
 
 // Catálogos
@@ -113,6 +129,7 @@ const ventasList = await db
     envio: Ventas.envio,
     total: Ventas.total,
     cupon_descuento: Ventas.cupon_descuento,
+    id_cliente: Ventas.id_cliente,
     cliente_nombre: Clientes.nombre,
     cliente_correo: Clientes.correo,
     cliente_empresa: Clientes.empresa,
@@ -161,9 +178,10 @@ if (metodoPagoParam) {
 }
 
 // Estadísticas
-// Las ventas canceladas se siguen listando, pero no cuentan como venta ni como ingreso
-const ventasVigentes  = ventasList.filter(v => v.estado !== 'Cancelada');
-const totalCanceladas = ventasList.length - ventasVigentes.length;
+// Las órdenes en Procesando y las canceladas se siguen listando, pero no cuentan como venta ni como ingreso
+const ventasVigentes  = ventasList.filter(v => ESTADOS_VENTA_EFECTIVA.includes(v.estado));
+const totalCanceladas = ventasList.filter(v => v.estado === 'Cancelada').length;
+const totalProcesando = ventasList.filter(v => v.estado === 'Procesando').length;
 const totalVentas   = ventasVigentes.length;
 const totalIngresos = ventasVigentes.reduce((s, v) => s + Number(v.total), 0);
 const promedioVenta = totalVentas > 0 ? (totalIngresos / totalVentas) : 0;
@@ -196,6 +214,7 @@ if (detalleId) {
     detalleItems = await db
       .select({
         id: DetalleVentas.id,
+        id_producto: DetalleVentas.id_producto,
         cantidad: DetalleVentas.cantidad,
         precio_unitario: DetalleVentas.precio_unitario,
         subtotal: DetalleVentas.subtotal,
@@ -222,6 +241,23 @@ const productosJSON = JSON.stringify(
     stock: p.stock || 0,
   }))
 );
+
+// Datos para precargar el formulario cuando la orden todavía se puede modificar
+const ordenEditable = detalleVenta?.estado === 'Procesando'
+  ? {
+      id: detalleVenta.id,
+      id_cliente: detalleVenta.id_cliente,
+      id_metodo_pago: detalleVenta.id_metodo_pago,
+      envio: detalleVenta.envio,
+      cupon: detalleVenta.cupon_descuento || '',
+      items: detalleItems.map(item => ({
+        id: item.id_producto,
+        cantidad: item.cantidad,
+        precio: Number(item.precio_unitario) || 0,
+      })),
+      abrir: Astro.url.searchParams.get('editar') === '1',
+    }
+  : null;
 
 const backParams = new URLSearchParams();
 if (qParam) backParams.set('q', qParam);
@@ -798,6 +834,28 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
       border-top: 1px solid var(--color-border);
     }
 
+    /* Mismas medidas que .btn-primary para que botones y enlaces se vean iguales */
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--color-border);
+      color: var(--color-text);
+      padding: 9px 16px;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      border-radius: 6px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-outline:hover {
+      background: var(--color-bg);
+    }
+
     /* ── Detalle Grid ── */
     .detail-cards-2 {
       display: grid;
@@ -875,6 +933,7 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
       <div class="kpi-box">
         <div class="kpi-val">{totalVentas}</div>
         <div class="kpi-title">Total de Ventas</div>
+        {totalProcesando > 0 && <div class="shipping-hint">{totalProcesando} en proceso</div>}
         {totalCanceladas > 0 && <div class="shipping-hint">{totalCanceladas} cancelada{totalCanceladas === 1 ? '' : 's'}</div>}
       </div>
       <div class="kpi-box">
@@ -1009,14 +1068,15 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
       <div class="modal-box-inner">
         <div class="modal-head">
           <div>
-            <h2>Registrar Nueva Venta</h2>
-            <p>Captura los datos del pedido. Se descontará el inventario y se guardará el registro.</p>
+            <h2 id="ventaModalTitle">Registrar Nueva Venta</h2>
+            <p id="ventaModalHint">Captura los datos del pedido. La orden queda en Procesando y el inventario se descuenta al confirmarla.</p>
           </div>
           <button type="button" class="btn-dismiss-modal" onclick="document.getElementById('modalCreateVenta').close()">×</button>
         </div>
 
         <form method="POST" action="/scm/ventas" id="formVenta">
           <input type="hidden" name="action" value="create_venta" />
+          <input type="hidden" name="id_venta" value="" />
 
           <div class="grid-fields-2">
             <div class="field-wrap">
@@ -1095,7 +1155,7 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
 
           <div class="modal-actions-footer">
             <button type="button" class="btn-outline" onclick="document.getElementById('modalCreateVenta').close()">Cancelar</button>
-            <button type="submit" class="btn-primary">Guardar y Registrar Venta</button>
+            <button type="submit" class="btn-primary" id="btnSubmitVenta">Guardar y Registrar Venta</button>
           </div>
         </form>
       </div>
@@ -1180,13 +1240,19 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
               <span>{fmt(detalleVenta.envio)}</span>
             </div>
             <div class="totals-row final-total-row">
-              <span>{detalleVenta.estado === 'Cancelada' ? 'Total cancelado:' : 'Total pagado:'}</span>
+              <span>{detalleVenta.estado === 'Cancelada' ? 'Total cancelado:' : detalleVenta.estado === 'Procesando' ? 'Total por confirmar:' : 'Total pagado:'}</span>
               <strong class={detalleVenta.estado === 'Cancelada' ? 'amount-cancelada' : 'val-success'} style="font-size: 18px;">{fmt(detalleVenta.total)}</strong>
             </div>
           </div>
 
           <div class="modal-actions-footer">
             <button type="button" class="btn-outline" onclick="window.print()">🖨️ Imprimir</button>
+            {ordenEditable && (
+              <>
+                <button type="button" class="btn-outline" id="btnEditVenta">Modificar orden</button>
+                <a href="/erp/ordenes?estado=Procesando" class="btn-outline">Confirmar en Órdenes ERP</a>
+              </>
+            )}
             <a href={backHref} class="btn-primary" style="text-decoration: none;">Cerrar</a>
           </div>
         </div>
@@ -1196,7 +1262,7 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
   </div>
 </CrmLayout>
 
-<script is:inline define:vars={{ productosCatalog: JSON.parse(productosJSON) }}>
+<script is:inline define:vars={{ productosCatalog: JSON.parse(productosJSON), ordenEditable }}>
   const itemsBody = document.getElementById('itemsBody');
   const btnAddLine = document.getElementById('btnAddLine');
   const inputEnvio = document.getElementById('inputEnvio');
@@ -1214,7 +1280,8 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
     return html;
   }
 
-  function addRow() {
+  // `linea` precarga un artículo ya guardado en la orden que se está modificando
+  function addRow(linea) {
     if (!itemsBody) return;
     const tr = document.createElement('tr');
     tr.className = 'item-row';
@@ -1296,6 +1363,16 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
     });
 
     itemsBody.appendChild(tr);
+
+    if (linea && linea.id) {
+      sel.value = String(linea.id);
+      sel.dispatchEvent(new Event('change'));
+      qty.value = linea.cantidad;
+      // Se conserva el precio con el que se capturó la orden
+      priceInput.value = Number(linea.precio).toFixed(2);
+      priceVal.textContent = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(linea.precio);
+    }
+
     calcTotals();
   }
 
@@ -1307,7 +1384,7 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
       const qtyInput = r.querySelector('.qty-input');
       const opt = sel?.selectedOptions[0];
       if (opt && opt.value) {
-        const precio = parseFloat(opt.getAttribute('data-precio') || '0');
+        const precio = parseFloat(r.querySelector('.prod-price-input')?.value || '0');
         const qty = parseInt(qtyInput?.value || '0', 10);
         subtotal += precio * qty;
       }
@@ -1323,10 +1400,59 @@ const backHref = '/scm/ventas' + (backParams.toString() ? '?' + backParams.toStr
     if (displayTotal) displayTotal.textContent = fmtMoney(total);
   }
 
-  if (btnAddLine) btnAddLine.addEventListener('click', addRow);
+  if (btnAddLine) btnAddLine.addEventListener('click', () => addRow());
   if (inputEnvio) inputEnvio.addEventListener('input', calcTotals);
 
   if (itemsBody && itemsBody.children.length === 0) {
     addRow();
   }
+
+  // Modificar una orden en Procesando reutiliza el formulario de registro
+  const modalVenta = document.getElementById('modalCreateVenta');
+  const formVenta = document.getElementById('formVenta');
+  const modalTitle = document.getElementById('ventaModalTitle');
+  const modalHint = document.getElementById('ventaModalHint');
+  const btnSubmitVenta = document.getElementById('btnSubmitVenta');
+  const textosCrear = {
+    title: modalTitle?.textContent,
+    hint: modalHint?.textContent,
+    submit: btnSubmitVenta?.textContent,
+  };
+
+  function abrirEdicion() {
+    if (!ordenEditable || !formVenta || !modalVenta) return;
+    formVenta.elements['action'].value = 'update_venta';
+    formVenta.elements['id_venta'].value = ordenEditable.id;
+    formVenta.elements['id_cliente'].value = String(ordenEditable.id_cliente);
+    formVenta.elements['id_metodo_pago'].value = String(ordenEditable.id_metodo_pago);
+    formVenta.elements['envio'].value = Number(ordenEditable.envio).toFixed(2);
+    formVenta.elements['cupon_descuento'].value = ordenEditable.cupon;
+
+    itemsBody.innerHTML = '';
+    ordenEditable.items.forEach(addRow);
+    if (itemsBody.children.length === 0) addRow();
+
+    modalTitle.textContent = `Modificar Orden #${String(ordenEditable.id).padStart(5, '0')}`;
+    modalHint.textContent = 'La orden sigue en Procesando: puedes cambiar sus datos y artículos antes de confirmarla.';
+    btnSubmitVenta.textContent = 'Guardar cambios';
+
+    document.getElementById('modalDetailVenta')?.close();
+    modalVenta.showModal();
+  }
+
+  // Al cerrar sin guardar, el formulario vuelve al modo de registro
+  modalVenta?.addEventListener('close', () => {
+    if (formVenta?.elements['action'].value !== 'update_venta') return;
+    formVenta.reset();
+    formVenta.elements['action'].value = 'create_venta';
+    formVenta.elements['id_venta'].value = '';
+    itemsBody.innerHTML = '';
+    addRow();
+    modalTitle.textContent = textosCrear.title;
+    modalHint.textContent = textosCrear.hint;
+    btnSubmitVenta.textContent = textosCrear.submit;
+  });
+
+  document.getElementById('btnEditVenta')?.addEventListener('click', abrirEdicion);
+  if (ordenEditable?.abrir) abrirEdicion();
 </script>

@@ -2,20 +2,25 @@
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Ventas, DetalleVentas, Productos } from '../../db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
+import { ESTADOS_VENTA_EFECTIVA } from '../../lib/ventas';
 
+// Las órdenes en Procesando o canceladas no son ingreso
 const ventas = await db.select({
   id: Ventas.id,
   total: Ventas.total,
   subtotal: Ventas.subtotal,
   fecha_venta: Ventas.fecha_venta,
-}).from(Ventas);
+}).from(Ventas)
+  .where(inArray(Ventas.estado, ESTADOS_VENTA_EFECTIVA));
 
 const detalles = await db.select({
   cantidad: DetalleVentas.cantidad,
   costo: Productos.costo,
 }).from(DetalleVentas)
-  .leftJoin(Productos, eq(DetalleVentas.id_producto, Productos.id));
+  .innerJoin(Ventas, eq(DetalleVentas.id_venta, Ventas.id))
+  .leftJoin(Productos, eq(DetalleVentas.id_producto, Productos.id))
+  .where(inArray(Ventas.estado, ESTADOS_VENTA_EFECTIVA));
 
 const ingresosTotales = ventas.reduce((sum, venta) => sum + (Number(venta.total) || 0), 0);
 const ventasProductos = ventas.reduce((sum, venta) => sum + (Number(venta.subtotal) || 0), 0);
