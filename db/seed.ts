@@ -1,6 +1,9 @@
 import { db } from '../src/db/db.js';
 import { hashPassword } from '../src/lib/password.js';
-import { Categorias, Marcas, Modelos, Productos, Roles, Usuarios, EtapasCrm, Clientes, TiposInteraccion, Interacciones, MetodosPago } from '../src/db/schema.js';
+import {
+  Categorias, Marcas, Modelos, Productos, Roles, Usuarios, EtapasCrm, Clientes,
+  TiposInteraccion, Interacciones, MetodosPago, Ventas, DetalleVentas, MovimientosInventario,
+} from '../src/db/schema.js';
 
 async function main() {
   console.log('Iniciando seed...');
@@ -30,9 +33,9 @@ async function main() {
   ]);
 
   await db.insert(Productos).values([
-    { id: 1, id_modelo: 1, sku: 'PAL-PRO-C-NG-AM', color: 'Negro / Amarillo', precio_venta: '2499.00', costo: '1200.00', stock: 15, estado: 'activo', badge: 'Oferta', theme_class: 'product-padel' },
+    { id: 1, id_modelo: 1, sku: 'PAL-PRO-C-NG-AM', color: 'Negro / Amarillo', precio_venta: '2499.00', costo: '1200.00', stock: 14, estado: 'activo', badge: 'Oferta', theme_class: 'product-padel' },
     { id: 2, id_modelo: 1, sku: 'PAL-PRO-C-CB-RJ', color: 'Carbono / Rojo', precio_venta: '2499.00', costo: '1200.00', stock: 8, estado: 'activo', badge: 'Oferta', theme_class: 'product-padel' },
-    { id: 3, id_modelo: 2, sku: 'SHO-CA2-BL-RJ-27', talla_cm: '27.5', color: 'Blanco / Rojo', precio_venta: '1899.00', costo: '900.00', stock: 22, estado: 'activo', badge: 'Top ventas', theme_class: 'product-shoe' },
+    { id: 3, id_modelo: 2, sku: 'SHO-CA2-BL-RJ-27', talla_cm: '27.5', color: 'Blanco / Rojo', precio_venta: '1899.00', costo: '900.00', stock: 21, estado: 'activo', badge: 'Top ventas', theme_class: 'product-shoe' },
     { id: 4, id_modelo: 2, sku: 'SHO-CA2-NG-AM-28', talla_cm: '28.5', color: 'Negro / Amarillo', precio_venta: '1899.00', costo: '900.00', stock: 10, estado: 'activo', badge: 'Top ventas', theme_class: 'product-shoe' },
     { id: 5, id_modelo: 3, sku: 'TSH-PLY-BL-M', talla_cm: 'M', color: 'Blanco', precio_venta: '699.00', costo: '300.00', stock: 50, estado: 'activo', badge: 'Nuevo', theme_class: 'product-shirt' }
   ]);
@@ -92,7 +95,28 @@ async function main() {
     { id: 5, id_cliente: 4, id_usuario: 2, id_tipo_interaccion: 1, descripcion: 'Llamada de seguimiento por un pedido atrasado de cuerdas.', fecha_hora: new Date('2025-05-08T16:00:00Z') }
   ]);
 
-  console.log('Base de datos inicializada con éxito (E-Commerce + CRM).');
+  const haceDias = (dias: number) => new Date(fechaHoy.getTime() - dias * 24 * 60 * 60 * 1000);
+
+  await db.insert(Ventas).values([
+    { id: 1, id_cliente: 2, id_usuario: 2, id_metodo_pago: 2, fecha_venta: haceDias(1), subtotal: '1398.00', envio: '99.00', total: '1497.00', estado: 'Procesando', fecha_entrega: null },
+    { id: 2, id_cliente: 1, id_usuario: 2, id_metodo_pago: 3, fecha_venta: haceDias(3), subtotal: '1899.00', envio: '99.00', total: '1998.00', estado: 'Confirmada', fecha_entrega: null },
+    { id: 3, id_cliente: 3, id_usuario: 2, id_metodo_pago: 2, fecha_venta: haceDias(8), subtotal: '2499.00', envio: '0.00', total: '2499.00', estado: 'Entregada', fecha_entrega: haceDias(5) },
+    { id: 4, id_cliente: 4, id_usuario: 2, id_metodo_pago: 1, fecha_venta: haceDias(10), subtotal: '1899.00', envio: '99.00', total: '1998.00', estado: 'Cancelada', fecha_entrega: null },
+  ]);
+
+  await db.insert(DetalleVentas).values([
+    { id: 1, id_venta: 1, id_producto: 5, cantidad: 2, precio_unitario: '699.00', subtotal: '1398.00' },
+    { id: 2, id_venta: 2, id_producto: 3, cantidad: 1, precio_unitario: '1899.00', subtotal: '1899.00' },
+    { id: 3, id_venta: 3, id_producto: 1, cantidad: 1, precio_unitario: '2499.00', subtotal: '2499.00' },
+    { id: 4, id_venta: 4, id_producto: 4, cantidad: 1, precio_unitario: '1899.00', subtotal: '1899.00' },
+  ]);
+
+  await db.insert(MovimientosInventario).values([
+    { id_producto: 3, tipo: 'Salida', cantidad: 1, motivo: 'Venta #2', fecha: haceDias(3), id_usuario: 2 },
+    { id_producto: 1, tipo: 'Salida', cantidad: 1, motivo: 'Venta #3', fecha: haceDias(8), id_usuario: 2 },
+  ]);
+
+  console.log('Base de datos inicializada con éxito (E-Commerce + CRM + órdenes de prueba).');
   process.exit(0);
 }
 

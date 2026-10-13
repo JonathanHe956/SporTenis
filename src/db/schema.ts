@@ -259,6 +259,11 @@ export const ScmSettings = mysqlTable('ScmSettings', {
   nivel_scm: varchar('nivel_scm', { length: 50 }).default('Inicial'),
   fecha_actualizacion: datetime('fecha_actualizacion')
 });
+export const ErpSettings = mysqlTable('ErpSettings', {
+  id: int('id').primaryKey().autoincrement(),
+  nivel_erp: varchar('nivel_erp', { length: 50 }).default('Inicial'),
+  fecha_actualizacion: datetime('fecha_actualizacion')
+});
 export const TransportistasLogistica = mysqlTable('TransportistasLogistica', {
   id: int('id').primaryKey().autoincrement(),
   nombre: varchar('nombre', { length: 100 }).notNull(),
