@@ -100,7 +100,7 @@ const cartItems = [
 
           <div class="summary-line">
             <span>Costo de envío</span>
-            <span class="badge-free">Gratis</span>
+            <span class="badge-free" id="shippingDisplay">Gratis</span>
           </div>
 
           <div class="promo-input-group">
@@ -167,9 +167,13 @@ const cartItems = [
       }
     });
 
-    const formatted = `$${subtotal.toLocaleString('es-MX')} MXN`;
-    if (subtotalDisplay) subtotalDisplay.textContent = formatted;
-    if (totalDisplay) totalDisplay.textContent = formatted;
+    // Regla de envío de la tienda (ver src/lib/ventas.ts): $500 si la compra no supera $2,000
+    const shipping = subtotal > 2000 ? 0 : 500;
+    const shippingDisplay = document.getElementById('shippingDisplay');
+    if (shippingDisplay) shippingDisplay.textContent = shipping > 0 ? `$${shipping.toLocaleString('es-MX')} MXN` : 'Gratis';
+
+    if (subtotalDisplay) subtotalDisplay.textContent = `$${subtotal.toLocaleString('es-MX')} MXN`;
+    if (totalDisplay) totalDisplay.textContent = `$${(subtotal + shipping).toLocaleString('es-MX')} MXN`;
     if (totalItemsCount) totalItemsCount.textContent = String(totalItems);
     if (checkoutBtn) checkoutBtn.disabled = false;
   }

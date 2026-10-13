@@ -18,12 +18,12 @@ try {
       tipo: TiposInteraccion.nombre,
       descripcion: Interacciones.descripcion,
       usuario: Usuarios.nombre,
-      esActividad: false
     })
     .from(Interacciones)
     .leftJoin(Clientes, eq(Interacciones.id_cliente, Clientes.id))
     .leftJoin(TiposInteraccion, eq(Interacciones.id_tipo_interaccion, TiposInteraccion.id))
-    .leftJoin(Usuarios, eq(Interacciones.id_usuario, Usuarios.id));
+    .leftJoin(Usuarios, eq(Interacciones.id_usuario, Usuarios.id))
+    .then((rows) => rows.map((row) => ({ ...row, esActividad: false })));
 } catch (e) {
   interaccionesCrm = [];
 }
@@ -40,10 +40,10 @@ try {
       tipo: ActividadTienda.accion,
       descripcion: ActividadTienda.detalles,
       usuario: ActividadTienda.session_id,
-      esActividad: true
     })
     .from(ActividadTienda)
-    .leftJoin(Usuarios, eq(ActividadTienda.id_usuario, Usuarios.id));
+    .leftJoin(Usuarios, eq(ActividadTienda.id_usuario, Usuarios.id))
+    .then((rows) => rows.map((row) => ({ ...row, esActividad: true })));
 } catch (e) {
   actividadTienda = [];
 }

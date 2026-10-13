@@ -159,7 +159,7 @@ if (user?.role === 'administrador') {
       <div class="hero-copy"><p class="eyebrow"><span></span> Colección 2026</p><h1 id="hero-title">Juega a<br /><em>tu manera.</em></h1><p class="hero-text">El equipo que acompaña cada saque, cada punto y cada victoria.</p><a class="primary-button" href="#productos">Comprar colección <span>↗</span></a></div>
       <div class="hero-art" aria-label="Pelota de tenis amarilla sobre una cancha deportiva" role="img"><div class="court-line"></div><div class="tennis-ball"></div><div class="hero-stamp">SPOR<br />TENIS</div><p class="art-caption">Hecho para<br /><strong>competir</strong></p></div>
     </section>
-    <section class="benefits" aria-label="Beneficios de compra"><div><strong>Envío gratis</strong><span>En compras mayores a $999</span></div><div><strong>Compra segura</strong><span>Tu información está protegida</span></div><div><strong>30 días</strong><span>Para cambios y devoluciones</span></div><div><strong>Soporte experto</strong><span>Te ayudamos a elegir mejor</span></div></section>
+    <section class="benefits" aria-label="Beneficios de compra"><div><strong>Envío gratis</strong><span>En compras mayores a $2,000</span></div><div><strong>Compra segura</strong><span>Tu información está protegida</span></div><div><strong>30 días</strong><span>Para cambios y devoluciones</span></div><div><strong>Soporte experto</strong><span>Te ayudamos a elegir mejor</span></div></section>
     <section class="products-section" id="productos" aria-labelledby="products-title">
       <div class="section-heading">
         <div>
@@ -418,7 +418,7 @@ if (user?.role === 'administrador') {
     }).catch(console.error);
   }
 
-  const favButtons = document.querySelectorAll('.favorite-btn');
+  const favButtons = document.querySelectorAll<HTMLButtonElement>('.favorite-btn');
   const authData = document.getElementById('auth-data');
   const isLoggedIn = authData?.getAttribute('data-logged-in') === 'true';
   const favoriteIds = new Set(

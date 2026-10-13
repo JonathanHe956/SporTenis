@@ -1,7 +1,7 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
-import { DetalleVentas, Modelos, PedidosCompra, Productos, Proveedores, Ventas } from '../../db/schema';
+import { DetalleVentas, Modelos, Pagos, PedidosCompra, Productos, Proveedores, ReportesProgramados, Ventas } from '../../db/schema';
 import { desc, eq } from 'drizzle-orm';
 import { ESTADOS_VENTA_EFECTIVA } from '../../lib/ventas';
 
@@ -143,6 +143,18 @@ const stockTotal = rotacion.reduce((sum, r) => sum + r.stock, 0);
 // 7. Órdenes a proveedores
 const pedidosRecientes = pedidosProveedor.slice(0, 8);
 const pedidosPendientes = pedidosProveedor.filter(p => !/complet|recibid/i.test(p.estado)).length;
+
+// 8. Reportes semanales programados y conciliación de cobros (migración 0006)
+let reportesSemanales: (typeof ReportesProgramados.$inferSelect)[] = [];
+let pagos: { estado: string }[] = [];
+try {
+  reportesSemanales = await db.select().from(ReportesProgramados).orderBy(desc(ReportesProgramados.periodo_inicio)).limit(8);
+  pagos = await db.select({ estado: Pagos.estado }).from(Pagos);
+} catch (e) {
+  // Las tablas aún no existen: la sección se muestra vacía
+}
+const pagosConciliados = pagos.filter(p => p.estado === 'Conciliado').length;
+const pagosConDiferencia = pagos.filter(p => p.estado === 'Con diferencia').length;
 
 const fmt = (value: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 const fmtDate = (date: Date) => new Date(date).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -314,6 +326,49 @@ const chartData = {
           ))}
           {pedidosRecientes.length === 0 && (
             <tr><td colspan="7" class="empty-chart">Aún no hay órdenes a proveedores.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Reportes programados -->
+  <div class="crm-card widget-card" style="margin-top: 24px;">
+    <div class="widget-header-flex">
+      <div>
+        <h3>Reportes Semanales Programados</h3>
+        <p class="widget-sub">Se generan solos cada lunes y llegan a las notificaciones del panel &bull; {pagosConciliados} cobros conciliados, {pagosConDiferencia} con diferencia</p>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th>Semana</th>
+            <th class="numeric">Órdenes</th>
+            <th class="numeric">Ventas</th>
+            <th class="numeric">Ingresos</th>
+            <th class="numeric">Facturas</th>
+            <th class="numeric">Cobros conciliados</th>
+            <th class="numeric">Con diferencia</th>
+            <th>Generado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {reportesSemanales.map(r => (
+            <tr>
+              <td><strong>{r.periodo_inicio}</strong> a {r.periodo_fin}</td>
+              <td class="numeric">{r.ordenes}</td>
+              <td class="numeric">{r.ventas}</td>
+              <td class="numeric">{fmt(Number(r.ingresos))}</td>
+              <td class="numeric">{r.facturas_emitidas}</td>
+              <td class="numeric">{r.pagos_conciliados}</td>
+              <td class="numeric">{r.pagos_con_diferencia}</td>
+              <td>{fmtDate(r.fecha_generacion)}</td>
+            </tr>
+          ))}
+          {reportesSemanales.length === 0 && (
+            <tr><td colspan="8" class="empty-chart">Aún no se ha generado ningún reporte semanal.</td></tr>
           )}
         </tbody>
       </table>

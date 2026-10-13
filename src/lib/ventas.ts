@@ -1,11 +1,12 @@
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { db } from '../db/db';
 import { Clientes, DetalleVentas, HistorialOrdenes, MetodosPago, MovimientosInventario, Productos, Ventas } from '../db/schema';
+import { facturarYConciliarVenta } from './facturacion';
 import { procesarLogisticaStock } from './stockLogistics';
 
-// Regla de envío de la tienda: gratis a partir de ENVIO_GRATIS_DESDE
-export const ENVIO_GRATIS_DESDE = 999;
-export const COSTO_ENVIO = 99;
+// Regla de envío de la tienda: se cobra COSTO_ENVIO mientras la compra no supere ENVIO_GRATIS_SOBRE
+export const ENVIO_GRATIS_SOBRE = 2000;
+export const COSTO_ENVIO = 500;
 
 // Solo estas órdenes cuentan como venta e ingreso: ya descontaron stock.
 // Procesando todavía se puede modificar y Cancelada devolvió el inventario.
@@ -38,7 +39,7 @@ export interface TotalesVenta {
 const toCents = (value: number): number => Math.round(value * 100);
 
 export const calcularEnvio = (subtotal: number): number =>
-  subtotal <= 0 || subtotal >= ENVIO_GRATIS_DESDE ? 0 : COSTO_ENVIO;
+  subtotal <= 0 || subtotal > ENVIO_GRATIS_SOBRE ? 0 : COSTO_ENVIO;
 
 // Se suma en centavos para no arrastrar errores de punto flotante.
 export const calcularSubtotal = (lineas: Array<{ precio: number; cantidad: number }>): number =>
@@ -246,6 +247,9 @@ export async function registrarVenta(venta: NuevaVenta): Promise<TotalesVenta & 
         id_venta,
       })),
     );
+
+    // La factura y el cobro conciliado nacen con la confirmación, sin captura adicional
+    await facturarYConciliarVenta(tx, { id_venta, id_metodo_pago: venta.id_metodo_pago, total: totales.total });
 
     return { id_venta, ...totales };
   });

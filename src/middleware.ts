@@ -1,6 +1,10 @@
 import { defineMiddleware } from 'astro:middleware';
 import { canAccessCrm, canAccessRoute, canAccessScm, getAuthenticatedUser, homeForRole } from './lib/auth';
+import { iniciarReportesProgramados } from './lib/reportesProgramados';
 import { SESSION_COOKIE } from './lib/session';
+
+// Los reportes semanales se generan por calendario mientras el servidor esté encendido
+iniciarReportesProgramados();
 
 const startsWithSegment = (pathname: string, prefix: string): boolean =>
   pathname === prefix || pathname.startsWith(`${prefix}/`);

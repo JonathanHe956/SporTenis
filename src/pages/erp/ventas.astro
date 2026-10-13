@@ -3,10 +3,10 @@ import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import {
   Ventas, DetalleVentas, Clientes, Usuarios, HistorialOrdenes,
-  MetodosPago, Productos, Modelos, Marcas,
+  MetodosPago, Productos, Modelos, Marcas, Facturas, Pagos,
 } from '../../db/schema';
 import { eq, desc, asc } from 'drizzle-orm';
-import { ESTADOS_VENTA_EFECTIVA, actualizarOrden, registrarVenta } from '../../lib/ventas';
+import { COSTO_ENVIO, ENVIO_GRATIS_SOBRE, ESTADOS_VENTA_EFECTIVA, actualizarOrden, registrarVenta } from '../../lib/ventas';
 
 const sessionUser = Astro.locals.user;
 if (!sessionUser) return Astro.redirect('/login');
@@ -24,7 +24,6 @@ if (Astro.request.method === 'POST') {
     if (action === 'create_venta' || action === 'update_venta') {
       const id_cliente     = Number(form.get('id_cliente'));
       const id_metodo_pago = Number(form.get('id_metodo_pago'));
-      const envio          = Math.max(0, parseFloat(form.get('envio')?.toString() || '0') || 0);
       const cupon          = form.get('cupon_descuento')?.toString().trim() || null;
       
       const productoIds    = form.getAll('producto_id[]').map(Number);
@@ -53,20 +52,19 @@ if (Astro.request.method === 'POST') {
             id_cliente,
             id_metodo_pago,
             items: itemsAProcesar,
-            envio,
             cupon_descuento: cupon,
           });
 
           return Astro.redirect(`/erp/ventas?detalle=${venta.id_venta}&ok=2`);
         } else {
           // La orden nace en Procesando: se valida la disponibilidad y el stock
-          // se descuenta al confirmarla en /erp/ordenes
+          // se descuenta al confirmarla en /erp/ordenes.
+          // El envío no se captura: lo calcula la regla de la tienda sobre el subtotal
           const venta = await registrarVenta({
             id_cliente,
             id_usuario: sessionUserId,
             id_metodo_pago,
             items: itemsAProcesar,
-            envio,
             cupon_descuento: cupon,
             estado: 'Procesando',
           });
@@ -201,6 +199,7 @@ const fmtTime = (d: Date | null) => d ? new Date(d).toLocaleTimeString('es-MX', 
 let detalleVenta: any = null;
 let detalleItems: any[] = [];
 let detalleHistorial: any[] = [];
+let detalleFactura: any = null;
 
 if (detalleId) {
   const vid = Number(detalleId);
@@ -242,6 +241,23 @@ if (detalleId) {
       .leftJoin(Usuarios, eq(HistorialOrdenes.id_usuario, Usuarios.id))
       .where(eq(HistorialOrdenes.id_venta, vid))
       .orderBy(asc(HistorialOrdenes.fecha), asc(HistorialOrdenes.id));
+
+    // Factura y cobro que se generan solos al confirmar la orden
+    try {
+      [detalleFactura] = await db
+        .select({
+          folio: Facturas.folio,
+          uuid: Facturas.uuid,
+          iva: Facturas.iva,
+          estado: Facturas.estado,
+          pago: Pagos.estado,
+        })
+        .from(Facturas)
+        .leftJoin(Pagos, eq(Pagos.id_factura, Facturas.id))
+        .where(eq(Facturas.id_venta, vid));
+    } catch (e) {
+      // La migración 0006 aún no se aplicó
+    }
   }
 }
 
@@ -261,7 +277,6 @@ const ordenEditable = detalleVenta?.estado === 'Procesando'
       id: detalleVenta.id,
       id_cliente: detalleVenta.id_cliente,
       id_metodo_pago: detalleVenta.id_metodo_pago,
-      envio: detalleVenta.envio,
       cupon: detalleVenta.cupon_descuento || '',
       items: detalleItems.map(item => ({
         id: item.id_producto,
@@ -1118,7 +1133,10 @@ const backHref = '/erp/ventas' + (backParams.toString() ? '?' + backParams.toStr
           <div class="grid-fields-2">
             <div class="field-wrap">
               <label>Costo de Envío ($ MXN)</label>
-              <input type="number" step="0.01" min="0" id="inputEnvio" name="envio" value="0.00" />
+              <input type="text" id="inputEnvio" value="0.00" readonly title="Se calcula automáticamente" />
+              <small style="color: var(--color-text-muted); font-size: 11px;">
+                Automático: {fmt(COSTO_ENVIO)} si la compra no supera {fmt(ENVIO_GRATIS_SOBRE)}; gratis si la supera.
+              </small>
             </div>
 
             <div class="field-wrap">
@@ -1207,6 +1225,13 @@ const backHref = '/erp/ventas' + (backParams.toString() ? '?' + backParams.toStr
               {detalleVenta.cupon_descuento && (
                 <p><strong>Cupón:</strong> <strong>{detalleVenta.cupon_descuento}</strong></p>
               )}
+              {detalleFactura && (
+                <>
+                  <p><strong>Factura:</strong> {detalleFactura.folio} ({detalleFactura.estado}) &bull; IVA {fmt(Number(detalleFactura.iva))}</p>
+                  <p><strong>Folio fiscal interno:</strong> <code>{detalleFactura.uuid}</code></p>
+                  <p><strong>Cobro:</strong> {detalleFactura.pago || 'Sin registrar'}</p>
+                </>
+              )}
             </div>
           </div>
 
@@ -1288,7 +1313,7 @@ const backHref = '/erp/ventas' + (backParams.toString() ? '?' + backParams.toStr
   </div>
 </CrmLayout>
 
-<script is:inline define:vars={{ productosCatalog: JSON.parse(productosJSON), ordenEditable }}>
+<script is:inline define:vars={{ productosCatalog: JSON.parse(productosJSON), ordenEditable, COSTO_ENVIO, ENVIO_GRATIS_SOBRE }}>
   const itemsBody = document.getElementById('itemsBody');
   const btnAddLine = document.getElementById('btnAddLine');
   const inputEnvio = document.getElementById('inputEnvio');
@@ -1416,8 +1441,10 @@ const backHref = '/erp/ventas' + (backParams.toString() ? '?' + backParams.toStr
       }
     });
 
-    const envio = Math.max(0, parseFloat(inputEnvio?.value || '0') || 0);
+    // Misma regla que calcularEnvio en src/lib/ventas.ts; el servidor la vuelve a aplicar al guardar
+    const envio = subtotal <= 0 || subtotal > ENVIO_GRATIS_SOBRE ? 0 : COSTO_ENVIO;
     const total = subtotal + envio;
+    if (inputEnvio) inputEnvio.value = envio.toFixed(2);
 
     const fmtMoney = (n) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n);
 
@@ -1427,7 +1454,6 @@ const backHref = '/erp/ventas' + (backParams.toString() ? '?' + backParams.toStr
   }
 
   if (btnAddLine) btnAddLine.addEventListener('click', () => addRow());
-  if (inputEnvio) inputEnvio.addEventListener('input', calcTotals);
 
   if (itemsBody && itemsBody.children.length === 0) {
     addRow();
@@ -1451,7 +1477,6 @@ const backHref = '/erp/ventas' + (backParams.toString() ? '?' + backParams.toStr
     formVenta.elements['id_venta'].value = ordenEditable.id;
     formVenta.elements['id_cliente'].value = String(ordenEditable.id_cliente);
     formVenta.elements['id_metodo_pago'].value = String(ordenEditable.id_metodo_pago);
-    formVenta.elements['envio'].value = Number(ordenEditable.envio).toFixed(2);
     formVenta.elements['cupon_descuento'].value = ordenEditable.cupon;
 
     itemsBody.innerHTML = '';

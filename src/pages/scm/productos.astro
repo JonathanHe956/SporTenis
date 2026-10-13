@@ -32,6 +32,9 @@ if (Astro.request.method === 'POST') {
     const theme_class = (formData.get('theme_class') as string) || '';
     const precio_venta = (formData.get('precio_venta') as string) || '0.00';
     const precio_base = '0.00';
+
+    // Marca y categoría son obligatorias en Modelos
+    if (!id_marca || !id_categoria) return Astro.redirect(Astro.url.pathname);
     
     let imagen_url = null;
     const imagenFile = formData.get('imagen_archivo') as File;
@@ -93,7 +96,7 @@ if (Astro.request.method === 'POST') {
     const producto = await db.select().from(Productos).where(eq(Productos.id, id));
     if (producto.length > 0) {
       const id_modelo = producto[0].id_modelo;
-      await db.update(Modelos).set({ id_marca, id_categoria, nombre, descripcion, ...(imagen_url ? { imagen_url } : {}) }).where(eq(Modelos.id, id_modelo));
+      await db.update(Modelos).set({ ...(id_marca ? { id_marca } : {}), ...(id_categoria ? { id_categoria } : {}), nombre, descripcion, ...(imagen_url ? { imagen_url } : {}) }).where(eq(Modelos.id, id_modelo));
       await db.update(Productos).set({ id_proveedor, stock, stock_minimo, estrategia_logistica, costo, precio_venta, color, theme_class }).where(eq(Productos.id, id));
 
       // PUSH repone automáticamente; PULL genera una alerta para pedido manual.

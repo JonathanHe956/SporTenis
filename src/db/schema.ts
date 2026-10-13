@@ -289,3 +289,44 @@ export const HistorialOrdenes = mysqlTable('HistorialOrdenes', {
   estado_nuevo: varchar('estado_nuevo', { length: 50 }).notNull(),
   fecha: datetime('fecha').notNull(),
 });
+
+// Etapa 4 (ERP): comprobante que se emite solo al confirmar la venta
+export const Facturas = mysqlTable('Facturas', {
+  id: int('id').autoincrement().primaryKey(),
+  id_venta: int('id_venta').references(() => Ventas.id).unique().notNull(),
+  folio: varchar('folio', { length: 30 }).unique().notNull(),
+  uuid: varchar('uuid', { length: 36 }).unique().notNull(),
+  subtotal: decimal('subtotal', { precision: 10, scale: 2 }).notNull(),
+  iva: decimal('iva', { precision: 10, scale: 2 }).notNull(),
+  total: decimal('total', { precision: 10, scale: 2 }).notNull(),
+  estado: varchar('estado', { length: 50 }).default('Emitida').notNull(),
+  fecha_emision: datetime('fecha_emision').notNull(),
+  fecha_cancelacion: datetime('fecha_cancelacion'),
+});
+
+// Etapa 4 (ERP): cobro de cada venta, conciliado contra su factura
+export const Pagos = mysqlTable('Pagos', {
+  id: int('id').autoincrement().primaryKey(),
+  id_venta: int('id_venta').references(() => Ventas.id).unique().notNull(),
+  id_factura: int('id_factura').references(() => Facturas.id),
+  id_metodo_pago: int('id_metodo_pago').references(() => MetodosPago.id).notNull(),
+  monto: decimal('monto', { precision: 10, scale: 2 }).notNull(),
+  estado: varchar('estado', { length: 50 }).notNull(),
+  fecha_pago: datetime('fecha_pago').notNull(),
+  fecha_conciliacion: datetime('fecha_conciliacion'),
+});
+
+// Etapa 4 (ERP): reportes semanales que el sistema genera por calendario
+export const ReportesProgramados = mysqlTable('ReportesProgramados', {
+  id: int('id').autoincrement().primaryKey(),
+  // Lunes y domingo de la semana reportada (AAAA-MM-DD)
+  periodo_inicio: varchar('periodo_inicio', { length: 10 }).unique().notNull(),
+  periodo_fin: varchar('periodo_fin', { length: 10 }).notNull(),
+  ordenes: int('ordenes').notNull(),
+  ventas: int('ventas').notNull(),
+  ingresos: decimal('ingresos', { precision: 12, scale: 2 }).notNull(),
+  facturas_emitidas: int('facturas_emitidas').notNull(),
+  pagos_conciliados: int('pagos_conciliados').notNull(),
+  pagos_con_diferencia: int('pagos_con_diferencia').notNull(),
+  fecha_generacion: datetime('fecha_generacion').notNull(),
+});

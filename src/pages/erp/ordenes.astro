@@ -3,6 +3,7 @@ import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Clientes, DetalleVentas, MetodosPago, MovimientosInventario, Productos, Usuarios, Ventas } from '../../db/schema';
+import { cancelarFacturaYPago, facturarYConciliarVenta } from '../../lib/facturacion';
 import { procesarLogisticaStock } from '../../lib/stockLogistics';
 import { registrarHistorialOrden } from '../../lib/ventas';
 
@@ -31,7 +32,7 @@ if (Astro.request.method === 'POST') {
     const productosConfirmados = await db.transaction(async (tx) => {
       // Se bloquea la orden para no confirmarla mientras alguien la modifica
       const [orden] = await tx
-        .select({ estado: Ventas.estado })
+        .select({ estado: Ventas.estado, total: Ventas.total, id_metodo_pago: Ventas.id_metodo_pago })
         .from(Ventas)
         .where(eq(Ventas.id, idOrden))
         .for('update');
@@ -111,7 +112,16 @@ if (Astro.request.method === 'POST') {
           );
         }
 
-        if (canConfirm) return lineas.map((linea) => linea.id_producto);
+        // Al confirmar se factura y se concilia el cobro; al cancelar se revierten
+        if (canConfirm) {
+          await facturarYConciliarVenta(tx, {
+            id_venta: idOrden,
+            id_metodo_pago: orden.id_metodo_pago,
+            total: Number(orden.total),
+          });
+          return lineas.map((linea) => linea.id_producto);
+        }
+        await cancelarFacturaYPago(tx, idOrden);
       }
 
       return [];

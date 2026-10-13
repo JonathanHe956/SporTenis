@@ -2,8 +2,8 @@
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import {
-  Auditorias, Clientes, HistorialOrdenes, Interacciones, MetodosPago, MovimientosInventario,
-  Notificaciones, PedidosCompra, Productos, Proveedores, Usuarios, Ventas,
+  Auditorias, Clientes, Facturas, HistorialOrdenes, Interacciones, MetodosPago, MovimientosInventario,
+  Notificaciones, Pagos, PedidosCompra, Productos, Proveedores, ReportesProgramados, Usuarios, Ventas,
 } from '../../db/schema';
 import { ESTADOS_VENTA_EFECTIVA } from '../../lib/ventas';
 
@@ -34,6 +34,9 @@ const notificaciones = await safe(db.select({ id: Notificaciones.id }).from(Noti
 const interacciones = await safe(db.select({ id: Interacciones.id }).from(Interacciones));
 const proveedores = await safe(db.select({ id: Proveedores.id }).from(Proveedores));
 const historial = await safe(db.select({ id: HistorialOrdenes.id }).from(HistorialOrdenes));
+const facturas = await safe(db.select({ id: Facturas.id }).from(Facturas));
+const pagos = await safe(db.select({ estado: Pagos.estado }).from(Pagos));
+const reportesProgramados = await safe(db.select({ id: ReportesProgramados.id }).from(ReportesProgramados));
 
 // Integración entre módulos: qué maneja cada uno y con qué llaves se relacionan
 const modulos = [
@@ -72,7 +75,7 @@ const enlaces = [
 ];
 const flujo = [
   { paso: 'Venta captura la orden', detalle: 'Se elige un cliente del CRM y productos del SCM; se valida que haya stock.' },
-  { paso: 'Se confirma la orden', detalle: 'En una sola transacción baja el stock, se registra la salida de inventario y el historial.' },
+  { paso: 'Se confirma la orden', detalle: 'En una sola transacción baja el stock, se registra la salida de inventario y el historial, se emite la factura y se concilia el cobro.' },
   { paso: 'El inventario reacciona', detalle: 'Si un producto queda bajo su mínimo, el SCM genera el pedido al proveedor o la alerta.' },
   { paso: 'Reportes lo reflejan', detalle: 'Ventas, productos más vendidos, rotación y pedidos a proveedores se ven en Reportes ERP.' },
 ];
@@ -183,15 +186,15 @@ const criterios = [
     impacto: 'El equipo se entera a tiempo sin tener que consultar reportes.',
   },
   {
-    id: 'e15', etapa: 'cat-automatizado', auto: false,
+    id: 'e15', etapa: 'cat-automatizado', auto: facturas.length > 0,
     titulo: 'Facturación Electrónica Automática',
     desc: 'Emisión del comprobante fiscal al confirmar la venta, sin captura adicional.',
     impacto: 'Cierra el ciclo de venta cumpliendo las obligaciones fiscales.',
   },
   {
-    id: 'e16', etapa: 'cat-automatizado', auto: false,
+    id: 'e16', etapa: 'cat-automatizado', auto: pagos.some(p => p.estado === 'Conciliado') && reportesProgramados.length > 0,
     titulo: 'Conciliación de Pagos y Reportes Programados',
-    desc: 'Los cobros se concilian solos y los reportes se generan y envían por calendario.',
+    desc: 'Los cobros se concilian solos contra su factura y cada lunes se genera y envía al panel el reporte semanal.',
     impacto: 'Libera tiempo administrativo y reduce errores de cierre.',
   },
 ];
@@ -477,7 +480,7 @@ const criteriosDe = (etapa: string) => criterios.filter(c => c.etapa === etapa);
       });
     }
 
-    // Estado inicial: lo guardado en el navegador o, si no hay, lo detectado en el sistema
+    // Estado inicial: lo detectado en el sistema más lo marcado a mano y guardado en el navegador
     function loadInitialChecklist() {
       let savedData: Record<string, boolean> | null = null;
       try {
@@ -486,11 +489,9 @@ const criteriosDe = (etapa: string) => criterios.filter(c => c.etapa === etapa);
       } catch (e) {}
 
       checkboxes.forEach(cb => {
-        if (savedData && savedData[cb.id] !== undefined) {
-          cb.checked = Boolean(savedData[cb.id]);
-        } else {
-          cb.checked = cb.getAttribute('data-auto') === 'true';
-        }
+        // Lo detectado en el sistema siempre cuenta como cumplido, aunque antes se haya guardado sin marcar
+        const detectado = cb.getAttribute('data-auto') === 'true';
+        cb.checked = detectado || Boolean(savedData?.[cb.id]);
 
         cb.addEventListener('change', calculateMaturity);
       });

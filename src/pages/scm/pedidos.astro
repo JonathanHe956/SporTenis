@@ -89,7 +89,7 @@ if (Astro.request.method === 'POST') {
     const id = Number(formData.get('id'));
     const operacion = formData.get('operacion');
     const cantidad = Number(formData.get('cantidad') || 1);
-    const motivo = formData.get('motivo') || 'Ajuste Manual';
+    const motivo = formData.get('motivo')?.toString() || 'Ajuste Manual';
 
     const producto = await db.select().from(Productos).where(eq(Productos.id, id));
     if (producto.length > 0) {
