@@ -42,4 +42,12 @@ Para rellenar la base con los datos de prueba, ejecuta el script de seed:
 npx tsx db/seed.ts
 ```
 
+El seed incluye cuatro órdenes de ejemplo —una por cada estado del ERP— con sus detalles y movimientos de inventario correspondientes.
+
+Si la base ya contiene datos y solo necesitas cargar las órdenes de demostración sin repetir ni reemplazar el seed principal, ejecuta:
+```bash
+npx tsx db/seed-orders-demo.ts
+```
+Este script crea un producto aislado para las órdenes demo y no modifica los productos existentes. No lo ejecutes más de una vez; se detiene si detecta que ya se cargaron las órdenes.
+
 > **Nota:** El archivo `db/config.ts` ha sido eliminado. Nuestro nuevo esquema central vive en `src/db/schema.ts` y la conexión en `src/db/db.ts`.
