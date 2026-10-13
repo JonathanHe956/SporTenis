@@ -4,14 +4,17 @@ import { db } from '../../db/db';
 import { Modelos, Marcas, Categorias, Productos, Proveedores, Notificaciones, PedidosCompra } from '../../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { procesarLogisticaStock } from '../../lib/stockLogistics';
+import { canEditCatalogo } from '../../lib/auth';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-// El middleware ya limita /scm a administrador y logística
+// El middleware limita /scm a administrador y logística; ventas solo consulta este catálogo
 const sessionUser = Astro.locals.user;
 if (!sessionUser) return Astro.redirect('/login');
+const puedeEditar = canEditCatalogo(sessionUser.role);
 
 if (Astro.request.method === 'POST') {
+  if (!puedeEditar) return Astro.redirect(Astro.url.pathname);
   const formData = await Astro.request.formData();
   const action = formData.get('action');
 
@@ -166,11 +169,13 @@ if (q) {
 <CrmLayout title="Productos SCM" activePath="/scm/productos">
   <div class="header-actions">
     <h1 class="crm-title">Catálogo SCM</h1>
-    <div style="display: flex; gap: 10px;">
-      <button class="btn-primary" onclick="document.getElementById('modalCreateMarca').showModal()">+ Nueva Marca</button>
-      <button class="btn-primary" onclick="document.getElementById('modalCreateCategoria').showModal()">+ Nueva Categoría</button>
-      <button class="btn-primary" onclick="document.getElementById('modalCreateProducto').showModal()">+ Nuevo Producto</button>
-    </div>
+    {puedeEditar && (
+      <div style="display: flex; gap: 10px;">
+        <button class="btn-primary" onclick="document.getElementById('modalCreateMarca').showModal()">+ Nueva Marca</button>
+        <button class="btn-primary" onclick="document.getElementById('modalCreateCategoria').showModal()">+ Nueva Categoría</button>
+        <button class="btn-primary" onclick="document.getElementById('modalCreateProducto').showModal()">+ Nuevo Producto</button>
+      </div>
+    )}
   </div>
 
   <div class="stats-row">
@@ -234,20 +239,24 @@ if (q) {
                 <small style="color:#666;">Costo: ${producto.costo}</small>
               </td>
               <td class="text-right" style="white-space: nowrap;">
-                <button 
-                  class="action-btn" 
-                  title="Editar" 
-                  onclick={`openEditProducto(${producto.id}, '${producto.nombre}', \`${producto.descripcion || ''}\`, ${producto.id_categoria || 'null'}, ${producto.id_proveedor || 'null'}, ${producto.id_marca || 'null'}, ${producto.stock}, ${producto.stock_minimo || 0}, '${producto.estrategia || 'PUSH'}', '${producto.costo}', '${producto.precio_venta}', '${producto.color || ''}', '${producto.theme_class || ''}')`}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                </button>
-                <form method="POST" style="display:inline;" data-confirm="¿Eliminar este producto permanentemente?" data-confirm-title="Eliminar producto" data-confirm-accept="Eliminar">
-                  <input type="hidden" name="action" value="delete_producto" />
-                  <input type="hidden" name="id" value={producto.id} />
-                  <button type="submit" class="action-btn text-danger" title="Eliminar">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-                  </button>
-                </form>
+                {puedeEditar ? (
+                  <>
+                    <button 
+                      class="action-btn" 
+                      title="Editar" 
+                      onclick={`openEditProducto(${producto.id}, '${producto.nombre}', \`${producto.descripcion || ''}\`, ${producto.id_categoria || 'null'}, ${producto.id_proveedor || 'null'}, ${producto.id_marca || 'null'}, ${producto.stock}, ${producto.stock_minimo || 0}, '${producto.estrategia || 'PUSH'}', '${producto.costo}', '${producto.precio_venta}', '${producto.color || ''}', '${producto.theme_class || ''}')`}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </button>
+                    <form method="POST" style="display:inline;" data-confirm="¿Eliminar este producto permanentemente?" data-confirm-title="Eliminar producto" data-confirm-accept="Eliminar">
+                      <input type="hidden" name="action" value="delete_producto" />
+                      <input type="hidden" name="id" value={producto.id} />
+                      <button type="submit" class="action-btn text-danger" title="Eliminar">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                      </button>
+                    </form>
+                  </>
+                ) : <span style="color: var(--color-text-muted); font-size: 12px;">Solo consulta</span>}
               </td>
             </tr>
           ))}

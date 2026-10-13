@@ -48,7 +48,40 @@ export const canAccessScm = (role: UserRole | null | undefined): boolean =>
   role === 'administrador' || role === 'logistica';
 
 export const canAccessErp = (role: UserRole | null | undefined): boolean =>
-  role === 'administrador' || role === 'logistica';
+  role === 'administrador' || role === 'logistica' || role === 'vendedor';
+
+const startsWithSegment = (pathname: string, prefix: string): boolean =>
+  pathname === prefix || pathname.startsWith(`${prefix}/`);
+
+// Páginas del panel reservadas al administrador, aunque el rol entre a la sección
+const adminOnlyRoutes = ['/erp/finanzas', '/erp/implementacion'];
+const adminOnlyPages = /^\/(crm|scm|erp)\/(usuarios|configuracion)$/;
+
+// Páginas del SCM que ventas puede consultar sin entrar al resto de la sección
+const vendedorScmRoutes = ['/scm/productos'];
+
+/**
+ * Permiso por página del panel interno. Lo usan el middleware (protección real)
+ * y el menú lateral (qué opciones se muestran), así nunca se desfasan.
+ */
+export const canAccessRoute = (role: UserRole | null | undefined, pathname: string): boolean => {
+  const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  const inCrm = startsWithSegment(path, '/crm');
+  const inScm = startsWithSegment(path, '/scm');
+  const inErp = startsWithSegment(path, '/erp');
+  if (!inCrm && !inScm && !inErp) return true;
+
+  if (role === 'administrador') return true;
+  if (adminOnlyPages.test(path) || adminOnlyRoutes.some((route) => startsWithSegment(path, route))) return false;
+
+  if (inCrm) return canAccessCrm(role);
+  if (inErp) return canAccessErp(role);
+  return canAccessScm(role)
+    || (role === 'vendedor' && vendedorScmRoutes.some((route) => startsWithSegment(path, route)));
+};
+
+/** Ventas consulta el catálogo del SCM pero no lo modifica. */
+export const canEditCatalogo = (role: UserRole | null | undefined): boolean => canAccessScm(role);
 
 export const isUsuarioActivo = (estado: string): boolean => estado.toLowerCase() !== 'inactivo';
 

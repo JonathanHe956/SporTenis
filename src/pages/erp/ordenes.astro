@@ -4,6 +4,7 @@ import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Clientes, DetalleVentas, MetodosPago, MovimientosInventario, Productos, Usuarios, Ventas } from '../../db/schema';
 import { procesarLogisticaStock } from '../../lib/stockLogistics';
+import { registrarHistorialOrden } from '../../lib/ventas';
 
 const estadosOrden = ['Procesando', 'Confirmada', 'Entregada', 'Cancelada'] as const;
 type EstadoOrden = (typeof estadosOrden)[number];
@@ -60,6 +61,13 @@ if (Astro.request.method === 'POST') {
         throw new OrdenError('La orden cambió mientras se procesaba. Actualiza la página e inténtalo de nuevo.');
       }
 
+      await registrarHistorialOrden(tx, {
+        id_venta: idOrden,
+        id_usuario: Astro.locals.user?.id ?? null,
+        estado_anterior: currentStatus,
+        estado_nuevo: nextStatusValue,
+      });
+
       if (canConfirm || (canCancel && currentStatus === 'Confirmada')) {
         const lineas = await tx
           .select({ id_producto: DetalleVentas.id_producto, cantidad: DetalleVentas.cantidad })
@@ -98,6 +106,7 @@ if (Astro.request.method === 'POST') {
               motivo: canConfirm ? `Venta #${idOrden}` : `Cancelación de venta #${idOrden}`,
               fecha: new Date(),
               id_usuario: Astro.locals.user?.id ?? null,
+              id_venta: idOrden,
             })),
           );
         }
@@ -118,6 +127,10 @@ if (Astro.request.method === 'POST') {
     const status = Astro.url.searchParams.get('estado');
     if (q) params.set('q', q);
     if (status && isEstadoOrden(status)) params.set('estado', status);
+    for (const key of ['from', 'to']) {
+      const value = Astro.url.searchParams.get(key);
+      if (value) params.set(key, value);
+    }
     params.set('actualizada', '1');
     return Astro.redirect(`/erp/ordenes?${params.toString()}`, 303);
   } catch (error: unknown) {
@@ -132,6 +145,14 @@ if (Astro.request.method === 'POST') {
 
 const qParam = Astro.url.searchParams.get('q')?.trim() ?? '';
 const estadoParam = Astro.url.searchParams.get('estado') ?? '';
+const fechaParam = (key: string) => {
+  const value = Astro.url.searchParams.get(key) ?? '';
+  return /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value) ? value : '';
+};
+const fromParam = fechaParam('from');
+const toParam = fechaParam('to');
+const fromDate = fromParam ? new Date(`${fromParam}T00:00:00`) : null;
+const toDate = toParam ? new Date(`${toParam}T23:59:59`) : null;
 const ventas = await db
   .select({
     id: Ventas.id,
@@ -159,7 +180,9 @@ const ordenesFiltradas = ventas.filter((venta) => {
     venta.empresa ?? '',
     venta.vendedor ?? '',
   ].some((value) => value.toLowerCase().includes(qParam.toLowerCase()));
-  return matchesSearch && (!estadoParam || venta.estado === estadoParam);
+  const fecha = new Date(venta.fecha_venta);
+  const matchesFecha = (!fromDate || fecha >= fromDate) && (!toDate || fecha <= toDate);
+  return matchesSearch && matchesFecha && (!estadoParam || venta.estado === estadoParam);
 });
 
 const totalOrdenes = ventas.length;
@@ -177,7 +200,7 @@ const fmtDate = (date: Date | null) =>
         <h1>Órdenes ERP</h1>
         <p>Seguimiento de pedidos, confirmaciones y entregas.</p>
       </div>
-      <a class="sales-link" href="/scm/ventas">Ir al historial de ventas</a>
+      <a class="sales-link" href="/erp/ventas">Nueva orden / historial de ventas</a>
     </header>
 
     {successMsg && <p class="alert success" role="status">{successMsg}</p>}
@@ -193,14 +216,16 @@ const fmtDate = (date: Date | null) =>
     <section class="orders-card">
       <form method="GET" action="/erp/ordenes" class="filters">
         <label class="visually-hidden" for="search-orders">Buscar órdenes</label>
-        <input id="search-orders" type="search" name="q" value={qParam} placeholder="Buscar por folio, cliente o correo" />
+        <input id="search-orders" type="search" name="q" value={qParam} placeholder="Buscar por folio, cliente, correo o vendedor" />
         <label class="visually-hidden" for="filter-status">Filtrar por estado</label>
         <select id="filter-status" name="estado">
           <option value="">Todos los estados</option>
           {estadosOrden.map((estado) => <option value={estado} selected={estadoParam === estado}>{estado}</option>)}
         </select>
+        <label class="date-filter">Desde <input type="date" name="from" value={fromParam} /></label>
+        <label class="date-filter">Hasta <input type="date" name="to" value={toParam} /></label>
         <button type="submit">Filtrar</button>
-        {(qParam || estadoParam) && <a href="/erp/ordenes">Limpiar</a>}
+        {(qParam || estadoParam || fromParam || toParam) && <a href="/erp/ordenes">Limpiar</a>}
       </form>
 
       <div class="table-scroll">
@@ -232,10 +257,10 @@ const fmtDate = (date: Date | null) =>
                 <td class="numeric">{fmt(orden.total)}</td>
                 <td>
                   <div class="row-actions">
-                    <a href={`/scm/ventas?detalle=${orden.id}`}>Detalle</a>
+                    <a href={`/erp/ventas?detalle=${orden.id}`}>Detalle</a>
                     {orden.estado === 'Procesando' && (
                       <>
-                        <a href={`/scm/ventas?detalle=${orden.id}&editar=1`}>Modificar</a>
+                        <a href={`/erp/ventas?detalle=${orden.id}&editar=1`}>Modificar</a>
                         <form method="POST">
                           <input type="hidden" name="id_orden" value={orden.id} />
                           <input type="hidden" name="estado" value="Confirmada" />
@@ -290,7 +315,8 @@ const fmtDate = (date: Date | null) =>
     .orders-card { padding: 20px; }
     .filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
     .filters input, .filters select, .filters button { min-height: 38px; border: 1px solid var(--color-border); border-radius: 5px; padding: 7px 10px; font: inherit; }
-    .filters input { flex: 1; min-width: 220px; }
+    .filters input[type="search"] { flex: 1; min-width: 220px; }
+    .date-filter { display: flex; align-items: center; gap: 6px; color: var(--color-text-muted); font-size: 12px; font-weight: 650; }
     .filters button, .row-actions button { cursor: pointer; background: var(--color-text); color: var(--color-surface); border: 1px solid var(--color-text); border-radius: 5px; padding: 7px 10px; font: inherit; font-size: 12px; font-weight: 650; }
     .table-scroll { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }

@@ -2,7 +2,7 @@
 import { db } from "../db/db";
 import { Notificaciones } from "../db/schema";
 import { eq, desc } from "drizzle-orm";
-import { canAccessCrm, canAccessScm } from "../lib/auth";
+import { canAccessRoute, homeForRole } from "../lib/auth";
 
 interface Props {
   title: string;
@@ -10,7 +10,7 @@ interface Props {
 }
 
 const { title, activePath = "/crm" } = Astro.props;
-const currentModule = activePath.startsWith("/scm") || activePath.startsWith("/erp") ? "scm" : "crm";
+const currentModule = activePath.startsWith("/erp") ? "erp" : activePath.startsWith("/scm") ? "scm" : "crm";
 
 const sessionUser = Astro.locals.user;
 let userName = "Admin";
@@ -31,12 +31,9 @@ if (sessionUser) {
   isAdmin = sessionUser.role === 'administrador';
 }
 
-// Redirect if accessing a module they don't have permission for
-if (currentModule === "crm" && !canAccessCrm(roleStr as any)) {
-  return Astro.redirect(canAccessScm(roleStr as any) ? "/scm" : "/login");
-}
-if (currentModule === "scm" && !canAccessScm(roleStr as any)) {
-  return Astro.redirect(canAccessCrm(roleStr as any) ? "/crm" : "/login");
+// El middleware ya protege las rutas; esta es la segunda barrera del panel
+if (!canAccessRoute(roleStr as any, Astro.url.pathname)) {
+  return Astro.redirect(sessionUser ? homeForRole(roleStr as any) : "/login");
 }
 
 // Fetch unread notifications for the bell icon
@@ -74,24 +71,7 @@ let menuCrm = [
     path: "/crm/evaluaciones",
     label: "Evaluaciones",
     icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
-  },
-
-  {
-    path: "/crm/usuarios",
-    label: "Usuarios",
-    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
-  },
-  {
-    path: "/crm/actividad",
-    label: "Mi actividad",
-    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>',
-  },
-  {
-    path: "/crm/configuracion",
-    label: "Configuración",
-    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
-  },
-];
+  },];
 
 let menuScm = [
   {
@@ -120,16 +100,6 @@ let menuScm = [
     icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
   },
   {
-    path: "/scm/ventas",
-    label: "Ventas",
-    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>',
-  },
-  {
-    path: "/erp/ordenes",
-    label: "Órdenes ERP",
-    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/></svg>',
-  },
-  {
     path: "/scm/logistica",
     label: "Logística",
     icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>',
@@ -138,35 +108,90 @@ let menuScm = [
     path: "/scm/reportes",
     label: "Reportes",
     icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+  },];
+
+let menuErp = [
+  {
+    path: "/erp",
+    label: "Dashboard",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>',
   },
   {
-    path: "/scm/finanzas",
+    path: "/erp/ordenes",
+    label: "Órdenes",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/></svg>',
+  },
+  {
+    path: "/erp/ventas",
+    label: "Ventas",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>',
+  },
+  {
+    path: "/erp/reportes",
+    label: "Reportes",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+  },
+  {
+    path: "/erp/finanzas",
     label: "Finanzas",
     icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
   },
   {
-    path: "/scm/usuarios",
+    path: "/erp/implementacion",
+    label: "Nivel ERP",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+  },
+];
+
+// Opciones que se repiten entre secciones; cada una abre la página dentro de su sección
+let menuComun = [
+  {
+    path: "/usuarios",
     label: "Usuarios",
     icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
   },
   {
-    path: "/scm/configuracion",
+    path: "/actividad",
+    label: "Mi actividad",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>',
+  },
+  {
+    path: "/configuracion",
     label: "Configuración",
     icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   },
 ];
 
-if (!isAdmin) {
-  menuCrm = menuCrm.filter((item) => item.path !== "/crm/configuracion" && item.path !== "/crm/usuarios");
-  menuScm = menuScm.filter((item) => item.path !== "/scm/configuracion" && item.path !== "/scm/usuarios");
+// Cada sección muestra solo las páginas que el rol puede abrir
+const puedeVer = (item: { path: string }) => canAccessRoute(roleStr as any, item.path);
+const menus: Record<string, typeof menuCrm> = {};
+for (const [id, items] of Object.entries({ crm: menuCrm, scm: menuScm, erp: menuErp })) {
+  menus[id] = [
+    ...items,
+    // Mi actividad es la bitácora de gestiones con clientes: no aplica al ERP
+    ...menuComun
+      .filter((item) => id !== "erp" || item.path !== "/actividad")
+      .map((item) => ({ ...item, path: `/${id}${item.path}` })),
+  ].filter(puedeVer);
 }
 
-let activeMenu = currentModule === "scm" ? menuScm : menuCrm;
+let activeMenu = menus[currentModule];
 const moduleTitle =
-  currentModule === "scm"
-    ? "SCM - Cadena de Suministros"
-    : "CRM - Administración";
-const showModuleSwitcher = canAccessCrm(roleStr as any) && canAccessScm(roleStr as any);
+  currentModule === "erp"
+    ? "ERP - Ventas y Finanzas"
+    : currentModule === "scm"
+      ? "SCM - Cadena de Suministros"
+      : "CRM - Administración";
+// Secciones del panel con al menos una página para el rol; cada una abre en su primera opción
+const modules = [
+  { id: "crm", label: "CRM", title: "Clientes" },
+  { id: "scm", label: "SCM", title: "Cadena de Suministros" },
+  { id: "erp", label: "ERP", title: "Ventas y Finanzas" },
+]
+  .filter((m) => menus[m.id].length > 0)
+  .map((m) => ({ ...m, href: menus[m.id][0].path }));
+const moduleHome = modules.find((m) => m.id === currentModule)?.href ?? `/${currentModule}`;
+const showModuleSwitcher = modules.length > 1;
 ---
 
 <!doctype html>
@@ -181,14 +206,14 @@ const showModuleSwitcher = canAccessCrm(roleStr as any) && canAccessScm(roleStr 
       <!-- Sidebar -->
       <aside class="sidebar" data-module={currentModule}>
         <div class="sidebar-header">
-          <a class="brand" href={currentModule === "scm" ? "/scm" : "/crm"}>
+          <a class="brand" href={moduleHome}>
             <span class="brand-mark">S</span>
             <div
               style="display: flex; flex-direction: column; line-height: 1.1;"
             >
               <span style="font-size: 16px;">Spor<span>Tenis</span></span>
               <span style="font-size: 12px; font-weight: 400; color: #a3a3a3;"
-                >{currentModule === "scm" ? "SCM" : "CRM"}</span
+                >{currentModule.toUpperCase()}</span
               >
             </div>
           </a>
@@ -199,7 +224,7 @@ const showModuleSwitcher = canAccessCrm(roleStr as any) && canAccessScm(roleStr 
             activeMenu.map((item) => (
               <a
                 href={item.path}
-                class={`nav-item ${activePath === item.path || (item.path !== "/crm" && item.path !== "/scm" && activePath.startsWith(item.path)) ? "active" : ""}`}
+                class={`nav-item ${activePath === item.path || (item.path !== "/crm" && item.path !== "/scm" && item.path !== "/erp" && activePath.startsWith(item.path)) ? "active" : ""}`}
               >
                 <span class="nav-icon" set:html={item.icon} />
                 {item.label}
@@ -244,32 +269,18 @@ const showModuleSwitcher = canAccessCrm(roleStr as any) && canAccessScm(roleStr 
           <div class="topbar-actions">
             {
               showModuleSwitcher && (
-                <a
-                  href={currentModule === "scm" ? "/crm" : "/scm"}
-                  class="module-switcher"
-                  title={`Cambiar a ${currentModule === "scm" ? "CRM" : "SCM"}`}
-                >
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <>
-                      <path d="M8 3 4 7l4 4" />
-                      <path d="M4 7h16" />
-                      <path d="m16 21 4-4-4-4" />
-                      <path d="M20 17H4" />
-                    </>
-                  </svg>
-                  <span>
-                    Cambiar a {currentModule === "scm" ? "CRM" : "SCM"}
-                  </span>
-                </a>
+                <nav class="module-switcher" aria-label="Secciones">
+                  {modules.map((m) => (
+                    <a
+                      href={m.href}
+                      class={m.id === currentModule ? "active" : ""}
+                      aria-current={m.id === currentModule ? "page" : undefined}
+                      title={m.title}
+                    >
+                      {m.label}
+                    </a>
+                  ))}
+                </nav>
               )
             }
 
@@ -635,19 +646,25 @@ const showModuleSwitcher = canAccessCrm(roleStr as any) && canAccessScm(roleStr 
 
       .module-switcher {
         display: flex;
-        align-items: center;
-        gap: 8px;
+        gap: 2px;
         background: var(--color-bg);
-        color: var(--color-text);
-        text-decoration: none;
-        padding: 8px 12px;
+        padding: 3px;
         border-radius: 20px;
+        border: 1px solid var(--color-border);
+      }
+      .module-switcher a {
+        color: var(--color-text-muted);
+        text-decoration: none;
+        padding: 6px 14px;
+        border-radius: 16px;
         font-size: 13px;
         font-weight: 700;
-        border: 1px solid var(--color-border);
         transition: all 0.2s;
       }
-      .module-switcher:hover {
+      .module-switcher a:hover {
+        color: var(--color-text);
+      }
+      .module-switcher a.active {
         background: var(--color-text);
         color: white;
       }

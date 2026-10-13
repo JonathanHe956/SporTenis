@@ -234,6 +234,8 @@ export const MovimientosInventario = mysqlTable('MovimientosInventario', {
   motivo: varchar('motivo', { length: 255 }).notNull(),
   fecha: datetime('fecha').notNull(),
   id_usuario: int('id_usuario').references(() => Usuarios.id),
+  // Orden de cliente que originó la salida (o la entrada, si se canceló)
+  id_venta: int('id_venta').references(() => Ventas.id),
 });
 
 export const Auditorias = mysqlTable('Auditorias', {
@@ -271,4 +273,14 @@ export const Sesiones = mysqlTable('Sesiones', {
   id_usuario: int('id_usuario').references(() => Usuarios.id, { onDelete: 'cascade' }).notNull(),
   fecha_creacion: datetime('fecha_creacion').notNull(),
   fecha_expiracion: datetime('fecha_expiracion').notNull(),
+});
+
+// Etapa 3 (ERP): quién cambió el estado de una orden y cuándo
+export const HistorialOrdenes = mysqlTable('HistorialOrdenes', {
+  id: int('id').autoincrement().primaryKey(),
+  id_venta: int('id_venta').references(() => Ventas.id).notNull(),
+  id_usuario: int('id_usuario').references(() => Usuarios.id),
+  estado_anterior: varchar('estado_anterior', { length: 50 }),
+  estado_nuevo: varchar('estado_nuevo', { length: 50 }).notNull(),
+  fecha: datetime('fecha').notNull(),
 });

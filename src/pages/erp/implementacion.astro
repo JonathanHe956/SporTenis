@@ -1,0 +1,1056 @@
+---
+import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db } from '../../db/db';
+import {
+  Auditorias, Clientes, HistorialOrdenes, Interacciones, MetodosPago, MovimientosInventario,
+  Notificaciones, PedidosCompra, Productos, Proveedores, Usuarios, Ventas,
+} from '../../db/schema';
+import { ESTADOS_VENTA_EFECTIVA } from '../../lib/ventas';
+
+// Si una tabla aún no existe en la base, el criterio queda como no detectado
+const safe = async <T,>(query: Promise<T[]>): Promise<T[]> => {
+  try {
+    return await query;
+  } catch (e) {
+    return [];
+  }
+};
+
+// 1. Datos del sistema para detectar qué partes del ERP ya están en uso
+const productos = await safe(db.select({
+  precio_venta: Productos.precio_venta,
+  costo: Productos.costo,
+  stock_minimo: Productos.stock_minimo,
+}).from(Productos));
+const ventas = await safe(db.select({ estado: Ventas.estado, fecha_entrega: Ventas.fecha_entrega }).from(Ventas));
+const clientes = await safe(db.select({ id: Clientes.id }).from(Clientes));
+const metodosPago = await safe(db.select({ id: MetodosPago.id }).from(MetodosPago));
+const movimientos = await safe(db.select({ motivo: MovimientosInventario.motivo, id_venta: MovimientosInventario.id_venta }).from(MovimientosInventario));
+const pedidosCompra = await safe(db.select({ tipo: PedidosCompra.tipo }).from(PedidosCompra));
+const usuarios = await safe(db.select({ id_rol: Usuarios.id_rol }).from(Usuarios));
+const auditorias = await safe(db.select({ id: Auditorias.id }).from(Auditorias));
+const notificaciones = await safe(db.select({ id: Notificaciones.id }).from(Notificaciones));
+
+const interacciones = await safe(db.select({ id: Interacciones.id }).from(Interacciones));
+const proveedores = await safe(db.select({ id: Proveedores.id }).from(Proveedores));
+const historial = await safe(db.select({ id: HistorialOrdenes.id }).from(HistorialOrdenes));
+
+// Integración entre módulos: qué maneja cada uno y con qué llaves se relacionan
+const modulos = [
+  {
+    sigla: 'CRM',
+    nombre: 'Relación con Clientes',
+    href: '/crm',
+    items: [
+      { label: 'Clientes', valor: clientes.length },
+      { label: 'Interacciones', valor: interacciones.length },
+    ],
+  },
+  {
+    sigla: 'ERP',
+    nombre: 'Órdenes, Integración y Reportes',
+    href: '/erp',
+    items: [
+      { label: 'Órdenes de clientes', valor: ventas.length },
+      { label: 'Cambios de estado registrados', valor: historial.length },
+    ],
+  },
+  {
+    sigla: 'SCM',
+    nombre: 'Cadena de Suministros',
+    href: '/scm',
+    items: [
+      { label: 'Productos en inventario', valor: productos.length },
+      { label: 'Proveedores', valor: proveedores.length },
+      { label: 'Órdenes a proveedores', valor: pedidosCompra.length },
+    ],
+  },
+];
+const enlaces = [
+  { titulo: 'Cliente → Orden', llave: 'Ventas.id_cliente → Clientes.id', nota: 'Cada orden pertenece a un cliente del CRM.' },
+  { titulo: 'Orden → Producto', llave: 'DetalleVentas.id_producto → Productos.id', nota: 'Las líneas de la orden salen del catálogo del SCM.' },
+];
+const flujo = [
+  { paso: 'Venta captura la orden', detalle: 'Se elige un cliente del CRM y productos del SCM; se valida que haya stock.' },
+  { paso: 'Se confirma la orden', detalle: 'En una sola transacción baja el stock, se registra la salida de inventario y el historial.' },
+  { paso: 'El inventario reacciona', detalle: 'Si un producto queda bajo su mínimo, el SCM genera el pedido al proveedor o la alerta.' },
+  { paso: 'Reportes lo reflejan', detalle: 'Ventas, productos más vendidos, rotación y pedidos a proveedores se ven en Reportes ERP.' },
+];
+const movimientosLigados = movimientos.filter(m => m.id_venta != null).length;
+
+const hayCostos = productos.some(p => Number(p.precio_venta) > 0 && Number(p.costo) > 0);
+const hayVentasEfectivas = ventas.some(v => ESTADOS_VENTA_EFECTIVA.includes(v.estado));
+
+// 2. Etapas de implementación, de menor a mayor
+const etapas = [
+  { id: 'cat-basico', nombre: 'Básico' },
+  { id: 'cat-integrado', nombre: 'Integrado' },
+  { id: 'cat-optimizado', nombre: 'Optimizado' },
+  { id: 'cat-automatizado', nombre: 'Automatizado' },
+];
+
+// 3. Criterios del checklist; `auto` indica si el sistema ya lo detecta en la base de datos
+const criterios = [
+  // Básico: los procesos centrales se registran en el sistema
+  {
+    id: 'e1', etapa: 'cat-basico', auto: hayCostos,
+    titulo: 'Catálogo de Productos con Precio y Costo',
+    desc: 'Cada producto tiene SKU, precio de venta y costo registrados en un solo catálogo.',
+    impacto: 'Es la base para vender, valuar el inventario y calcular la rentabilidad.',
+  },
+  {
+    id: 'e2', etapa: 'cat-basico', auto: ventas.length > 0,
+    titulo: 'Registro de Ventas con Detalle de Productos',
+    desc: 'Las ventas se capturan en el sistema con sus productos, cantidades, envío y total.',
+    impacto: 'Sustituye notas y hojas de cálculo por un historial único de transacciones.',
+  },
+  {
+    id: 'e3', etapa: 'cat-basico', auto: clientes.length > 0,
+    titulo: 'Cartera de Clientes Centralizada',
+    desc: 'Los compradores están dados de alta y cada venta queda ligada a su cliente.',
+    impacto: 'Permite saber quién compra, cuánto y con qué frecuencia.',
+  },
+  {
+    id: 'e4', etapa: 'cat-basico', auto: metodosPago.length > 0,
+    titulo: 'Métodos de Pago Definidos',
+    desc: 'Catálogo de formas de cobro (efectivo, tarjeta, transferencia) usado en cada venta.',
+    impacto: 'Ordena los cobros y permite separar los ingresos por forma de pago.',
+  },
+
+  // Integrado: los módulos comparten información entre sí
+  {
+    id: 'e5', etapa: 'cat-integrado', auto: movimientos.some(m => m.motivo.startsWith('Venta #')),
+    titulo: 'Ventas Conectadas con el Inventario',
+    desc: 'Al confirmar una orden se descuenta el stock y se registra el movimiento de salida.',
+    impacto: 'Evita vender producto que no existe y mantiene el inventario al día sin doble captura.',
+  },
+  {
+    id: 'e6', etapa: 'cat-integrado', auto: ventas.some(v => v.estado !== 'Confirmada' || v.fecha_entrega != null),
+    titulo: 'Flujo de Órdenes por Etapas',
+    desc: 'Las órdenes avanzan por Procesando, Confirmada, Entregada o Cancelada.',
+    impacto: 'Da seguimiento a cada pedido y solo cuenta como ingreso lo confirmado.',
+  },
+  {
+    id: 'e7', etapa: 'cat-integrado', auto: pedidosCompra.length > 0,
+    titulo: 'Compras a Proveedores Ligadas al Stock',
+    desc: 'Los pedidos de compra del SCM actualizan el inventario al recibirse.',
+    impacto: 'Une el abastecimiento con las ventas en un mismo flujo de inventario.',
+  },
+  {
+    id: 'e8', etapa: 'cat-integrado', auto: new Set(usuarios.map(u => u.id_rol)).size > 1,
+    titulo: 'Acceso por Roles a CRM, SCM y ERP',
+    desc: 'Administrador, vendedor y logística entran solo a las secciones que les corresponden.',
+    impacto: 'Cada área trabaja sobre los mismos datos con permisos controlados.',
+  },
+
+  // Optimizado: la información se usa para decidir y mejorar
+  {
+    id: 'e9', etapa: 'cat-optimizado', auto: hayCostos && hayVentasEfectivas,
+    titulo: 'Rentabilidad y Margen por Ventas',
+    desc: 'Finanzas calcula ingresos, costo de lo vendido, ganancia bruta y margen.',
+    impacto: 'Muestra si el negocio gana dinero, no solo cuánto vende.',
+  },
+  {
+    id: 'e10', etapa: 'cat-optimizado', auto: productos.some(p => Number(p.stock_minimo) > 0),
+    titulo: 'Stock Mínimo Definido por Producto',
+    desc: 'Cada SKU tiene un nivel de seguridad que marca cuándo hay que reponer.',
+    impacto: 'Reduce quiebres de stock y exceso de inventario inmovilizado.',
+  },
+  {
+    id: 'e11', etapa: 'cat-optimizado', auto: auditorias.length > 0,
+    titulo: 'Auditorías Físicas de Inventario',
+    desc: 'Conteos periódicos que comparan el stock del sistema contra el físico.',
+    impacto: 'Mantiene la confiabilidad de los datos con los que se toman decisiones.',
+  },
+  {
+    id: 'e12', etapa: 'cat-optimizado', auto: false,
+    titulo: 'Presupuestos y Cuentas por Cobrar / Pagar',
+    desc: 'Control de saldos pendientes de clientes y proveedores contra un presupuesto.',
+    impacto: 'Permite planear el flujo de efectivo en lugar de solo registrarlo.',
+  },
+
+  // Automatizado: el sistema actúa sin intervención manual
+  {
+    id: 'e13', etapa: 'cat-automatizado', auto: pedidosCompra.some(p => p.tipo === 'AUTOMATICO'),
+    titulo: 'Reabastecimiento Automático',
+    desc: 'El sistema genera el pedido de compra cuando un producto PUSH baja de su mínimo.',
+    impacto: 'Elimina la revisión manual de existencias para reponer mercancía.',
+  },
+  {
+    id: 'e14', etapa: 'cat-automatizado', auto: notificaciones.length > 0,
+    titulo: 'Alertas Automáticas de Stock',
+    desc: 'Notificaciones en el panel cuando una venta deja un producto bajo su mínimo.',
+    impacto: 'El equipo se entera a tiempo sin tener que consultar reportes.',
+  },
+  {
+    id: 'e15', etapa: 'cat-automatizado', auto: false,
+    titulo: 'Facturación Electrónica Automática',
+    desc: 'Emisión del comprobante fiscal al confirmar la venta, sin captura adicional.',
+    impacto: 'Cierra el ciclo de venta cumpliendo las obligaciones fiscales.',
+  },
+  {
+    id: 'e16', etapa: 'cat-automatizado', auto: false,
+    titulo: 'Conciliación de Pagos y Reportes Programados',
+    desc: 'Los cobros se concilian solos y los reportes se generan y envían por calendario.',
+    impacto: 'Libera tiempo administrativo y reduce errores de cierre.',
+  },
+];
+
+const criteriosDe = (etapa: string) => criterios.filter(c => c.etapa === etapa);
+---
+
+<CrmLayout title="Nivel de Implementación ERP" activePath="/erp/implementacion">
+  <!-- Integración CRM ↔ ERP ↔ SCM -->
+  <section class="crm-card scm-feature-section" id="widget-integracion">
+    <div class="feature-header">
+      <div class="feature-title-group">
+        <span class="feature-badge">Integración</span>
+        <h2>Cómo se Integran CRM, ERP y SCM</h2>
+        <p>El ERP une a los clientes del CRM con el inventario del SCM a través de las órdenes.</p>
+      </div>
+    </div>
+
+    <div class="integration-flow">
+      {modulos.map((modulo, idx) => (
+        <>
+          <a href={modulo.href} class={`module-box ${modulo.sigla === 'ERP' ? 'module-core' : ''}`}>
+            <span class="module-sigla">{modulo.sigla}</span>
+            <strong>{modulo.nombre}</strong>
+            <ul>
+              {modulo.items.map(item => (
+                <li><span>{item.label}</span><b>{item.valor}</b></li>
+              ))}
+            </ul>
+          </a>
+          {idx < enlaces.length && (
+            <div class="module-link">
+              <span class="link-arrow" aria-hidden="true">&rarr;</span>
+              <strong>{enlaces[idx].titulo}</strong>
+              <code>{enlaces[idx].llave}</code>
+              <small>{enlaces[idx].nota}</small>
+            </div>
+          )}
+        </>
+      ))}
+    </div>
+
+    <div class="flow-steps">
+      {flujo.map((item, idx) => (
+        <div class="flow-step">
+          <span class="stage-num">{idx + 1}</span>
+          <div>
+            <strong>{item.paso}</strong>
+            <p>{item.detalle}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+    <p class="integration-note">
+      {movimientosLigados} movimientos de inventario están ligados a su orden con la llave <code>MovimientosInventario.id_venta → Ventas.id</code>.
+    </p>
+  </section>
+
+  <section class="crm-card scm-feature-section" id="widget-checklist-erp">
+    <div class="feature-header">
+      <div class="feature-title-group">
+        <span class="feature-badge">Avance de Implementación</span>
+        <h2>Nivel de Implementación ERP (Checklist de Avance)</h2>
+        <p>Seguimiento de qué tanto del ERP está en uso en SporTenis, de la etapa básica a la automatizada.</p>
+      </div>
+
+      <div class="checklist-action-bar">
+        <button type="button" class="btn-tool" id="btnCheckAll">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          Marcar Todos
+        </button>
+        <button type="button" class="btn-tool" id="btnResetAuto" title="Restablece al estado detectado en la base de datos">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          Restablecer Detección
+        </button>
+        <button type="button" class="btn-tool primary-tool" id="btnCopyReport">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copiar Diagnóstico
+        </button>
+      </div>
+    </div>
+
+    <!-- Hero Card: Nivel ERP Dinámico -->
+    <div class="scm-maturity-hero" id="maturityHero">
+      <div class="maturity-score-box">
+        <div class="circular-chart-wrap">
+          <svg viewBox="0 0 36 36" class="circular-chart">
+            <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+            <path class="circle" id="maturityCirclePath" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+          </svg>
+          <div class="circle-inner-text">
+            <span class="pct-val" id="maturityScorePct">0%</span>
+            <span class="pct-label">Avance</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="maturity-info-box">
+        <div class="level-badge-row">
+          <span class="level-indicator-badge" id="maturityBadge">NIVEL CALCULANDO...</span>
+          <span class="criteria-counter" id="criteriaCounter">0 de {criterios.length} criterios cumplidos</span>
+        </div>
+        <h3 class="maturity-title" id="maturityTitle">Evaluando implementación del ERP...</h3>
+        <p class="maturity-desc" id="maturityDesc">Marca o desmarca los criterios para recalcular el nivel de implementación en tiempo real.</p>
+
+        <div class="maturity-roadmap" id="maturityRoadmap">
+          <strong>Siguiente paso:</strong>
+          <span id="maturityRoadmapText">Completar los criterios de la etapa actual.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Avance por etapa -->
+    <div class="dimension-progress-grid">
+      {etapas.map((etapa, idx) => (
+        <div class="dimension-card" data-cat={etapa.id}>
+          <div class="dim-head">
+            <span><b class="stage-num">{idx + 1}</b> {etapa.nombre}</span>
+            <strong class="dim-val">0/{criteriosDe(etapa.id).length}</strong>
+          </div>
+          <div class="dim-track"><div class="dim-fill" style="width: 0%;"></div></div>
+          <span class="stage-state">Pendiente</span>
+        </div>
+      ))}
+    </div>
+
+    <!-- Filtros por etapa -->
+    <div class="checklist-filters">
+      <button type="button" class="filter-chip active" data-filter="all">Todos los Criterios ({criterios.length})</button>
+      {etapas.map(etapa => (
+        <button type="button" class="filter-chip" data-filter={etapa.id}>{etapa.nombre} ({criteriosDe(etapa.id).length})</button>
+      ))}
+    </div>
+
+    <!-- Lista interactiva de criterios -->
+    <div class="checklist-items-grid" id="checklistContainer">
+      {criterios.map(c => (
+        <label class="check-item-card" data-cat={c.etapa}>
+          <input type="checkbox" class="scm-checkbox" id={c.id} data-auto={c.auto ? 'true' : 'false'} />
+          <div class="check-body">
+            <div class="check-title-row">
+              <strong>{c.titulo}</strong>
+              {c.auto && <span class="auto-tag">Detectado en Sistema</span>}
+            </div>
+            <p class="check-desc">{c.desc}</p>
+            <span class="check-impact">Impacto: {c.impacto}</span>
+          </div>
+        </label>
+      ))}
+    </div>
+  </section>
+
+  <!-- Toast para copiado -->
+  <div id="scmToast" class="scm-toast">Copiado al portapapeles</div>
+</CrmLayout>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const STORAGE_KEY = 'sportenis_erp_checklist_v1';
+    const checkboxes = document.querySelectorAll<HTMLInputElement>('.scm-checkbox');
+    const maturityScorePct = document.getElementById('maturityScorePct');
+    const maturityCirclePath = document.getElementById('maturityCirclePath');
+    const maturityBadge = document.getElementById('maturityBadge');
+    const maturityTitle = document.getElementById('maturityTitle');
+    const maturityDesc = document.getElementById('maturityDesc');
+    const maturityRoadmapText = document.getElementById('maturityRoadmapText');
+    const criteriaCounter = document.getElementById('criteriaCounter');
+    const toast = document.getElementById('scmToast');
+    const stageCards = document.querySelectorAll<HTMLElement>('.dimension-card');
+
+    // Niveles ERP: se alcanza un nivel al completar su etapa y todas las anteriores
+    const NIVELES = [
+      {
+        cat: 'cat-basico',
+        badge: 'NIVEL 1: BÁSICO',
+        color: '#dc2626',
+        title: 'ERP Básico: Procesos Registrados',
+        desc: 'El sistema captura las operaciones centrales (productos, ventas, clientes y cobros), pero cada módulo trabaja por separado.',
+      },
+      {
+        cat: 'cat-integrado',
+        badge: 'NIVEL 2: INTEGRADO',
+        color: '#f59e0b',
+        title: 'ERP Integrado: Módulos Conectados',
+        desc: 'Ventas, inventario y compras comparten la misma información y cada área accede según su rol.',
+      },
+      {
+        cat: 'cat-optimizado',
+        badge: 'NIVEL 3: OPTIMIZADO',
+        color: '#2563eb',
+        title: 'ERP Optimizado: Decisiones con Datos',
+        desc: 'La información del sistema se usa para medir rentabilidad, controlar existencias y planear las finanzas.',
+      },
+      {
+        cat: 'cat-automatizado',
+        badge: 'NIVEL 4: AUTOMATIZADO',
+        color: '#15803d',
+        title: 'ERP Automatizado: Operación sin Captura Manual',
+        desc: 'El sistema repone inventario, alerta, factura y concilia por sí mismo; el equipo solo supervisa.',
+      },
+    ];
+
+    function calculateMaturity() {
+      let checkedCount = 0;
+      const total = checkboxes.length;
+      const dimCounts: Record<string, { checked: number; total: number; pendiente: string }> = {};
+      NIVELES.forEach(n => { dimCounts[n.cat] = { checked: 0, total: 0, pendiente: '' }; });
+
+      const savedState: Record<string, boolean> = {};
+
+      checkboxes.forEach(cb => {
+        const isChecked = cb.checked;
+        savedState[cb.id] = isChecked;
+
+        const parentCard = cb.closest<HTMLElement>('.check-item-card');
+        const cat = parentCard?.getAttribute('data-cat') || '';
+        const dim = dimCounts[cat];
+
+        if (dim) {
+          dim.total++;
+          if (isChecked) dim.checked++;
+          else if (!dim.pendiente) dim.pendiente = parentCard?.querySelector('strong')?.textContent || '';
+        }
+
+        if (isChecked) checkedCount++;
+        if (parentCard) parentCard.classList.toggle('checked', isChecked);
+      });
+
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(savedState));
+      } catch (e) {
+        // quota
+      }
+
+      const scorePct = total > 0 ? Math.round((checkedCount / total) * 100) : 0;
+
+      if (maturityScorePct) maturityScorePct.textContent = `${scorePct}%`;
+      if (maturityCirclePath) maturityCirclePath.setAttribute('stroke-dasharray', `${scorePct}, 100`);
+      if (criteriaCounter) criteriaCounter.textContent = `${checkedCount} de ${total} criterios cumplidos`;
+
+      // Etapas completas consecutivas, empezando por Básico
+      const isComplete = (cat: string) => dimCounts[cat].total > 0 && dimCounts[cat].checked === dimCounts[cat].total;
+      let completas = 0;
+      while (completas < NIVELES.length && isComplete(NIVELES[completas].cat)) completas++;
+
+      const currentLevel = NIVELES[Math.max(completas - 1, 0)];
+      const enCurso = NIVELES[completas];
+
+      if (maturityBadge) {
+        maturityBadge.textContent = completas === 0 ? `${currentLevel.badge} (EN CONSTRUCCIÓN)` : currentLevel.badge;
+        maturityBadge.style.backgroundColor = currentLevel.color;
+      }
+      if (maturityTitle) maturityTitle.textContent = currentLevel.title;
+      if (maturityDesc) maturityDesc.textContent = currentLevel.desc;
+      if (maturityRoadmapText) {
+        if (!enCurso) {
+          maturityRoadmapText.textContent = 'Todas las etapas están completas. Mantener la mejora continua.';
+        } else {
+          const dim = dimCounts[enCurso.cat];
+          const faltan = dim.total - dim.checked;
+          const etapa = enCurso.badge.split(': ')[1];
+          maturityRoadmapText.textContent = completas === 0
+            ? `Faltan ${faltan} criterios para consolidar el nivel ${etapa}. Pendiente: ${dim.pendiente}.`
+            : `Faltan ${faltan} criterios para subir a ${etapa}. Pendiente: ${dim.pendiente}.`;
+        }
+      }
+
+      // Tarjetas de avance por etapa
+      stageCards.forEach(card => {
+        const cat = card.getAttribute('data-cat') || '';
+        const dim = dimCounts[cat];
+        if (!dim) return;
+        const idx = NIVELES.findIndex(n => n.cat === cat);
+        const dimPct = dim.total > 0 ? Math.round((dim.checked / dim.total) * 100) : 0;
+        const bar = card.querySelector<HTMLElement>('.dim-fill');
+        const text = card.querySelector('.dim-val');
+        const state = card.querySelector('.stage-state');
+        if (bar) bar.style.width = `${dimPct}%`;
+        if (text) text.textContent = `${dim.checked}/${dim.total}`;
+        card.classList.toggle('stage-done', idx < completas);
+        card.classList.toggle('stage-current', idx === completas);
+        if (state) state.textContent = idx < completas ? 'Completada' : idx === completas ? 'En curso' : 'Pendiente';
+      });
+    }
+
+    // Estado inicial: lo guardado en el navegador o, si no hay, lo detectado en el sistema
+    function loadInitialChecklist() {
+      let savedData: Record<string, boolean> | null = null;
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) savedData = JSON.parse(raw);
+      } catch (e) {}
+
+      checkboxes.forEach(cb => {
+        if (savedData && savedData[cb.id] !== undefined) {
+          cb.checked = Boolean(savedData[cb.id]);
+        } else {
+          cb.checked = cb.getAttribute('data-auto') === 'true';
+        }
+
+        cb.addEventListener('change', calculateMaturity);
+      });
+
+      calculateMaturity();
+    }
+
+    loadInitialChecklist();
+
+    const btnResetAuto = document.getElementById('btnResetAuto');
+    if (btnResetAuto) {
+      btnResetAuto.addEventListener('click', () => {
+        checkboxes.forEach(cb => {
+          cb.checked = cb.getAttribute('data-auto') === 'true';
+        });
+        calculateMaturity();
+        showToast('Restablecido a valores detectados en el sistema');
+      });
+    }
+
+    const btnCheckAll = document.getElementById('btnCheckAll');
+    if (btnCheckAll) {
+      btnCheckAll.addEventListener('click', () => {
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        checkboxes.forEach(cb => {
+          cb.checked = !allChecked;
+        });
+        calculateMaturity();
+        showToast(allChecked ? 'Todos los criterios desmarcados' : 'Todos los criterios marcados');
+      });
+    }
+
+    // Filtros por etapa
+    const filterChips = document.querySelectorAll<HTMLButtonElement>('.filter-chip');
+    const checkCards = document.querySelectorAll<HTMLElement>('.check-item-card');
+
+    filterChips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        filterChips.forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+
+        const filter = chip.getAttribute('data-filter') || 'all';
+
+        checkCards.forEach(card => {
+          card.style.display = filter === 'all' || card.getAttribute('data-cat') === filter ? 'flex' : 'none';
+        });
+      });
+    });
+
+    const btnCopyReport = document.getElementById('btnCopyReport');
+    if (btnCopyReport) {
+      btnCopyReport.addEventListener('click', () => {
+        const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+        const total = checkboxes.length;
+        const score = total > 0 ? Math.round((checkedCount / total) * 100) : 0;
+        const badge = maturityBadge?.textContent || 'N/A';
+        const title = maturityTitle?.textContent || '';
+        const dateStr = new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+
+        const report = `NIVEL DE IMPLEMENTACIÓN ERP — SPORTENIS
+Fecha: ${dateStr}
+Resultado: ${score}% de Avance (${checkedCount}/${total} criterios cumplidos)
+Nivel Alcanzado: ${badge}
+Estado: ${title}
+
+${NIVELES.map(nivel => {
+  const lineas = Array.from(checkboxes)
+    .filter(cb => cb.closest('.check-item-card')?.getAttribute('data-cat') === nivel.cat)
+    .map(cb => {
+      const criterio = cb.closest('.check-item-card')?.querySelector('strong')?.textContent || cb.id;
+      return `${cb.checked ? '✅' : '❌'} ${criterio}`;
+    });
+  return `${nivel.badge}\n${lineas.join('\n')}`;
+}).join('\n\n')}
+
+Generado desde el ERP SporTenis.`;
+
+        navigator.clipboard.writeText(report).then(() => {
+          showToast('Diagnóstico copiado al portapapeles');
+        }).catch(() => {
+          showToast('Error al copiar el diagnóstico');
+        });
+      });
+    }
+
+    function showToast(msg: string) {
+      if (!toast) return;
+      toast.textContent = msg;
+      toast.classList.add('visible');
+      setTimeout(() => {
+        toast.classList.remove('visible');
+      }, 2500);
+    }
+  });
+</script>
+
+<style>
+  /* =========================================================================
+     SECCIÓN Y CABECERA (IGUAL QUE SCM)
+     ========================================================================= */
+  .scm-feature-section {
+    padding: 28px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    border-radius: 14px;
+    margin-bottom: 28px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+  }
+  .feature-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .feature-title-group h2 {
+    margin: 6px 0 4px 0;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+  }
+  .feature-title-group p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--color-text-muted);
+  }
+  .feature-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: #171717;
+    color: #fff;
+    padding: 3px 8px;
+    border-radius: 4px;
+  }
+
+  /* Integración entre módulos */
+  .integration-flow {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    gap: 14px;
+    align-items: stretch;
+  }
+  @media (max-width: 1000px) {
+    .integration-flow { grid-template-columns: 1fr; }
+  }
+  .module-box {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    text-decoration: none;
+    transition: border-color 0.15s;
+  }
+  .module-box:hover { border-color: #171717; }
+  .module-box.module-core { background: #171717; color: #fff; border-color: #171717; }
+  .module-sigla {
+    align-self: flex-start;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--color-primary);
+    color: #171717;
+  }
+  .module-box strong { font-size: 14px; }
+  .module-box ul { list-style: none; margin: 4px 0 0 0; padding: 0; display: grid; gap: 6px; }
+  .module-box li { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+  .module-box li span { color: var(--color-text-muted); }
+  .module-core li span { color: rgba(255, 255, 255, 0.7); }
+  .module-box li b { font-weight: 800; }
+  .module-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    max-width: 190px;
+    text-align: center;
+    font-size: 12px;
+  }
+  @media (max-width: 1000px) {
+    .module-link { max-width: none; }
+    .link-arrow { transform: rotate(90deg); }
+  }
+  .link-arrow { font-size: 22px; line-height: 1; color: var(--color-text-muted); }
+  .module-link code, .integration-note code {
+    font-size: 10.5px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 2px 5px;
+    word-break: break-word;
+  }
+  .module-link small { color: var(--color-text-muted); line-height: 1.35; }
+  .flow-steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 12px;
+    margin-top: 20px;
+  }
+  .flow-step { display: flex; gap: 10px; align-items: flex-start; }
+  .flow-step .stage-num { background: #171717; color: #fff; margin-top: 1px; flex-shrink: 0; }
+  .flow-step strong { font-size: 13px; }
+  .flow-step p { margin: 3px 0 0 0; font-size: 12px; color: var(--color-text-muted); line-height: 1.4; }
+  .integration-note { margin: 18px 0 0 0; font-size: 12px; color: var(--color-text-muted); }
+
+  .checklist-action-bar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .btn-tool {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-tool:hover {
+    background: var(--color-bg);
+  }
+  .primary-tool {
+    background: #171717;
+    color: #fff;
+    border-color: #171717;
+  }
+  .primary-tool:hover {
+    background: #333333;
+  }
+
+  /* Maturity Hero Card */
+  .scm-maturity-hero {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    background: linear-gradient(135deg, #171717 0%, #2b2b28 100%);
+    color: #fff;
+    border-radius: 12px;
+    padding: 26px 30px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .maturity-score-box {
+    flex-shrink: 0;
+  }
+  .circular-chart-wrap {
+    position: relative;
+    width: 100px;
+    height: 100px;
+  }
+  .circular-chart {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .circle-bg {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.15);
+    stroke-width: 3.8;
+  }
+  .circle {
+    fill: none;
+    stroke-width: 3.8;
+    stroke-linecap: round;
+    stroke: var(--color-primary);
+    transition: stroke-dasharray 0.6s ease;
+  }
+  .circle-inner-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .pct-val {
+    font-size: 20px;
+    font-weight: 900;
+    display: block;
+    line-height: 1;
+    color: #fff;
+  }
+  .pct-label {
+    font-size: 9px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.6);
+    letter-spacing: 0.05em;
+  }
+
+  .maturity-info-box {
+    flex: 1;
+    min-width: 260px;
+  }
+  .level-badge-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .level-indicator-badge {
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    padding: 4px 10px;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+  }
+  .criteria-counter {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 600;
+  }
+  .maturity-title {
+    margin: 0 0 6px 0;
+    font-size: 20px;
+    font-weight: 900;
+    color: #fff;
+  }
+  .maturity-desc {
+    margin: 0 0 14px 0;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.4;
+  }
+  .maturity-roadmap {
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 8px 12px;
+    border-radius: 6px;
+    display: inline-block;
+  }
+  .maturity-roadmap strong {
+    color: var(--color-primary);
+    margin-right: 6px;
+  }
+
+  /* Avance por etapa */
+  .dimension-progress-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .dimension-card {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    transition: border-color 0.2s;
+  }
+  .dimension-card.stage-current {
+    border-color: #171717;
+  }
+  .dimension-card.stage-done {
+    border-color: var(--color-success);
+  }
+  .dim-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+  .dim-head span { color: var(--color-text-muted); font-weight: 600; }
+  .dim-head strong { font-weight: 800; }
+  .stage-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-right: 4px;
+    border-radius: 50%;
+    background: var(--color-border);
+    color: var(--color-text);
+    font-size: 10px;
+    font-weight: 800;
+  }
+  .stage-current .stage-num {
+    background: #171717;
+    color: #fff;
+  }
+  .stage-done .stage-num {
+    background: var(--color-success);
+    color: #fff;
+  }
+  .dim-track {
+    width: 100%;
+    height: 6px;
+    background: var(--color-border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .dim-fill {
+    height: 100%;
+    background: #171717;
+    transition: width 0.3s ease;
+  }
+  .stage-done .dim-fill {
+    background: var(--color-success);
+  }
+  .stage-state {
+    display: block;
+    margin-top: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted);
+  }
+  .stage-current .stage-state { color: var(--color-text); }
+  .stage-done .stage-state { color: var(--color-success); }
+
+  /* Filter chips */
+  .checklist-filters {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 18px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .filter-chip {
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 20px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .filter-chip:hover {
+    color: var(--color-text);
+  }
+  .filter-chip.active {
+    background: #171717;
+    color: #fff;
+    border-color: #171717;
+  }
+
+  /* Checklist Grid */
+  .checklist-items-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 850px) {
+    .checklist-items-grid { grid-template-columns: 1fr; }
+  }
+  .check-item-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: var(--color-surface);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+  }
+  .check-item-card:hover {
+    border-color: #a3a3a3;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+  }
+  .check-item-card.checked {
+    background: #fbfbf9;
+    border-color: #cbd5e1;
+  }
+  .scm-checkbox {
+    width: 20px;
+    height: 20px;
+    margin-top: 2px;
+    accent-color: #171717;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .check-body {
+    flex: 1;
+  }
+  .check-title-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .check-title-row strong {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--color-text);
+  }
+  .auto-tag {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: #e0f2fe;
+    color: #0369a1;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .check-desc {
+    margin: 0 0 6px 0;
+    font-size: 12px;
+    color: var(--color-text-muted);
+    line-height: 1.4;
+  }
+  .check-impact {
+    display: block;
+    font-size: 11px;
+    font-style: italic;
+    color: #854d0e;
+    background: #fefce8;
+    padding: 3px 6px;
+    border-radius: 4px;
+    border-left: 2px solid #eab308;
+  }
+
+  /* Toast Notification */
+  .scm-toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #171717;
+    color: #fff;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    opacity: 0;
+    transform: translateY(12px);
+    transition: all 0.25s ease;
+    pointer-events: none;
+    z-index: 1000;
+  }
+  .scm-toast.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+</style>

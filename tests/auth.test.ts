@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 // Las reglas probadas son puras: se evita abrir el pool de MySQL
 vi.mock('../src/db/db', () => ({ db: {} }));
 
-import { canAccessCrm, canAccessErp, canAccessScm, homeForRole, roleFromName } from '../src/lib/auth';
+import { canAccessCrm, canAccessErp, canAccessRoute, canAccessScm, canEditCatalogo, homeForRole, roleFromName } from '../src/lib/auth';
 
 describe('roleFromName', () => {
   it('reconoce los nombres de la tabla Roles sin importar mayúsculas ni acentos', () => {
@@ -42,10 +42,10 @@ describe('acceso por rol', () => {
     expect(homeForRole('cliente')).toBe('/');
   });
 
-  it('solo admin y logística acceden al ERP', () => {
+  it('el personal interno accede al ERP y el cliente no', () => {
     expect(canAccessErp('administrador')).toBe(true);
     expect(canAccessErp('logistica')).toBe(true);
-    expect(canAccessErp('vendedor')).toBe(false);
+    expect(canAccessErp('vendedor')).toBe(true);
     expect(canAccessErp('cliente')).toBe(false);
   });
 
@@ -53,7 +53,7 @@ describe('acceso por rol', () => {
     //                        CRM     SCM     ERP
     const expected: Record<string, [boolean, boolean, boolean]> = {
       administrador:         [true,  true,  true],
-      vendedor:              [true,  false, false],
+      vendedor:              [true,  false, true],
       logistica:             [false, true,  true],
       cliente:               [false, false, false],
     };
@@ -63,5 +63,42 @@ describe('acceso por rol', () => {
       expect(canAccessScm(role as any)).toBe(scm);
       expect(canAccessErp(role as any)).toBe(erp);
     }
+  });
+});
+
+describe('permiso por página', () => {
+  it('ventas entra a clientes, órdenes y reportes, y del SCM solo consulta productos', () => {
+    for (const path of ['/crm', '/crm/clientes/3', '/crm/actividad', '/erp', '/erp/ordenes', '/erp/ventas', '/erp/reportes', '/scm/productos']) {
+      expect(canAccessRoute('vendedor', path), path).toBe(true);
+    }
+    for (const path of ['/scm', '/scm/pedidos', '/scm/proveedores', '/scm/actividad', '/scm/productosx']) {
+      expect(canAccessRoute('vendedor', path), path).toBe(false);
+    }
+    expect(canEditCatalogo('vendedor')).toBe(false);
+  });
+
+  it('logística entra a SCM, órdenes y reportes, pero no al CRM', () => {
+    for (const path of ['/scm', '/scm/productos', '/scm/pedidos', '/erp/ordenes', '/erp/reportes']) {
+      expect(canAccessRoute('logistica', path), path).toBe(true);
+    }
+    expect(canAccessRoute('logistica', '/crm/clientes')).toBe(false);
+    expect(canEditCatalogo('logistica')).toBe(true);
+  });
+
+  it('finanzas, nivel ERP, usuarios y configuración son solo del administrador', () => {
+    const paths = ['/erp/finanzas', '/erp/implementacion', '/crm/usuarios', '/scm/configuracion', '/erp/usuarios/'];
+    for (const path of paths) {
+      expect(canAccessRoute('administrador', path), path).toBe(true);
+      expect(canAccessRoute('vendedor', path), path).toBe(false);
+      expect(canAccessRoute('logistica', path), path).toBe(false);
+    }
+  });
+
+  it('el cliente y los visitantes no abren ninguna página del panel', () => {
+    for (const path of ['/crm', '/scm/productos', '/erp/ordenes']) {
+      expect(canAccessRoute('cliente', path), path).toBe(false);
+      expect(canAccessRoute(null, path), path).toBe(false);
+    }
+    expect(canAccessRoute('cliente', '/carrito')).toBe(true);
   });
 });

@@ -4,7 +4,7 @@ import { db } from '../../db/db';
 import { Configuraciones, EtapasCrm, TiposInteraccion, ScmSettings } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 const { module } = Astro.params;
-if (module !== 'crm' && module !== 'scm') return Astro.redirect('/404');
+if (module !== 'crm' && module !== 'scm' && module !== 'erp') return Astro.redirect('/404');
 const activePath = `/${module}/configuracion`;
 
 

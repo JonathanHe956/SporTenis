@@ -1,0 +1,543 @@
+---
+import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db } from '../../db/db';
+import { DetalleVentas, Modelos, PedidosCompra, Productos, Proveedores, Ventas } from '../../db/schema';
+import { desc, eq } from 'drizzle-orm';
+import { ESTADOS_VENTA_EFECTIVA } from '../../lib/ventas';
+
+// 1. Periodo del reporte: por defecto, los últimos 6 meses
+const now = new Date();
+const toInput = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const fechaParam = (key: string, fallback: Date) => {
+  const value = Astro.url.searchParams.get(key) ?? '';
+  return /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value) && !Number.isNaN(new Date(value).getTime())
+    ? value
+    : toInput(fallback);
+};
+let fromParam = fechaParam('from', new Date(now.getFullYear(), now.getMonth() - 5, 1));
+let toParam = fechaParam('to', now);
+if (fromParam > toParam) [fromParam, toParam] = [toParam, fromParam];
+const fromDate = new Date(`${fromParam}T00:00:00`);
+const toDate = new Date(`${toParam}T23:59:59`);
+const enPeriodo = (fecha: Date) => {
+  const d = new Date(fecha);
+  return d >= fromDate && d <= toDate;
+};
+
+// 2. Órdenes de clientes y sus productos (ERP)
+const ordenes = await db
+  .select({
+    id: Ventas.id,
+    fecha: Ventas.fecha_venta,
+    estado: Ventas.estado,
+    total: Ventas.total,
+    id_cliente: Ventas.id_cliente,
+  })
+  .from(Ventas);
+
+const lineas = await db
+  .select({
+    id_producto: DetalleVentas.id_producto,
+    cantidad: DetalleVentas.cantidad,
+    fecha: Ventas.fecha_venta,
+    estado: Ventas.estado,
+  })
+  .from(DetalleVentas)
+  .innerJoin(Ventas, eq(DetalleVentas.id_venta, Ventas.id));
+
+// Inventario (SCM)
+const productos = await db
+  .select({
+    id: Productos.id,
+    sku: Productos.sku,
+    nombre: Modelos.nombre,
+    stock: Productos.stock,
+  })
+  .from(Productos)
+  .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id));
+
+// Órdenes a proveedores (SCM, Etapa 2)
+const pedidosProveedor = await db
+  .select({
+    id: PedidosCompra.id,
+    fecha: PedidosCompra.fecha_creacion,
+    tipo: PedidosCompra.tipo,
+    estado: PedidosCompra.estado,
+    cantidad: PedidosCompra.cantidad,
+    producto: Modelos.nombre,
+    sku: Productos.sku,
+    proveedor: Proveedores.nombre,
+  })
+  .from(PedidosCompra)
+  .leftJoin(Productos, eq(PedidosCompra.id_producto, Productos.id))
+  .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id))
+  .leftJoin(Proveedores, eq(PedidosCompra.id_proveedor, Proveedores.id))
+  .orderBy(desc(PedidosCompra.fecha_creacion), desc(PedidosCompra.id));
+
+// 3. KPIs del periodo. Solo las órdenes confirmadas o entregadas cuentan como venta
+const esEfectiva = (estado: string) => ESTADOS_VENTA_EFECTIVA.includes(estado);
+const ordenesPeriodo = ordenes.filter(o => enPeriodo(o.fecha));
+const ventasPeriodo = ordenesPeriodo.filter(o => esEfectiva(o.estado));
+const lineasPeriodo = lineas.filter(l => esEfectiva(l.estado) && enPeriodo(l.fecha));
+
+const ventasTotales = ventasPeriodo.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+const productosVendidos = lineasPeriodo.reduce((sum, l) => sum + l.cantidad, 0);
+const clientesActivos = new Set(ventasPeriodo.map(o => o.id_cliente)).size;
+const ordenesAbiertas = ordenesPeriodo.filter(o => o.estado === 'Procesando').length;
+const ordenesCanceladas = ordenesPeriodo.filter(o => o.estado === 'Cancelada').length;
+
+// 4. Ventas por mes (máximo los 24 meses más recientes del periodo)
+const meses: { clave: string; etiqueta: string; total: number; ordenes: number }[] = [];
+for (let d = new Date(toDate.getFullYear(), toDate.getMonth(), 1); d >= new Date(fromDate.getFullYear(), fromDate.getMonth(), 1) && meses.length < 24; d = new Date(d.getFullYear(), d.getMonth() - 1, 1)) {
+  meses.unshift({
+    clave: `${d.getFullYear()}-${d.getMonth()}`,
+    etiqueta: d.toLocaleDateString('es-MX', { month: 'short', year: '2-digit' }),
+    total: 0,
+    ordenes: 0,
+  });
+}
+for (const o of ventasPeriodo) {
+  const d = new Date(o.fecha);
+  const mes = meses.find(m => m.clave === `${d.getFullYear()}-${d.getMonth()}`);
+  if (mes) {
+    mes.total += Number(o.total) || 0;
+    mes.ordenes++;
+  }
+}
+
+// 5. Productos más vendidos del periodo (top 5 por unidades)
+const nombreProducto = new Map(productos.map(p => [p.id, `${p.nombre || 'Producto'} (${p.sku})`]));
+const unidadesPorProducto = new Map<number, number>();
+for (const l of lineasPeriodo) {
+  unidadesPorProducto.set(l.id_producto, (unidadesPorProducto.get(l.id_producto) ?? 0) + l.cantidad);
+}
+const topProductos = Array.from(unidadesPorProducto, ([id, unidades]) => ({
+  nombre: nombreProducto.get(id) ?? `Producto ${id}`,
+  unidades,
+})).sort((a, b) => b.unidades - a.unidades).slice(0, 5);
+
+// 6. Inventario por rotación: unidades vendidas de cada producto en los últimos 30 días
+const DIAS_ROTACION = 30;
+const ROTACION_ALTA_DESDE = 5;
+const desdeRotacion = new Date(now.getTime() - DIAS_ROTACION * 24 * 60 * 60 * 1000);
+const vendidoReciente = new Map<number, number>();
+for (const l of lineas) {
+  if (esEfectiva(l.estado) && new Date(l.fecha) >= desdeRotacion) {
+    vendidoReciente.set(l.id_producto, (vendidoReciente.get(l.id_producto) ?? 0) + l.cantidad);
+  }
+}
+const rotacion = [
+  { nombre: 'Alta', criterio: `${ROTACION_ALTA_DESDE} o más unidades vendidas`, color: '#1e3a8a', stock: 0, productos: 0 },
+  { nombre: 'Media', criterio: `1 a ${ROTACION_ALTA_DESDE - 1} unidades vendidas`, color: '#3b82f6', stock: 0, productos: 0 },
+  { nombre: 'Baja', criterio: 'Sin ventas', color: '#93c5fd', stock: 0, productos: 0 },
+];
+for (const p of productos) {
+  const vendidas = vendidoReciente.get(p.id) ?? 0;
+  const grupo = rotacion[vendidas >= ROTACION_ALTA_DESDE ? 0 : vendidas > 0 ? 1 : 2];
+  grupo.stock += Number(p.stock) || 0;
+  grupo.productos++;
+}
+const stockTotal = rotacion.reduce((sum, r) => sum + r.stock, 0);
+
+// 7. Órdenes a proveedores
+const pedidosRecientes = pedidosProveedor.slice(0, 8);
+const pedidosPendientes = pedidosProveedor.filter(p => !/complet|recibid/i.test(p.estado)).length;
+
+const fmt = (value: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+const fmtDate = (date: Date) => new Date(date).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+
+const chartData = {
+  meses: meses.map(m => ({ etiqueta: m.etiqueta, total: Math.round(m.total * 100) / 100, ordenes: m.ordenes })),
+  top: topProductos,
+  rotacion: rotacion.map(r => ({ nombre: r.nombre, stock: r.stock, color: r.color })),
+};
+---
+
+<CrmLayout title="Reportes ERP" activePath="/erp/reportes">
+  <div class="scm-header-bar">
+    <div>
+      <div class="header-badges">
+        <span class="badge-tag live-tag"><span class="pulse-dot"></span> Datos en vivo</span>
+        <span class="badge-tag">CRM + ERP + SCM</span>
+      </div>
+      <h1 class="crm-title">Reportes ERP</h1>
+      <p class="scm-subtitle">Ventas, productos, inventario y abastecimiento de {fmtDate(fromDate)} a {fmtDate(toDate)}</p>
+    </div>
+
+    <!-- Filtro por rango de fechas -->
+    <form method="GET" action="/erp/reportes" class="range-form">
+      <label>Desde <input type="date" name="from" value={fromParam} /></label>
+      <label>Hasta <input type="date" name="to" value={toParam} /></label>
+      <button type="submit" class="btn-scm-action primary">Aplicar</button>
+      <a href="/erp/reportes" class="btn-scm-action secondary">Últimos 6 meses</a>
+    </form>
+  </div>
+
+  <!-- KPIs -->
+  <div class="metrics-grid">
+    <div class="crm-card metric-card">
+      <div class="metric-top">
+        <h3>Ventas Totales</h3>
+        <span class="metric-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        </span>
+      </div>
+      <div class="metric-value currency-value">{fmt(ventasTotales)}</div>
+      <p class="metric-desc">{ventasPeriodo.length} órdenes confirmadas o entregadas</p>
+    </div>
+
+    <div class="crm-card metric-card">
+      <div class="metric-top">
+        <h3>Órdenes de Clientes</h3>
+        <span class="metric-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/></svg>
+        </span>
+      </div>
+      <div class="metric-value">{ordenesPeriodo.length}</div>
+      <p class="metric-desc">{ordenesAbiertas} por confirmar &bull; {ordenesCanceladas} canceladas</p>
+    </div>
+
+    <div class="crm-card metric-card">
+      <div class="metric-top">
+        <h3>Productos Vendidos</h3>
+        <span class="metric-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 16V8l-8-4-8 4v8l8 4 8-4Z"/><polyline points="4 8 12 12 20 8"/><polyline points="12 12 12 20"/></svg>
+        </span>
+      </div>
+      <div class="metric-value">{productosVendidos}</div>
+      <p class="metric-desc">Unidades en ventas efectivas</p>
+    </div>
+
+    <div class="crm-card metric-card">
+      <div class="metric-top">
+        <h3>Clientes Activos</h3>
+        <span class="metric-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </span>
+      </div>
+      <div class="metric-value">{clientesActivos}</div>
+      <p class="metric-desc">Clientes con compras en el periodo</p>
+    </div>
+  </div>
+
+  <!-- Gráficas -->
+  <div class="crm-card widget-card">
+    <div class="widget-header-flex">
+      <div>
+        <h3>Ventas por Mes</h3>
+        <p class="widget-sub">Importe de las órdenes confirmadas o entregadas</p>
+      </div>
+    </div>
+    {ventasPeriodo.length > 0 ? (
+      <div class="chart-box chart-tall"><canvas id="chartMeses" role="img" aria-label="Gráfica de barras de ventas por mes"></canvas></div>
+    ) : (
+      <p class="empty-chart">No hay ventas en el periodo seleccionado.</p>
+    )}
+  </div>
+
+  <div class="dashboard-widgets">
+    <div class="crm-card widget-card">
+      <div class="widget-header-flex">
+        <div>
+          <h3>Productos Más Vendidos</h3>
+          <p class="widget-sub">Top 5 por unidades en el periodo</p>
+        </div>
+      </div>
+      {topProductos.length > 0 ? (
+        <div class="chart-box" style={`height: ${topProductos.length * 44 + 40}px;`}><canvas id="chartTop" role="img" aria-label="Gráfica de barras horizontales de los productos más vendidos"></canvas></div>
+      ) : (
+        <p class="empty-chart">No hay productos vendidos en el periodo seleccionado.</p>
+      )}
+    </div>
+
+    <div class="crm-card widget-card">
+      <div class="widget-header-flex">
+        <div>
+          <h3>Inventario por Rotación</h3>
+          <p class="widget-sub">Unidades disponibles según lo vendido en los últimos {DIAS_ROTACION} días</p>
+        </div>
+      </div>
+      {stockTotal > 0 ? (
+        <div class="donut-row">
+          <div class="chart-box donut-box"><canvas id="chartRotacion" role="img" aria-label="Gráfica de dona del inventario disponible por rotación"></canvas></div>
+          <div class="chart-legend">
+            {rotacion.map(r => (
+              <div class="legend-item">
+                <span class="dot" style={`background: ${r.color};`}></span>
+                <div>
+                  <strong>Rotación {r.nombre}: {r.stock} unidades</strong>
+                  <div class="legend-sub">{r.productos} productos &bull; {r.criterio}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p class="empty-chart">No hay inventario disponible.</p>
+      )}
+    </div>
+  </div>
+
+  <!-- Órdenes a proveedores (SCM) -->
+  <div class="crm-card widget-card" style="margin-top: 24px;">
+    <div class="widget-header-flex">
+      <div>
+        <h3>Órdenes a Proveedores Recientes</h3>
+        <p class="widget-sub">{pedidosProveedor.length} pedidos de compra en el SCM &bull; {pedidosPendientes} sin completar</p>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th>Pedido</th>
+            <th>Fecha</th>
+            <th>Producto</th>
+            <th>Proveedor</th>
+            <th>Tipo</th>
+            <th class="numeric">Cantidad</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pedidosRecientes.map(p => (
+            <tr>
+              <td><strong>#{String(p.id).padStart(4, '0')}</strong></td>
+              <td>{fmtDate(p.fecha)}</td>
+              <td>{p.producto || 'Producto'} <small>{p.sku}</small></td>
+              <td>{p.proveedor || 'Sin proveedor'}</td>
+              <td>{p.tipo}</td>
+              <td class="numeric">{p.cantidad}</td>
+              <td><span class="badge badge-neutral">{p.estado}</span></td>
+            </tr>
+          ))}
+          {pedidosRecientes.length === 0 && (
+            <tr><td colspan="7" class="empty-chart">Aún no hay órdenes a proveedores.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script type="application/json" id="reportData" set:html={JSON.stringify(chartData)}></script>
+</CrmLayout>
+
+<script>
+  import { ArcElement, BarController, BarElement, CategoryScale, Chart, DoughnutController, LinearScale, Tooltip } from 'chart.js';
+
+  Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, LinearScale, Tooltip);
+
+  const data = JSON.parse(document.getElementById('reportData')?.textContent || '{}');
+  const moneda = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
+  const INK = '#171717';
+  const MUTED = '#716e67';
+  const GRID = '#ece8dc';
+
+  Chart.defaults.font.family = 'Arial, sans-serif';
+  Chart.defaults.font.size = 12;
+  Chart.defaults.color = MUTED;
+
+  const canvas = (id: string) => document.getElementById(id) as HTMLCanvasElement | null;
+
+  const meses = canvas('chartMeses');
+  if (meses) {
+    new Chart(meses, {
+      type: 'bar',
+      data: {
+        labels: data.meses.map((m: any) => m.etiqueta),
+        datasets: [{ data: data.meses.map((m: any) => m.total), backgroundColor: INK, borderRadius: 4, maxBarThickness: 48 }],
+      },
+      options: {
+        maintainAspectRatio: false,
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ` ${moneda.format(Number(ctx.parsed.y))} en ${data.meses[ctx.dataIndex].ordenes} órdenes`,
+            },
+          },
+        },
+        scales: {
+          x: { grid: { display: false }, border: { color: GRID } },
+          y: {
+            beginAtZero: true,
+            border: { display: false },
+            grid: { color: GRID },
+            ticks: { callback: (value) => moneda.format(Number(value)).replace(/\.00$/, '') },
+          },
+        },
+      },
+    });
+  }
+
+  const top = canvas('chartTop');
+  if (top) {
+    new Chart(top, {
+      type: 'bar',
+      data: {
+        labels: data.top.map((p: any) => p.nombre),
+        datasets: [{ data: data.top.map((p: any) => p.unidades), backgroundColor: INK, borderRadius: 4, maxBarThickness: 22 }],
+      },
+      options: {
+        indexAxis: 'y',
+        maintainAspectRatio: false,
+        plugins: {
+          tooltip: { callbacks: { label: (ctx) => ` ${ctx.parsed.x} unidades vendidas` } },
+        },
+        scales: {
+          x: { beginAtZero: true, border: { display: false }, grid: { color: GRID }, ticks: { precision: 0 } },
+          y: { grid: { display: false }, border: { color: GRID }, ticks: { color: INK } },
+        },
+      },
+    });
+  }
+
+  const rotacion = canvas('chartRotacion');
+  if (rotacion) {
+    const total = data.rotacion.reduce((sum: number, r: any) => sum + r.stock, 0);
+    new Chart(rotacion, {
+      type: 'doughnut',
+      data: {
+        labels: data.rotacion.map((r: any) => `Rotación ${r.nombre}`),
+        datasets: [{
+          data: data.rotacion.map((r: any) => r.stock),
+          backgroundColor: data.rotacion.map((r: any) => r.color),
+          borderColor: '#ffffff',
+          borderWidth: 2,
+        }],
+      },
+      options: {
+        maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ` ${ctx.parsed} unidades (${total > 0 ? Math.round((Number(ctx.parsed) / total) * 100) : 0}%)`,
+            },
+          },
+        },
+      },
+    });
+  }
+</script>
+
+<style>
+  .scm-header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .header-badges { display: flex; gap: 8px; margin-bottom: 6px; }
+  .badge-tag {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--color-border);
+    color: var(--color-text-muted);
+  }
+  .live-tag { background: #dcfce7; color: #15803d; display: inline-flex; align-items: center; gap: 6px; }
+  .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: #15803d; box-shadow: 0 0 0 2px rgba(21, 128, 61, 0.3); }
+  .crm-title { margin-bottom: 0; }
+  .scm-subtitle { margin: 4px 0 0 0; font-size: 14px; color: var(--color-text-muted); }
+
+  .range-form { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+  .range-form label { display: grid; gap: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-muted); }
+  .range-form input {
+    min-height: 36px;
+    padding: 6px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-surface);
+    font: inherit;
+    font-size: 13px;
+    color: var(--color-text);
+  }
+  .btn-scm-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 15px;
+    font-size: 13px;
+    font-weight: 700;
+    border-radius: 6px;
+    text-decoration: none;
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s;
+  }
+  .btn-scm-action.primary { background: var(--color-primary); color: #171717; }
+  .btn-scm-action.primary:hover { opacity: 0.9; }
+  .btn-scm-action.secondary { background: var(--color-surface); color: var(--color-text); border-color: var(--color-border); }
+  .btn-scm-action.secondary:hover { background: var(--color-bg); }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+    margin-bottom: 24px;
+  }
+  .metric-card { padding: 20px 22px; display: flex; flex-direction: column; justify-content: center; }
+  .metric-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .metric-card h3 {
+    margin: 0;
+    font-size: 13px;
+    color: var(--color-text-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .metric-icon {
+    color: var(--color-text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: var(--color-bg);
+    border-radius: 8px;
+  }
+  .metric-value { font-size: 34px; font-weight: 900; line-height: 1.1; margin-bottom: 6px; letter-spacing: -0.5px; }
+  .currency-value { font-size: 26px; line-height: 1.45; }
+  .metric-desc { margin: 0; font-size: 12px; color: var(--color-text-muted); }
+
+  .dashboard-widgets { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px; }
+  @media (max-width: 900px) {
+    .dashboard-widgets { grid-template-columns: 1fr; }
+  }
+  .widget-card { padding: 24px; min-width: 0; }
+  .widget-header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .widget-header-flex h3 { margin: 0; font-size: 15px; font-weight: 700; }
+  .widget-sub { margin: 4px 0 0 0; font-size: 12px; color: var(--color-text-muted); }
+
+  .chart-box { position: relative; width: 100%; }
+  .chart-tall { height: 280px; }
+  .donut-row { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .donut-box { width: 170px; height: 170px; flex-shrink: 0; }
+  .chart-legend { display: flex; flex-direction: column; gap: 14px; flex: 1; min-width: 200px; }
+  .legend-item { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; }
+  .legend-sub { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+  .empty-chart { margin: 0; padding: 28px 12px; text-align: center; color: var(--color-text-muted); font-size: 13px; }
+
+  .table-scroll { overflow-x: auto; }
+  .report-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .report-table th {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .report-table td { padding: 12px; border-bottom: 1px solid var(--color-border); }
+  .report-table small { display: block; color: var(--color-text-muted); font-size: 11px; }
+  .numeric { text-align: right; }
+</style>

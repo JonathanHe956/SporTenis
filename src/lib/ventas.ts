@@ -1,6 +1,6 @@
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { db } from '../db/db';
-import { Clientes, DetalleVentas, MetodosPago, MovimientosInventario, Productos, Ventas } from '../db/schema';
+import { Clientes, DetalleVentas, HistorialOrdenes, MetodosPago, MovimientosInventario, Productos, Ventas } from '../db/schema';
 import { procesarLogisticaStock } from './stockLogistics';
 
 // Regla de envío de la tienda: gratis a partir de ENVIO_GRATIS_DESDE
@@ -95,6 +95,12 @@ export interface NuevaVenta {
 }
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Deja en el historial quién movió la orden de estado; va dentro de la transacción del cambio. */
+export const registrarHistorialOrden = (
+  tx: Tx,
+  cambio: { id_venta: number; id_usuario: number | null; estado_anterior: string | null; estado_nuevo: string },
+) => tx.insert(HistorialOrdenes).values({ ...cambio, fecha: new Date() });
 type LineaVenta = { id_producto: number; cantidad: number; precio: number };
 
 const validarEncabezado = async (venta: { id_cliente: number; id_metodo_pago: number; envio?: number }) => {
@@ -219,6 +225,12 @@ export async function registrarVenta(venta: NuevaVenta): Promise<TotalesVenta & 
     const id_venta = Number(resVenta.insertId);
 
     await tx.insert(DetalleVentas).values(detallesDeVenta(id_venta, lineas));
+    await registrarHistorialOrden(tx, {
+      id_venta,
+      id_usuario: venta.id_usuario,
+      estado_anterior: null,
+      estado_nuevo: estado,
+    });
 
     if (!confirmada) return { id_venta, ...totales };
 
@@ -231,6 +243,7 @@ export async function registrarVenta(venta: NuevaVenta): Promise<TotalesVenta & 
         motivo: `Venta #${id_venta}`,
         fecha: new Date(),
         id_usuario: venta.id_usuario,
+        id_venta,
       })),
     );
 

@@ -1,5 +1,5 @@
 import { defineMiddleware } from 'astro:middleware';
-import { canAccessCrm, canAccessErp, canAccessScm, getAuthenticatedUser } from './lib/auth';
+import { canAccessCrm, canAccessRoute, canAccessScm, getAuthenticatedUser, homeForRole } from './lib/auth';
 import { SESSION_COOKIE } from './lib/session';
 
 const startsWithSegment = (pathname: string, prefix: string): boolean =>
@@ -46,15 +46,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   if (isCrmRoute || isScmRoute || isErpRoute || isAccountRoute) {
     if (!user) return context.redirect('/login');
-    if (isCrmRoute && !canAccessCrm(user.role)) {
-      return context.redirect(canAccessScm(user.role) ? '/scm' : '/');
-    }
-    if (isScmRoute && !canAccessScm(user.role)) {
-      return context.redirect(canAccessCrm(user.role) ? '/crm' : '/');
-    }
-    if (isErpRoute && !canAccessErp(user.role)) {
-      return context.redirect(canAccessCrm(user.role) ? '/crm' : canAccessScm(user.role) ? '/scm' : '/');
-    }
+    // Sin permiso para la página: se regresa al inicio de su rol
+    if (!canAccessRoute(user.role, pathname)) return context.redirect(homeForRole(user.role));
   }
 
   // Dejar que la petición continúe normalmente

@@ -7,7 +7,7 @@ import { roleFromName } from '../../lib/auth';
 import { hashPassword } from '../../lib/password';
 import { cerrarSesionesDeUsuario } from '../../lib/session';
 const { module } = Astro.params;
-if (module !== 'crm' && module !== 'scm') return Astro.redirect('/404');
+if (module !== 'crm' && module !== 'scm' && module !== 'erp') return Astro.redirect('/404');
 const activePath = `/${module}/usuarios`;
 
 

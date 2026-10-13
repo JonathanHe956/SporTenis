@@ -1,8 +1,14 @@
 ---
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
-import { Interacciones, Clientes, TiposInteraccion } from '../../db/schema';
+import { Interacciones, Clientes, TiposInteraccion, Ventas } from '../../db/schema';
 import { eq, desc, and } from 'drizzle-orm';
+import { canAccessCrm, canAccessErp } from '../../lib/auth';
+const { module } = Astro.params;
+if (module !== 'crm' && module !== 'scm') return Astro.redirect('/404');
+const activePath = `/${module}/actividad`;
+// Las fichas de cliente viven en el CRM
+const puedeVerClientes = canAccessCrm(Astro.locals.user?.role);
 
 const usuarioActualId = Astro.locals.user?.id ?? 0;
 
@@ -47,19 +53,38 @@ const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 const actividadesMes = actividades.filter(a => new Date(a.fecha) >= thirtyDaysAgo).length;
 
 const tiposSet = Array.from(new Set(actividades.map(a => a.tipo).filter(Boolean)));
+
+// Órdenes del ERP capturadas por el usuario
+const puedeVerOrdenes = canAccessErp(Astro.locals.user?.role);
+const misOrdenes = await db
+  .select({
+    id: Ventas.id,
+    fecha: Ventas.fecha_venta,
+    estado: Ventas.estado,
+    total: Ventas.total,
+    cliente: Clientes.nombre,
+  })
+  .from(Ventas)
+  .leftJoin(Clientes, eq(Ventas.id_cliente, Clientes.id))
+  .where(eq(Ventas.id_usuario, usuarioActualId))
+  .orderBy(desc(Ventas.fecha_venta));
+const fmtMoneda = (value: number | string | null) =>
+  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(value) || 0);
 ---
 
-<CrmLayout title="Mi Actividad" activePath="/crm/actividad">
+<CrmLayout title="Mi Actividad" activePath={activePath}>
   <div class="header-actions">
     <div>
       <h1 class="crm-title">Mi Bitácora de Actividad</h1>
       <p class="subtitle">Historial de gestiones, llamadas, seguimientos y acuerdos alcanzados con clientes.</p>
     </div>
-    <div style="display: flex; gap: 10px;">
-      <a href="/crm/clientes" class="btn-primary">
-        + NUEVO CONTACTO
-      </a>
-    </div>
+    {puedeVerClientes && (
+      <div style="display: flex; gap: 10px;">
+        <a href="/crm/clientes" class="btn-primary">
+          + NUEVO CONTACTO
+        </a>
+      </div>
+    )}
   </div>
 
   <!-- Stats Row estilo SCM -->
@@ -123,9 +148,13 @@ const tiposSet = Array.from(new Set(actividades.map(a => a.tipo).filter(Boolean)
                 {new Date(act.fecha).toLocaleString()}
               </td>
               <td>
-                <a href={`/crm/clientes/${act.clienteId}`} class="cliente-link">
+                {puedeVerClientes ? (
+                  <a href={`/crm/clientes/${act.clienteId}`} class="cliente-link">
+                    <strong>{act.cliente}</strong>
+                  </a>
+                ) : (
                   <strong>{act.cliente}</strong>
-                </a>
+                )}
               </td>
               <td>
                 <span class="badge badge-neutral">{act.tipo}</span>
@@ -134,9 +163,11 @@ const tiposSet = Array.from(new Set(actividades.map(a => a.tipo).filter(Boolean)
                 <span style="line-height: 1.4;">{act.descripcion || '-'}</span>
               </td>
               <td class="text-center">
-                <a href={`/crm/clientes/${act.clienteId}`} class="action-btn action-view" title="Ver ficha del cliente">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                </a>
+                {puedeVerClientes ? (
+                  <a href={`/crm/clientes/${act.clienteId}`} class="action-btn action-view" title="Ver ficha del cliente">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  </a>
+                ) : '-'}
               </td>
             </tr>
           ))}
@@ -153,6 +184,55 @@ const tiposSet = Array.from(new Set(actividades.map(a => a.tipo).filter(Boolean)
 
     <div class="pagination">
       <span>Mostrando {actividadesFiltradas.length} de {totalActividades} actividades</span>
+    </div>
+  </div>
+
+  <div class="crm-card" style="margin-top: 24px;">
+    <div class="filters">
+      <div>
+        <h3 style="margin: 0; font-size: 15px; font-weight: 700;">Mis Órdenes</h3>
+        <p class="subtitle">Órdenes de clientes que has capturado en el ERP.</p>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th>Orden</th>
+            <th>Fecha</th>
+            <th>Cliente</th>
+            <th>Estado</th>
+            <th>Total</th>
+            <th class="text-center">Detalle</th>
+          </tr>
+        </thead>
+        <tbody>
+          {misOrdenes.map(o => (
+            <tr>
+              <td><strong>#{String(o.id).padStart(5, '0')}</strong></td>
+              <td style="white-space: nowrap; font-size: 12px; color: var(--color-text-muted);">{new Date(o.fecha).toLocaleString()}</td>
+              <td>{o.cliente || 'Cliente general'}</td>
+              <td><span class="badge badge-neutral">{o.estado}</span></td>
+              <td style="white-space: nowrap;">{fmtMoneda(o.total)}</td>
+              <td class="text-center">
+                {puedeVerOrdenes ? (
+                  <a href={`/erp/ventas?detalle=${o.id}`} class="action-btn action-view" title="Ver detalle de la orden">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  </a>
+                ) : '-'}
+              </td>
+            </tr>
+          ))}
+          {misOrdenes.length === 0 && (
+            <tr>
+              <td colspan="6" class="text-center" style="padding: 36px; color: var(--color-text-muted)">
+                Aún no has capturado órdenes.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   </div>
 </CrmLayout>

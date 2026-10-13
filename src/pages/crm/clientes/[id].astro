@@ -1,7 +1,8 @@
 ---
 import CrmLayout from '../../../layouts/CrmLayout.astro';
 import { db } from '../../../db/db';
-import { Clientes, EtapasCrm, Interacciones, TiposInteraccion, Evaluaciones, Usuarios } from '../../../db/schema';
+import { Clientes, EtapasCrm, Interacciones, TiposInteraccion, Evaluaciones, Usuarios, Ventas, MetodosPago } from '../../../db/schema';
+import { ESTADOS_VENTA_EFECTIVA } from '../../../lib/ventas';
 import { eq, desc } from 'drizzle-orm';
 
 const { id } = Astro.params;
@@ -57,6 +58,33 @@ const cliente = clienteData[0];
 const etapas = await db.select().from(EtapasCrm);
 const etapaActualObj = etapas.find(e => e.id === cliente.id_etapa_crm);
 const etapaActual = etapaActualObj ? etapaActualObj.nombre : 'Sin etapa';
+
+// Órdenes del cliente en el ERP
+const ordenes = await db
+  .select({
+    id: Ventas.id,
+    fecha: Ventas.fecha_venta,
+    estado: Ventas.estado,
+    total: Ventas.total,
+    metodoPago: MetodosPago.nombre,
+    vendedor: Usuarios.nombre,
+  })
+  .from(Ventas)
+  .leftJoin(MetodosPago, eq(Ventas.id_metodo_pago, MetodosPago.id))
+  .leftJoin(Usuarios, eq(Ventas.id_usuario, Usuarios.id))
+  .where(eq(Ventas.id_cliente, clienteId))
+  .orderBy(desc(Ventas.fecha_venta));
+const totalComprado = ordenes
+  .filter(o => ESTADOS_VENTA_EFECTIVA.includes(o.estado))
+  .reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+const fmtMoneda = (value: number | string | null) =>
+  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(value) || 0);
+const estadoBadge: Record<string, string> = {
+  Procesando: 'badge-warning',
+  Confirmada: 'badge-pull',
+  Entregada: 'badge-success',
+  Cancelada: 'badge-danger',
+};
 
 // Obtener tipos de interacción
 const tiposInteraccion = await db.select().from(TiposInteraccion);
@@ -159,6 +187,10 @@ const initials = (cliente.nombre || 'C').substring(0, 2).toUpperCase();
       <button type="button" class="tab-btn" onclick="switchTab('evaluaciones', this)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         Evaluaciones CSAT ({evaluaciones.length})
+      </button>
+      <button type="button" class="tab-btn" onclick="switchTab('ordenes', this)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/></svg>
+        Órdenes ERP ({ordenes.length})
       </button>
     </div>
 
@@ -275,6 +307,45 @@ const initials = (cliente.nombre || 'C').substring(0, 2).toUpperCase();
           </div>
         )}
       </div>
+    </div>
+
+    <!-- Contenido de Pestaña: Órdenes -->
+    <div class="tab-content" id="tab-ordenes" style="display: none;">
+      <div class="section-actions-bar">
+        <div>
+          <h3 style="margin: 0; font-size: 15px; font-weight: 700;">Órdenes del Cliente</h3>
+          <p style="margin: 2px 0 0 0; font-size: 12px; color: var(--color-text-muted);">Pedidos registrados en el ERP &bull; Total comprado: <strong>{fmtMoneda(totalComprado)}</strong></p>
+        </div>
+        <a href="/erp/ventas" class="btn-primary">+ NUEVA ORDEN</a>
+      </div>
+
+      {ordenes.length > 0 ? (
+        <div style="overflow-x: auto;">
+          <table class="ordenes-table">
+            <thead>
+              <tr><th>Orden</th><th>Fecha</th><th>Estado</th><th>Pago</th><th>Atendió</th><th style="text-align: right;">Total</th><th></th></tr>
+            </thead>
+            <tbody>
+              {ordenes.map(o => (
+                <tr>
+                  <td><strong>#{String(o.id).padStart(5, '0')}</strong></td>
+                  <td>{new Date(o.fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                  <td><span class={`badge ${estadoBadge[o.estado] || 'badge-neutral'}`}>{o.estado}</span></td>
+                  <td>{o.metodoPago || '—'}</td>
+                  <td>{o.vendedor || 'Tienda en línea'}</td>
+                  <td style="text-align: right; white-space: nowrap;">{fmtMoneda(o.total)}</td>
+                  <td style="text-align: right;"><a href={`/erp/ventas?detalle=${o.id}`} class="orden-link">Ver detalle</a></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div class="empty-state">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          <p>Este cliente aún no tiene órdenes registradas.</p>
+        </div>
+      )}
     </div>
   </div>
 
@@ -492,6 +563,11 @@ const initials = (cliente.nombre || 'C').substring(0, 2).toUpperCase();
   .badge-pull { background: #dbeafe; color: #1e40af; }
   .badge-warning { background: #fef3c7; color: #92400e; }
   .badge-neutral { background: #f1f5f9; color: #475569; }
+
+  .ordenes-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ordenes-table th { text-align: left; padding: 10px 12px; border-bottom: 2px solid var(--color-border); color: var(--color-text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .ordenes-table td { padding: 12px; border-bottom: 1px solid var(--color-border); }
+  .orden-link { color: var(--color-text); font-weight: 700; font-size: 12px; }
 
   /* Tabs */
   .tabs-header {
