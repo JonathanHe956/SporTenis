@@ -2,7 +2,7 @@
 import { db } from "../db/db";
 import { Notificaciones } from "../db/schema";
 import { eq, desc } from "drizzle-orm";
-import { canAccessRoute, homeForRole } from "../lib/auth";
+import { canAccessCrm, canAccessErp, canAccessRoute, canAccessScm, homeForRole } from "../lib/auth";
 
 interface Props {
   title: string;
@@ -110,11 +110,27 @@ let menuScm = [
     icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
   },];
 
+// Apartados del ERP; Clientes, Productos e Inventario son las páginas del CRM y del SCM abiertas dentro del ERP
 let menuErp = [
   {
     path: "/erp",
-    label: "Dashboard",
+    label: "Inicio",
     icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>',
+  },
+  {
+    path: "/erp/clientes",
+    label: "Clientes (CRM)",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  },
+  {
+    path: "/erp/productos",
+    label: "Productos (SCM)",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16V8l-8-4-8 4v8l8 4 8-4Z"/><polyline points="4 8 12 12 20 8"/><polyline points="12 12 12 20"/></svg>',
+  },
+  {
+    path: "/erp/pedidos",
+    label: "Inventario (SCM)",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>',
   },
   {
     path: "/erp/ordenes",
@@ -146,6 +162,21 @@ let menuErp = [
     label: "Nivel ERP",
     icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
   },
+  {
+    path: "/erp/usuarios",
+    label: "Usuarios",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  },
+  {
+    path: "/erp/configuracion",
+    label: "Configuración",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  },
+  {
+    path: "/erp/actividad",
+    label: "Mi actividad",
+    icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>',
+  },
 ];
 
 // Opciones que se repiten entre secciones; cada una abre la página dentro de su sección
@@ -173,10 +204,8 @@ const menus: Record<string, typeof menuCrm> = {};
 for (const [id, items] of Object.entries({ crm: menuCrm, scm: menuScm, erp: menuErp })) {
   menus[id] = [
     ...items,
-    // Mi actividad es la bitácora de gestiones con clientes: no aplica al ERP
-    ...menuComun
-      .filter((item) => id !== "erp" || item.path !== "/actividad")
-      .map((item) => ({ ...item, path: `/${id}${item.path}` })),
+    // El ERP ya incluye sus propias páginas de usuarios, actividad y configuración
+    ...(id === "erp" ? [] : menuComun.map((item) => ({ ...item, path: `/${id}${item.path}` }))),
   ].filter(puedeVer);
 }
 
@@ -187,13 +216,14 @@ const moduleTitle =
     : currentModule === "scm"
       ? "SCM - Cadena de Suministros"
       : "CRM - Administración";
-// Secciones del panel con al menos una página para el rol; cada una abre en su primera opción
+// Secciones del rol en la barra superior: ventas ve CRM y ERP, logística SCM y ERP.
+// Ventas consulta productos del SCM, pero desde el ERP; cada sección abre en su primera opción.
 const modules = [
-  { id: "crm", label: "CRM", title: "Clientes" },
-  { id: "scm", label: "SCM", title: "Cadena de Suministros" },
-  { id: "erp", label: "ERP", title: "Ventas y Finanzas" },
+  { id: "crm", label: "CRM", title: "Clientes", allowed: canAccessCrm },
+  { id: "scm", label: "SCM", title: "Cadena de Suministros", allowed: canAccessScm },
+  { id: "erp", label: "ERP", title: "Ventas y Finanzas", allowed: canAccessErp },
 ]
-  .filter((m) => menus[m.id].length > 0)
+  .filter((m) => m.allowed(roleStr as any) && menus[m.id].length > 0)
   .map((m) => ({ ...m, href: menus[m.id][0].path }));
 const moduleHome = modules.find((m) => m.id === currentModule)?.href ?? `/${currentModule}`;
 const showModuleSwitcher = modules.length > 1;

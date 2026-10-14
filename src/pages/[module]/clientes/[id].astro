@@ -4,12 +4,16 @@ import { db } from '../../../db/db';
 import { Clientes, EtapasCrm, Interacciones, TiposInteraccion, Evaluaciones, Usuarios, Ventas, MetodosPago } from '../../../db/schema';
 import { ESTADOS_VENTA_EFECTIVA } from '../../../lib/ventas';
 import { eq, desc } from 'drizzle-orm';
+const { module } = Astro.params;
+if (module !== 'crm' && module !== 'erp') return Astro.redirect('/404');
+// La misma página se abre en su sección (/crm) o dentro del ERP (/erp)
+const base = `/${module}`;
 
 const { id } = Astro.params;
 const clienteId = Number(id);
 
 if (isNaN(clienteId)) {
-  return Astro.redirect('/crm/clientes');
+  return Astro.redirect(`${base}/clientes`);
 }
 
 // Manejo de peticiones POST (Agregar Interacción, Cambiar Etapa, Editar Cliente)
@@ -44,13 +48,13 @@ if (Astro.request.method === 'POST') {
       .where(eq(Clientes.id, clienteId));
   }
 
-  return Astro.redirect(`/crm/clientes/${clienteId}`);
+  return Astro.redirect(`${base}/clientes/${clienteId}`);
 }
 
 // Obtener datos del cliente
 const clienteData = await db.select().from(Clientes).where(eq(Clientes.id, clienteId));
 if (clienteData.length === 0) {
-  return Astro.redirect('/crm/clientes');
+  return Astro.redirect(`${base}/clientes`);
 }
 const cliente = clienteData[0];
 
@@ -131,10 +135,10 @@ function getStageBadge(stage: string | null) {
 const initials = (cliente.nombre || 'C').substring(0, 2).toUpperCase();
 ---
 
-<CrmLayout title={`Cliente: ${cliente.nombre}`} activePath="/crm/clientes">
+<CrmLayout title={`Cliente: ${cliente.nombre}`} activePath={`${base}/clientes`}>
   <!-- Breadcrumb -->
   <div class="breadcrumb-bar">
-    <a href="/crm/clientes" class="back-link">
+    <a href={`${base}/clientes`} class="back-link">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
       Volver al Directorio de Clientes
     </a>

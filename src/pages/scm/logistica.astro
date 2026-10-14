@@ -42,7 +42,8 @@ const productosEstadisticas = productosRaw.map(prod => {
   const totalSalidas = movs.filter(m => m.tipo === 'Salida').reduce((acc, m) => acc + m.cantidad, 0);
   
   const rotacion = totalEntradas + totalSalidas;
-  const sugerencia = (totalSalidas >= 10 || rotacion >= 20) ? 'PUSH' : 'PULL';
+  // Alta rotación conviene reponerla sola (PULL); la baja rotación se compra planeada (PUSH)
+  const sugerencia = (totalSalidas >= 10 || rotacion >= 20) ? 'PULL' : 'PUSH';
 
   const stock = Number(prod.stock || 0);
   const costo = Number(prod.costo || 0);
@@ -89,7 +90,7 @@ const formatter = new Intl.NumberFormat('es-MX', {
   <div class="scm-header-bar" style="margin-bottom: 24px;">
     <div>
       <h1 class="crm-title">Estrategia Logística: PUSH vs PULL</h1>
-      <p class="scm-subtitle">PUSH repone automáticamente al llegar al mínimo; PULL genera una alerta para crear el pedido manualmente.</p>
+      <p class="scm-subtitle">PULL repone automáticamente al llegar al mínimo; PUSH genera una alerta para crear el pedido manualmente.</p>
     </div>
   </div>
 
@@ -129,7 +130,7 @@ const formatter = new Intl.NumberFormat('es-MX', {
   <div class="crm-card">
     <div class="card-header" style="margin-bottom: 20px;">
       <h3 style="font-size: 18px; margin: 0; font-weight: 800;">Análisis por Producto (Altas y Bajas)</h3>
-      <p style="font-size: 13px; color: var(--color-text-muted); margin-top: 4px;">PUSH genera el reabastecimiento automáticamente al alcanzar el mínimo; PULL avisa al equipo para que gestione el pedido manualmente.</p>
+      <p style="font-size: 13px; color: var(--color-text-muted); margin-top: 4px;">PULL genera el reabastecimiento automáticamente al alcanzar el mínimo; PUSH avisa al equipo para que gestione el pedido manualmente.</p>
     </div>
     
     <div class="table-responsive">
@@ -169,7 +170,7 @@ const formatter = new Intl.NumberFormat('es-MX', {
                   Sugerido: {prod.sugerencia}
                 </span>
                 <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">
-                  {prod.sugerencia === 'PUSH' ? 'Alta rotación (stockear)' : 'Baja rotación (bajo demanda)'}
+                  {prod.sugerencia === 'PULL' ? 'Alta rotación (reposición automática)' : 'Baja rotación (compra planeada)'}
                 </div>
               </td>
               <td style="padding:12px 16px;">

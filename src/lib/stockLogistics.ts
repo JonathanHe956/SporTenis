@@ -5,8 +5,8 @@ import { eq, and, sql } from 'drizzle-orm';
 export interface ResultadoLogistica {
   ok: boolean;
   productosRevisados: number;
-  pushRepuestos: number;
-  pullAlertas: number;
+  pullRepuestos: number;
+  pushAlertas: number;
   detalles: Array<{
     id_producto: number;
     nombre: string;
@@ -14,7 +14,7 @@ export interface ResultadoLogistica {
     stockAnterior: number;
     stockPosterior: number;
     cantidadRepuesta?: number;
-    accion: 'REPOSICION_PUSH' | 'ALERTA_PULL' | 'SIN_CAMBIO';
+    accion: 'REPOSICION_PULL' | 'ALERTA_PUSH' | 'SIN_CAMBIO';
   }>;
 }
 
@@ -33,9 +33,9 @@ export const calcularCantidadReponer = (stockActual: number, stockMinimo: number
 
 /**
  * Revisa el inventario y ejecuta:
- * - PUSH: Reabastecimiento automático del producto, completando el pedido de compra,
+ * - PULL: Reabastecimiento automático del producto, completando el pedido de compra,
  *         aumentando el stock, registrando el movimiento de inventario y notificando.
- * - PULL: Genera alerta de notificación de stock bajo para que el encargado genere
+ * - PUSH: Genera alerta de notificación de stock bajo para que el encargado genere
  *         un pedido de compra manual en /scm/pedidos.
  */
 export async function procesarLogisticaStock(options?: {
@@ -44,8 +44,8 @@ export async function procesarLogisticaStock(options?: {
 }): Promise<ResultadoLogistica> {
   const now = new Date();
   const detalles: ResultadoLogistica['detalles'] = [];
-  let pushRepuestos = 0;
-  let pullAlertas = 0;
+  let pullRepuestos = 0;
+  let pushAlertas = 0;
 
   try {
     // 1. Obtener cantidad de reorden global si está configurada
@@ -97,8 +97,8 @@ export async function procesarLogisticaStock(options?: {
 
       const cantidadReponer = calcularCantidadReponer(stockActual, stockMinimo, reordenConfig);
 
-      if (estrategia === 'PUSH') {
-        // === ESTRATEGIA PUSH: REABASTECIMIENTO AUTOMÁTICO INMEDIATO ===
+      if (estrategia === 'PULL') {
+        // === ESTRATEGIA PULL: REABASTECIMIENTO AUTOMÁTICO INMEDIATO ===
         const stockAnterior = stockActual;
         const stockPosterior = stockAnterior + cantidadReponer;
 
@@ -121,7 +121,7 @@ export async function procesarLogisticaStock(options?: {
           stock_posterior: stockPosterior,
         });
 
-        // Si existía algún pedido PULL pendiente anterior para este producto, completarlo para evitar inconsistencias
+        // Si existía algún pedido automático pendiente anterior para este producto, completarlo para evitar inconsistencias
         try {
           await db
             .update(PedidosCompra)
@@ -143,37 +143,37 @@ export async function procesarLogisticaStock(options?: {
             id_producto: prod.id,
             tipo: 'Entrada',
             cantidad: cantidadReponer,
-            motivo: 'Reabastecimiento automático PUSH',
+            motivo: 'Reabastecimiento automático PULL',
             fecha: now,
             id_usuario: options?.id_usuario || null,
           });
         } catch (e) {
-          console.error('Error registrando movimiento de inventario PUSH:', e);
+          console.error('Error registrando movimiento de inventario PULL:', e);
         }
 
         // 4. Generar notificación de reabastecimiento completado
         await db.insert(Notificaciones).values({
           tipo: 'pedido_auto',
-          titulo: `✅ Reabastecimiento PUSH: ${nombreProd}`,
+          titulo: `✅ Reabastecimiento PULL: ${nombreProd}`,
           mensaje: `Se reabastecieron automáticamente +${cantidadReponer} unidades para "${nombreProd}" (Stock: ${stockAnterior} ➔ ${stockPosterior}, mín: ${stockMinimo}).`,
           id_producto: prod.id,
           leida: false,
           fecha_creacion: now,
         });
 
-        pushRepuestos++;
+        pullRepuestos++;
         detalles.push({
           id_producto: prod.id,
           nombre: nombreProd,
-          estrategia: 'PUSH',
+          estrategia: 'PULL',
           stockAnterior,
           stockPosterior,
           cantidadRepuesta: cantidadReponer,
-          accion: 'REPOSICION_PUSH',
+          accion: 'REPOSICION_PULL',
         });
 
       } else {
-        // === ESTRATEGIA PULL: ALERTA MANUAL PARA COMPRAS ===
+        // === ESTRATEGIA PUSH: ALERTA MANUAL PARA COMPRAS ===
         // Verificar si ya existe una notificación no leída para evitar spam
         const existingNotif = await db
           .select()
@@ -189,22 +189,22 @@ export async function procesarLogisticaStock(options?: {
         if (existingNotif.length === 0) {
           await db.insert(Notificaciones).values({
             tipo: 'stock_bajo',
-            titulo: `⚠️ Stock bajo (PULL): ${nombreProd}`,
-            mensaje: `El producto "${nombreProd}" tiene stock crítico (${stockActual} uds, mín: ${stockMinimo}). Estrategia PULL: requiere crear un pedido manual.`,
+            titulo: `⚠️ Stock bajo (PUSH): ${nombreProd}`,
+            mensaje: `El producto "${nombreProd}" tiene stock crítico (${stockActual} uds, mín: ${stockMinimo}). Estrategia PUSH: requiere crear un pedido manual.`,
             id_producto: prod.id,
             leida: false,
             fecha_creacion: now,
           });
-          pullAlertas++;
+          pushAlertas++;
         }
 
         detalles.push({
           id_producto: prod.id,
           nombre: nombreProd,
-          estrategia: 'PULL',
+          estrategia: 'PUSH',
           stockAnterior: stockActual,
           stockPosterior: stockActual,
-          accion: 'ALERTA_PULL',
+          accion: 'ALERTA_PUSH',
         });
       }
     }
@@ -212,8 +212,8 @@ export async function procesarLogisticaStock(options?: {
     return {
       ok: true,
       productosRevisados: productos.length,
-      pushRepuestos,
-      pullAlertas,
+      pullRepuestos,
+      pushAlertas,
       detalles,
     };
   } catch (error: any) {
@@ -221,8 +221,8 @@ export async function procesarLogisticaStock(options?: {
     return {
       ok: false,
       productosRevisados: 0,
-      pushRepuestos: 0,
-      pullAlertas: 0,
+      pullRepuestos: 0,
+      pushAlertas: 0,
       detalles: [],
     };
   }

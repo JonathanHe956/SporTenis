@@ -94,6 +94,31 @@ describe('permiso por página', () => {
     }
   });
 
+  it('cada rol ve en el ERP solo los apartados de su tabla de permisos', () => {
+    const apartados = {
+      '/erp': [true, true, true],
+      '/erp/clientes': [true, true, false],
+      '/erp/clientes/3': [true, true, false],
+      '/erp/productos': [true, true, true],
+      '/erp/pedidos': [true, false, true],
+      '/erp/categorias': [true, false, true],
+      '/erp/ordenes': [true, true, true],
+      '/erp/ventas': [true, true, true],
+      '/erp/presupuestos': [true, true, true],
+      '/erp/finanzas': [true, false, false],
+      '/erp/reportes': [true, true, true],
+      '/erp/implementacion': [true, false, false],
+      '/erp/usuarios': [true, false, false],
+      '/erp/configuracion': [true, false, false],
+      '/erp/actividad': [false, true, false],
+    };
+    for (const [path, [admin, ventas, logistica]] of Object.entries(apartados)) {
+      expect(canAccessRoute('administrador', path), `administrador ${path}`).toBe(admin);
+      expect(canAccessRoute('vendedor', path), `vendedor ${path}`).toBe(ventas);
+      expect(canAccessRoute('logistica', path), `logistica ${path}`).toBe(logistica);
+    }
+  });
+
   it('el cliente y los visitantes no abren ninguna página del panel', () => {
     for (const path of ['/crm', '/scm/productos', '/erp/ordenes']) {
       expect(canAccessRoute('cliente', path), path).toBe(false);

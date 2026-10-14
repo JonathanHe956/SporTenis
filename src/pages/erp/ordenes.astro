@@ -127,7 +127,7 @@ if (Astro.request.method === 'POST') {
       return [];
     });
 
-    // Reposición PUSH automática o alerta PULL para los productos que salieron del inventario
+    // Reposición PULL automática o alerta PUSH para los productos que salieron del inventario
     for (const id_producto of new Set(productosConfirmados)) {
       await procesarLogisticaStock({ id_producto, id_usuario: Astro.locals.user?.id });
     }

@@ -173,7 +173,7 @@ const criterios = [
   {
     id: 'e12', etapa: 'cat-optimizado', auto: presupuestos.length > 0 || cuentasPorCobrar.length > 0 || cuentasPorPagar.length > 0,
     titulo: 'Presupuestos y Cuentas por Cobrar / Pagar',
-    desc: 'Control de saldos pendientes de clientes y proveedores contra un presupuesto.',
+    desc: 'Presupuesto mensual comparado contra las ventas reales y control de saldos pendientes de clientes y proveedores.',
     impacto: 'Permite planear el flujo de efectivo en lugar de solo registrarlo.',
   },
 
@@ -181,7 +181,7 @@ const criterios = [
   {
     id: 'e13', etapa: 'cat-automatizado', auto: pedidosCompra.some(p => p.tipo === 'AUTOMATICO'),
     titulo: 'Reabastecimiento Automático',
-    desc: 'El sistema genera el pedido de compra cuando un producto PUSH baja de su mínimo.',
+    desc: 'El sistema genera el pedido de compra cuando un producto PULL baja de su mínimo.',
     impacto: 'Elimina la revisión manual de existencias para reponer mercancía.',
   },
   {

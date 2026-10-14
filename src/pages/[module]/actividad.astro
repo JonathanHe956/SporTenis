@@ -5,8 +5,10 @@ import { Interacciones, Clientes, TiposInteraccion, Ventas } from '../../db/sche
 import { eq, desc, and } from 'drizzle-orm';
 import { canAccessCrm, canAccessErp } from '../../lib/auth';
 const { module } = Astro.params;
-if (module !== 'crm' && module !== 'scm') return Astro.redirect('/404');
+if (module !== 'crm' && module !== 'scm' && module !== 'erp') return Astro.redirect('/404');
 const activePath = `/${module}/actividad`;
+// En el ERP, Mi actividad muestra solo las órdenes que capturó el usuario
+const esErp = module === 'erp';
 // Las fichas de cliente viven en el CRM
 const puedeVerClientes = canAccessCrm(Astro.locals.user?.role);
 
@@ -73,6 +75,7 @@ const fmtMoneda = (value: number | string | null) =>
 ---
 
 <CrmLayout title="Mi Actividad" activePath={activePath}>
+  {!esErp && (<>
   <div class="header-actions">
     <div>
       <h1 class="crm-title">Mi Bitácora de Actividad</h1>
@@ -187,7 +190,19 @@ const fmtMoneda = (value: number | string | null) =>
     </div>
   </div>
 
-  <div class="crm-card" style="margin-top: 24px;">
+  </>)}
+
+  {esErp && (
+    <div class="header-actions">
+      <div>
+        <h1 class="crm-title">Mi Actividad</h1>
+        <p class="subtitle">Órdenes de clientes que has registrado en el ERP.</p>
+      </div>
+      <a href="/erp/ventas" class="btn-primary">+ NUEVA ORDEN</a>
+    </div>
+  )}
+
+  <div class="crm-card" style={esErp ? undefined : "margin-top: 24px;"}>
     <div class="filters">
       <div>
         <h3 style="margin: 0; font-size: 15px; font-weight: 700;">Mis Órdenes</h3>

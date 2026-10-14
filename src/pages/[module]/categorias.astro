@@ -1,0 +1,297 @@
+---
+import CrmLayout from "../../layouts/CrmLayout.astro";
+import { db } from "../../db/db";
+import { Categorias, Modelos, Productos } from "../../db/schema";
+import { asc, eq, sql } from "drizzle-orm";
+import { canEditCatalogo } from "../../lib/auth";
+const { module } = Astro.params;
+if (module !== 'scm' && module !== 'erp') return Astro.redirect('/404');
+// La misma página se abre en su sección (/scm) o dentro del ERP (/erp)
+const base = `/${module}`;
+
+// Las categorías registradas aquí son las que aparecen en el menú de la tienda
+const sessionUser = Astro.locals.user;
+if (!sessionUser) return Astro.redirect("/login");
+const puedeEditar = canEditCatalogo(sessionUser.role);
+
+const volver = (error?: string) =>
+  Astro.redirect(error ? `${Astro.url.pathname}?error=${encodeURIComponent(error)}` : Astro.url.pathname);
+
+/** Busca otra categoría con el mismo nombre, sin distinguir mayúsculas. */
+const nombreRepetido = async (nombre: string, exceptoId?: number) => {
+  const iguales = await db
+    .select({ id: Categorias.id })
+    .from(Categorias)
+    .where(sql`LOWER(${Categorias.nombre}) = LOWER(${nombre})`);
+  return iguales.some((c) => c.id !== exceptoId);
+};
+
+if (Astro.request.method === "POST") {
+  if (!puedeEditar) return volver();
+  const formData = await Astro.request.formData();
+  const action = formData.get("action");
+  const nombre = String(formData.get("nombre") ?? "").trim();
+  const id = Number(formData.get("id"));
+
+  if (action === "create_categoria") {
+    if (!nombre) return volver("El nombre es obligatorio.");
+    if (await nombreRepetido(nombre)) return volver(`Ya existe la categoría "${nombre}".`);
+    await db.insert(Categorias).values({ nombre });
+    return volver();
+  } else if (action === "update_categoria") {
+    if (!id || !nombre) return volver("El nombre es obligatorio.");
+    if (await nombreRepetido(nombre, id)) return volver(`Ya existe la categoría "${nombre}".`);
+    await db.update(Categorias).set({ nombre }).where(eq(Categorias.id, id));
+    return volver();
+  } else if (action === "delete_categoria") {
+    // Modelos.id_categoria es obligatorio: no se puede borrar una categoría con modelos
+    const [{ modelos }] = await db
+      .select({ modelos: sql<number>`COUNT(*)` })
+      .from(Modelos)
+      .where(eq(Modelos.id_categoria, id));
+    if (Number(modelos) > 0) {
+      return volver("No se puede eliminar: la categoría tiene productos. Cámbialos de categoría primero.");
+    }
+    await db.delete(Categorias).where(eq(Categorias.id, id));
+    return volver();
+  }
+}
+
+const categoriasList = await db
+  .select({
+    id: Categorias.id,
+    nombre: Categorias.nombre,
+    modelos: sql<number>`COUNT(DISTINCT ${Modelos.id})`,
+    productosActivos: sql<number>`COUNT(DISTINCT CASE WHEN ${Productos.estado} = 'Activo' THEN ${Productos.id} END)`,
+  })
+  .from(Categorias)
+  .leftJoin(Modelos, eq(Modelos.id_categoria, Categorias.id))
+  .leftJoin(Productos, eq(Productos.id_modelo, Modelos.id))
+  .groupBy(Categorias.id, Categorias.nombre)
+  .orderBy(asc(Categorias.nombre));
+
+const error = Astro.url.searchParams.get("error");
+const q = Astro.url.searchParams.get("q");
+const categoriasFiltradas = q
+  ? categoriasList.filter((c) => c.nombre.toLowerCase().includes(q.toLowerCase()))
+  : categoriasList;
+
+const enTienda = categoriasList.filter((c) => Number(c.productosActivos) > 0).length;
+const sinProductos = categoriasList.filter((c) => Number(c.modelos) === 0).length;
+---
+
+<CrmLayout title="Categorías SCM" activePath={`${base}/productos`}>
+  <div class="header-actions">
+    <div>
+      <a href={`${base}/productos`} class="back-link">← Volver a Productos</a>
+      <h1 class="crm-title">Categorías</h1>
+      <p class="subtitle">Las categorías registradas aquí son las que aparecen en el menú de la tienda.</p>
+    </div>
+    {puedeEditar && (
+      <button class="btn-primary" onclick="document.getElementById('modalCreateCategoria').showModal()">+ NUEVA CATEGORÍA</button>
+    )}
+  </div>
+
+  {error && <div class="alert-error" role="alert">{error}</div>}
+
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-number">{categoriasList.length}</div>
+      <div class="stat-label">Categorías registradas</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-success">{enTienda}</div>
+      <div class="stat-label">Con productos activos</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-warning">{sinProductos}</div>
+      <div class="stat-label">Sin productos</div>
+    </div>
+  </div>
+
+  <div class="crm-card">
+    <form method="GET" class="search-form">
+      <input type="search" name="q" value={q || ""} placeholder="Buscar categoría..." class="search-input" />
+      <button type="submit" class="search-btn" aria-label="Buscar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+    </form>
+    <div class="table-responsive">
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th class="text-right">Modelos</th>
+            <th class="text-right">Productos activos</th>
+            <th>En la tienda</th>
+            <th class="text-center">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {categoriasFiltradas.map((c) => (
+            <tr>
+              <td><strong>{c.nombre}</strong></td>
+              <td class="text-right">{Number(c.modelos)}</td>
+              <td class="text-right">{Number(c.productosActivos)}</td>
+              <td>
+                <a class="store-link" href={`/?categoria=${encodeURIComponent(c.nombre)}`} target="_blank" rel="noopener">Ver en tienda ↗</a>
+              </td>
+              <td class="text-center" style="white-space: nowrap;">
+                {puedeEditar ? (
+                  <>
+                    <button type="button" class="action-btn btn-edit-categoria" title="Editar" data-id={c.id} data-nombre={c.nombre}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                    </button>
+                    <form
+                      method="POST"
+                      style="display:inline;"
+                      data-confirm={`¿Eliminar la categoría "${c.nombre}"? Desaparecerá del menú de la tienda.`}
+                      data-confirm-title="Eliminar categoría"
+                      data-confirm-accept="Eliminar"
+                    >
+                      <input type="hidden" name="action" value="delete_categoria" />
+                      <input type="hidden" name="id" value={c.id} />
+                      <button
+                        type="submit"
+                        class="action-btn text-danger"
+                        title={Number(c.modelos) > 0 ? "Tiene productos; cámbialos de categoría para poder eliminarla" : "Eliminar"}
+                        disabled={Number(c.modelos) > 0}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>
+                      </button>
+                    </form>
+                  </>
+                ) : (
+                  <span class="text-muted">Solo lectura</span>
+                )}
+              </td>
+            </tr>
+          ))}
+          {categoriasFiltradas.length === 0 && (
+            <tr>
+              <td colspan="5" style="text-align: center; color: var(--color-text-muted);">
+                {q ? "Ninguna categoría coincide con la búsqueda." : "No hay categorías registradas."}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Modal: Crear Categoría -->
+  <dialog id="modalCreateCategoria" class="crm-modal scm-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nueva categoría</h2>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalCreateCategoria').close()">×</button>
+      </div>
+      <form method="POST" class="scm-form">
+        <input type="hidden" name="action" value="create_categoria" />
+        <div class="form-row">
+          <label>Nombre</label>
+          <input type="text" name="nombre" placeholder="Ej. Raquetas" maxlength="255" required />
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" onclick="document.getElementById('modalCreateCategoria').close()">Cancelar</button>
+          <button type="submit" class="btn-save">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Modal: Editar Categoría -->
+  <dialog id="modalEditCategoria" class="crm-modal scm-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar categoría</h2>
+        <button type="button" class="close-btn" onclick="document.getElementById('modalEditCategoria').close()">×</button>
+      </div>
+      <form method="POST" class="scm-form">
+        <input type="hidden" name="action" value="update_categoria" />
+        <input type="hidden" name="id" id="edit_categoria_id" />
+        <div class="form-row">
+          <label>Nombre</label>
+          <input type="text" name="nombre" id="edit_categoria_nombre" maxlength="255" required />
+        </div>
+        <p class="form-hint">El nuevo nombre se refleja de inmediato en el menú de la tienda.</p>
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" onclick="document.getElementById('modalEditCategoria').close()">Cancelar</button>
+          <button type="submit" class="btn-save">Guardar Cambios</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+</CrmLayout>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>(".btn-edit-categoria").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      (document.getElementById("edit_categoria_id") as HTMLInputElement).value = btn.dataset.id || "";
+      (document.getElementById("edit_categoria_nombre") as HTMLInputElement).value = btn.dataset.nombre || "";
+      (document.getElementById("modalEditCategoria") as HTMLDialogElement).showModal();
+    });
+  });
+</script>
+
+<style>
+  .header-actions { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 24px; }
+  .crm-title { margin-bottom: 4px; }
+  .back-link { display: inline-block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: #00564d; text-decoration: none; }
+  .back-link:hover { text-decoration: underline; }
+  .subtitle { margin: 0; font-size: 13px; color: var(--color-text-muted); }
+
+  .alert-error { background: #fff1ef; color: #d93e2e; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; font-size: 13px; font-weight: 600; margin-bottom: 20px; }
+
+  .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px; padding: 20px; text-align: center; }
+  .stat-number { font-size: 32px; font-weight: 900; line-height: 1; margin-bottom: 6px; }
+  .stat-warning { color: #d97706; }
+  .stat-success { color: var(--color-success); }
+  .stat-label { font-size: 12px; color: var(--color-text-muted); font-weight: 700; text-transform: uppercase; }
+
+  .search-form { margin: 0 0 24px; max-width: 400px; display: flex; position: relative; }
+  .search-input { flex: 1; width: 100%; padding: 10px 40px 10px 16px; border: 1px solid var(--color-border); border-radius: 6px; font-family: inherit; }
+  .search-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted); }
+
+  .table-responsive { overflow-x: auto; margin: 0 -24px; }
+  .crm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .crm-table th { text-align: left; padding: 12px 24px; border-bottom: 2px solid var(--color-border); color: var(--color-text-muted); font-weight: 700; }
+  .crm-table td { padding: 14px 24px; border-bottom: 1px solid var(--color-border); }
+  .crm-table tbody tr:hover { background: var(--color-bg); }
+  .crm-table th.text-right, .text-right { text-align: right; }
+  .text-center { text-align: center; }
+  .text-muted { color: var(--color-text-muted); font-size: 12px; }
+  .store-link { color: #00564d; font-weight: 600; text-decoration: none; font-size: 12px; }
+  .store-link:hover { text-decoration: underline; }
+
+  .action-btn { background: none; border: none; cursor: pointer; opacity: 0.65; margin-left: 6px; color: inherit; transition: all 0.2s ease; vertical-align: middle; padding: 4px; border-radius: 4px; }
+  .action-btn:hover:not(:disabled) { opacity: 1; transform: scale(1.1); }
+  .action-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+  .action-btn.text-danger:hover:not(:disabled) { color: var(--color-danger); background: #fee2e2; }
+
+  .scm-modal { border: none; border-radius: 12px; padding: 0; width: 100%; max-width: 440px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
+  .scm-modal::backdrop { background: rgba(0,0,0,0.5); backdrop-filter: blur(3px); }
+  .modal-content { padding: 32px; background: #ffffff; border-radius: 12px; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .modal-header h2 { margin: 0; font-size: 18px; color: #001632; font-weight: 700; }
+  .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #64748b; font-weight: bold; line-height: 1; }
+  .close-btn:hover { color: #001632; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 16px; margin-top: 24px; }
+
+  .scm-form .form-row { display: flex; align-items: flex-start; margin-bottom: 16px; gap: 16px; }
+  .scm-form label { width: 90px; font-size: 13px; color: #4a5568; padding-top: 10px; flex-shrink: 0; }
+  .scm-form input { flex: 1; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-family: inherit; font-size: 14px; color: #4a5568; background-color: #ffffff; width: 100%; }
+  .scm-form input:focus { outline: none; border-color: #a0aec0; }
+  .form-hint { margin: 0; font-size: 12px; color: #64748b; }
+
+  .btn-cancel { background: transparent; border: 1px solid #00564d; color: #00564d; padding: 9px 20px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; }
+  .btn-cancel:hover { background: rgba(0,0,0,0.03); }
+  .btn-save { background: #00564d; border: 1px solid #00564d; color: white; padding: 9px 20px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; }
+  .btn-save:hover { opacity: 0.9; }
+
+  @media (max-width: 768px) {
+    .header-actions { flex-direction: column; }
+    .stats-row { grid-template-columns: 1fr; }
+  }
+</style>

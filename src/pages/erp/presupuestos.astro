@@ -3,9 +3,9 @@ import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import {
   Presupuestos, CuentasPorCobrar, CuentasPorPagar,
-  Clientes, Proveedores, Ventas,
+  Clientes, Proveedores, Ventas, DetalleVentas, Productos,
 } from '../../db/schema';
-import { desc, eq, sql } from 'drizzle-orm';
+import { desc, eq, inArray, sql } from 'drizzle-orm';
 import { ESTADOS_VENTA_EFECTIVA } from '../../lib/ventas';
 
 const sessionUser = Astro.locals.user;
@@ -46,6 +46,31 @@ const cuentasPagar = await db.select({
 const clientes = await db.select({ id: Clientes.id, nombre: Clientes.nombre }).from(Clientes).orderBy(Clientes.nombre);
 const proveedores = await db.select({ id: Proveedores.id, nombre: Proveedores.nombre }).from(Proveedores).orderBy(Proveedores.nombre);
 
+// ─── Real por periodo ──────────────────────────────────────────
+// Mismo criterio que Finanzas: ingreso = total de las ventas efectivas,
+// egreso = costo de lo vendido. Procesando y Canceladas no cuentan.
+const periodoVenta = sql<string>`DATE_FORMAT(${Ventas.fecha_venta}, '%Y-%m')`;
+
+const ingresosPorPeriodo = await db.select({
+  periodo: periodoVenta,
+  total: sql<string>`COALESCE(SUM(${Ventas.total}), 0)`,
+}).from(Ventas)
+  .where(inArray(Ventas.estado, ESTADOS_VENTA_EFECTIVA))
+  .groupBy(periodoVenta);
+
+const egresosPorPeriodo = await db.select({
+  periodo: periodoVenta,
+  total: sql<string>`COALESCE(SUM(${DetalleVentas.cantidad} * ${Productos.costo}), 0)`,
+}).from(DetalleVentas)
+  .innerJoin(Ventas, eq(DetalleVentas.id_venta, Ventas.id))
+  .leftJoin(Productos, eq(DetalleVentas.id_producto, Productos.id))
+  .where(inArray(Ventas.estado, ESTADOS_VENTA_EFECTIVA))
+  .groupBy(periodoVenta);
+
+const ingresosReales = new Map(ingresosPorPeriodo.map(r => [r.periodo, Number(r.total)]));
+const egresosReales = new Map(egresosPorPeriodo.map(r => [r.periodo, Number(r.total)]));
+const pct = (real: number, proyectado: number) => proyectado > 0 ? (real / proyectado) * 100 : 0;
+
 // ─── Métricas ──────────────────────────────────────────────────
 const totalPorCobrar = cuentasCobrar
   .filter(c => c.estado !== 'Cobrada')
@@ -61,6 +86,10 @@ const presupuestoActual = presupuestos.find(p => p.periodo === mesActual);
 
 const ingresosProyectados = presupuestoActual ? Number(presupuestoActual.ingresos_proyectados) : 0;
 const egresosProyectados = presupuestoActual ? Number(presupuestoActual.egresos_proyectados) : 0;
+const ingresosMes = ingresosReales.get(mesActual) ?? 0;
+const egresosMes = egresosReales.get(mesActual) ?? 0;
+const pctIngresos = pct(ingresosMes, ingresosProyectados);
+const pctEgresos = pct(egresosMes, egresosProyectados);
 const flujoNeto = totalPorCobrar - totalPorPagar;
 
 const cxcVencidas = cuentasCobrar.filter(c => c.estado !== 'Cobrada' && new Date(c.fecha_vencimiento) < now).length;
@@ -81,7 +110,7 @@ const fmtFecha = (date: Date | string | null) => {
   <div class="header-actions">
     <div>
       <h1 class="crm-title">Presupuestos y Cuentas por Cobrar / Pagar</h1>
-      <p class="subtitle">Control de saldos pendientes de clientes y proveedores contra un presupuesto mensual.</p>
+      <p class="subtitle">Presupuesto mensual comparado con las ventas reales, y control de saldos pendientes de clientes y proveedores.</p>
     </div>
   </div>
 
@@ -120,23 +149,25 @@ const fmtFecha = (date: Date | string | null) => {
       <div class="budget-bars">
         <div class="budget-row">
           <div class="budget-row-label">
-            <span>Ingresos Proyectados</span>
-            <strong>{fmt(ingresosProyectados)}</strong>
+            <span>Ingresos (ventas)</span>
+            <strong>{fmt(ingresosMes)}</strong>
+            <small>de {fmt(ingresosProyectados)} proyectados</small>
           </div>
           <div class="budget-track">
-            <div class="budget-fill budget-fill-in" style={`width: ${ingresosProyectados > 0 ? Math.min(100, (totalPorCobrar / ingresosProyectados) * 100) : 0}%`}></div>
+            <div class="budget-fill budget-fill-in" style={`width: ${Math.min(100, pctIngresos)}%`}></div>
           </div>
-          <span class="budget-pct">{ingresosProyectados > 0 ? ((totalPorCobrar / ingresosProyectados) * 100).toFixed(0) : 0}% pendiente</span>
+          <span class="budget-pct">{pctIngresos.toFixed(0)}% alcanzado</span>
         </div>
         <div class="budget-row">
           <div class="budget-row-label">
-            <span>Egresos Proyectados</span>
-            <strong>{fmt(egresosProyectados)}</strong>
+            <span>Egresos (costo de lo vendido)</span>
+            <strong>{fmt(egresosMes)}</strong>
+            <small>de {fmt(egresosProyectados)} proyectados</small>
           </div>
           <div class="budget-track">
-            <div class="budget-fill budget-fill-out" style={`width: ${egresosProyectados > 0 ? Math.min(100, (totalPorPagar / egresosProyectados) * 100) : 0}%`}></div>
+            <div class={`budget-fill ${pctEgresos > 100 ? 'budget-fill-over' : 'budget-fill-out'}`} style={`width: ${Math.min(100, pctEgresos)}%`}></div>
           </div>
-          <span class="budget-pct">{egresosProyectados > 0 ? ((totalPorPagar / egresosProyectados) * 100).toFixed(0) : 0}% pendiente</span>
+          <span class={`budget-pct ${pctEgresos > 100 ? 'text-danger' : ''}`}>{pctEgresos.toFixed(0)}% ejercido</span>
         </div>
       </div>
     </div>
@@ -180,9 +211,12 @@ const fmtFecha = (date: Date | string | null) => {
             <thead>
               <tr>
                 <th>Periodo</th>
-                <th class="text-right">Ingresos Proyectados</th>
-                <th class="text-right">Egresos Proyectados</th>
-                <th class="text-right">Superávit / Déficit</th>
+                <th class="text-right">Ingresos Proy.</th>
+                <th class="text-right">Ingresos Reales</th>
+                <th class="text-right">Egresos Proy.</th>
+                <th class="text-right">Egresos Reales</th>
+                <th class="text-right">Resultado Real</th>
+                <th class="text-right">Variación vs. Proy.</th>
                 <th>Notas</th>
                 <th></th>
               </tr>
@@ -191,14 +225,28 @@ const fmtFecha = (date: Date | string | null) => {
               {presupuestos.map(p => {
                 const ing = Number(p.ingresos_proyectados);
                 const egr = Number(p.egresos_proyectados);
-                const diff = ing - egr;
+                const ingReal = ingresosReales.get(p.periodo) ?? 0;
+                const egrReal = egresosReales.get(p.periodo) ?? 0;
+                const resultado = ingReal - egrReal;
+                const variacion = resultado - (ing - egr);
                 return (
                   <tr>
                     <td><strong>{p.periodo}</strong></td>
                     <td class="text-right">{fmt(ing)}</td>
+                    <td class="text-right">
+                      {fmt(ingReal)}
+                      <div class="cell-pct">{pct(ingReal, ing).toFixed(0)}%</div>
+                    </td>
                     <td class="text-right">{fmt(egr)}</td>
                     <td class="text-right">
-                      <span class={diff >= 0 ? 'text-success' : 'text-danger'}>{fmt(diff)}</span>
+                      {fmt(egrReal)}
+                      <div class={`cell-pct ${egrReal > egr ? 'text-danger' : ''}`}>{pct(egrReal, egr).toFixed(0)}%</div>
+                    </td>
+                    <td class="text-right">
+                      <span class={resultado >= 0 ? 'text-success' : 'text-danger'}>{fmt(resultado)}</span>
+                    </td>
+                    <td class="text-right">
+                      <span class={variacion >= 0 ? 'text-success' : 'text-danger'}>{variacion >= 0 ? '+' : ''}{fmt(variacion)}</span>
                     </td>
                     <td class="notes-cell">{p.notas || '—'}</td>
                     <td>
@@ -685,6 +733,9 @@ const fmtFecha = (date: Date | string | null) => {
   }
   .budget-fill-in { background: linear-gradient(90deg, #2563eb, #60a5fa); }
   .budget-fill-out { background: linear-gradient(90deg, #d97706, #fbbf24); }
+  .budget-fill-over { background: linear-gradient(90deg, #dc2626, #f87171); }
+  .budget-row-label small { display: block; font-size: 11px; color: var(--color-text-muted); }
+  .cell-pct { font-size: 11px; color: var(--color-text-muted); }
   .budget-pct { font-size: 12px; font-weight: 700; color: var(--color-text-muted); width: 100px; text-align: right; }
   .budget-empty {
     text-align: center;

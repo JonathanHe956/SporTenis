@@ -3,6 +3,10 @@ import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Productos, Modelos, Proveedores, Marcas, Categorias, PedidosCompra, MovimientosInventario, Ventas } from '../../db/schema';
 import { eq, desc, or, and, isNull } from 'drizzle-orm';
+const { module } = Astro.params;
+if (module !== 'scm' && module !== 'erp') return Astro.redirect('/404');
+// La misma página se abre en su sección (/scm) o dentro del ERP (/erp)
+const base = `/${module}`;
 
 const sessionUser = Astro.locals.user;
 if (!sessionUser) return Astro.redirect('/login');
@@ -196,7 +200,7 @@ if (q) {
 }
 ---
 
-<CrmLayout title="Inventario y Pedidos" activePath="/scm/pedidos">
+<CrmLayout title="Inventario y Pedidos" activePath={`${base}/pedidos`}>
   <div class="header-actions">
     <div>
       <h1 class="crm-title">Inventario y Pedidos (Altas/Bajas)</h1>
@@ -278,7 +282,7 @@ if (q) {
               </td>
               <td>
                 <span class={`badge ${prod.estrategia_logistica === 'PULL' ? 'badge-pull' : 'badge-push'}`}>
-                  {prod.estrategia_logistica === 'PULL' ? 'PULL (Manual)' : 'PUSH (Auto)'}
+                  {prod.estrategia_logistica === 'PULL' ? 'PULL (Auto)' : 'PUSH (Manual)'}
                 </span>
               </td>
               <td style="text-align: center;">

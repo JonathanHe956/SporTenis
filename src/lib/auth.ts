@@ -60,17 +60,32 @@ const adminOnlyPages = /^\/(crm|scm|erp)\/(usuarios|configuracion)$/;
 // Páginas del SCM que ventas puede consultar sin entrar al resto de la sección
 const vendedorScmRoutes = ['/scm/productos'];
 
+// Páginas del CRM y del SCM que también se abren dentro del ERP; conservan los permisos de su sección
+const erpAliases: ReadonlyArray<[string, string]> = [
+  ['/erp/clientes', '/crm/clientes'],
+  ['/erp/productos', '/scm/productos'],
+  ['/erp/pedidos', '/scm/pedidos'],
+  ['/erp/marcas', '/scm/marcas'],
+  ['/erp/categorias', '/scm/categorias'],
+];
+
+// Mi actividad del ERP: las órdenes que capturó el vendedor
+const vendedorOnlyRoutes = ['/erp/actividad'];
+
 /**
  * Permiso por página del panel interno. Lo usan el middleware (protección real)
  * y el menú lateral (qué opciones se muestran), así nunca se desfasan.
  */
 export const canAccessRoute = (role: UserRole | null | undefined, pathname: string): boolean => {
-  const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  const trimmed = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  const alias = erpAliases.find(([erp]) => startsWithSegment(trimmed, erp));
+  const path = alias ? alias[1] + trimmed.slice(alias[0].length) : trimmed;
   const inCrm = startsWithSegment(path, '/crm');
   const inScm = startsWithSegment(path, '/scm');
   const inErp = startsWithSegment(path, '/erp');
   if (!inCrm && !inScm && !inErp) return true;
 
+  if (vendedorOnlyRoutes.some((route) => startsWithSegment(path, route))) return role === 'vendedor';
   if (role === 'administrador') return true;
   if (adminOnlyPages.test(path) || adminOnlyRoutes.some((route) => startsWithSegment(path, route))) return false;
 

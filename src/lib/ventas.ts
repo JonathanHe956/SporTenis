@@ -254,7 +254,7 @@ export async function registrarVenta(venta: NuevaVenta): Promise<TotalesVenta & 
     return { id_venta, ...totales };
   });
 
-  // Procesar reposición PUSH automática o alerta PULL para cada producto vendido
+  // Procesar reposición PULL automática o alerta PUSH para cada producto vendido
   for (const id_producto of confirmada ? new Set(items.map((item) => item.id_producto)) : []) {
     await procesarLogisticaStock({ id_producto, id_usuario: venta.id_usuario ?? undefined });
   }

@@ -3,6 +3,10 @@ import CrmLayout from '../../../layouts/CrmLayout.astro';
 import { db } from '../../../db/db';
 import { Clientes, EtapasCrm, Interacciones } from '../../../db/schema';
 import { eq, like, or } from 'drizzle-orm';
+const { module } = Astro.params;
+if (module !== 'crm' && module !== 'erp') return Astro.redirect('/404');
+// La misma página se abre en su sección (/crm) o dentro del ERP (/erp)
+const base = `/${module}`;
 
 // Manejo de peticiones POST (CRUD)
 if (Astro.request.method === 'POST') {
@@ -92,7 +96,7 @@ function getStageBadge(stage: string | null) {
 }
 ---
 
-<CrmLayout title="Clientes" activePath="/crm/clientes">
+<CrmLayout title="Clientes" activePath={`${base}/clientes`}>
   <div class="header-actions">
     <div>
       <h1 class="crm-title">Directorio de Clientes</h1>
@@ -181,7 +185,7 @@ function getStageBadge(stage: string | null) {
                 </span>
               </td>
               <td class="text-center" style="white-space: nowrap;">
-                <a href={`/crm/clientes/${cliente.id}`} class="action-btn action-view" title="Ver ficha y actividad">
+                <a href={`${base}/clientes/${cliente.id}`} class="action-btn action-view" title="Ver ficha y actividad">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 </a>
                 

@@ -355,84 +355,18 @@ const autoDetection = {
         <div class="strategy-card push-card">
           <div class="strategy-badge-header">
             <span class="tag-push">ESTRATEGIA PUSH</span>
-            <span class="strategy-alias">Reposición automática al alcanzar el mínimo</span>
+            <span class="strategy-alias">Compra planeada y pedido manual</span>
           </div>
 
           <p class="strategy-summary">
-            Cuando el inventario llega al mínimo, el sistema genera el reabastecimiento automáticamente y registra la entrada para mantener disponibilidad.
+            El equipo planea la compra por adelantado. Cuando el inventario llega al mínimo, el sistema genera una alerta y el pedido se crea y recibe manualmente en el módulo de pedidos.
           </p>
 
           <!-- Diagrama de Flujo PUSH -->
           <div class="flow-diagram">
-            <div class="flow-step">
+            <div class="flow-step highlight">
               <span class="step-num">1</span>
               <span class="step-text">Stock llega al mínimo</span>
-            </div>
-            <div class="flow-arrow">&rarr;</div>
-            <div class="flow-step">
-              <span class="step-num">2</span>
-              <span class="step-text">Pedido automático</span>
-            </div>
-            <div class="flow-arrow">&rarr;</div>
-            <div class="flow-step">
-              <span class="step-num">3</span>
-              <span class="step-text">Entrada registrada</span>
-            </div>
-            <div class="flow-arrow">&rarr;</div>
-            <div class="flow-step highlight">
-              <span class="step-num">4</span>
-              <span class="step-text">Stock en tienda</span>
-            </div>
-          </div>
-
-          <div class="strategy-specs-table">
-            <div class="spec-row">
-              <span class="spec-label">Disparador:</span>
-              <span class="spec-val">El stock cae al mínimo configurado</span>
-            </div>
-            <div class="spec-row">
-              <span class="spec-label">Nivel de Stock:</span>
-              <span class="spec-val text-warning">Alto (Colchón de seguridad permanente)</span>
-            </div>
-            <div class="spec-row">
-              <span class="spec-label">Lead Time al Cliente:</span>
-              <span class="spec-val text-success">Inmediato (Disponibilidad en estante)</span>
-            </div>
-            <div class="spec-row">
-              <span class="spec-label">Ventajas:</span>
-              <span class="spec-val">Economías de escala en fletes y compras al mayoreo</span>
-            </div>
-            <div class="spec-row">
-              <span class="spec-label">Riesgos:</span>
-              <span class="spec-val text-danger">Obsolescencia, costo de almacenaje y descuentos forzados</span>
-            </div>
-            <div class="spec-row">
-              <span class="spec-label">Aplicación SporTenis:</span>
-              <span class="spec-val">Zapatillas básicas blancas, calzado escolar y modelos de alta demanda constante</span>
-            </div>
-            <div class="spec-row highlight-row">
-              <span class="spec-label">En Sistema SporTenis:</span>
-              <span class="spec-val">Orden automática completada y stock actualizado por el sistema</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tarjeta PULL -->
-        <div class="strategy-card pull-card">
-          <div class="strategy-badge-header">
-            <span class="tag-pull">ESTRATEGIA PULL</span>
-            <span class="strategy-alias">Pedido manual cuando el equipo lo requiere</span>
-          </div>
-
-          <p class="strategy-summary">
-            Cuando el inventario llega al mínimo, el sistema genera una alerta. El equipo revisa la necesidad y crea y recibe el pedido desde el módulo de pedidos.
-          </p>
-
-          <!-- Diagrama de Flujo PULL -->
-          <div class="flow-diagram">
-            <div class="flow-step highlight">
-              <span class="step-num">1</span>
-              <span class="step-text">Venta o stock mínimo</span>
             </div>
             <div class="flow-arrow">&rarr;</div>
             <div class="flow-step">
@@ -458,6 +392,72 @@ const autoDetection = {
             </div>
             <div class="spec-row">
               <span class="spec-label">Nivel de Stock:</span>
+              <span class="spec-val text-warning">Alto (Colchón de seguridad permanente)</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-label">Lead Time al Cliente:</span>
+              <span class="spec-val text-success">Inmediato (Disponibilidad en estante)</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-label">Ventajas:</span>
+              <span class="spec-val">Economías de escala en fletes y compras al mayoreo</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-label">Riesgos:</span>
+              <span class="spec-val text-danger">Obsolescencia, costo de almacenaje y descuentos forzados</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-label">Aplicación SporTenis:</span>
+              <span class="spec-val">Colecciones de temporada, ediciones limitadas y tallas de baja rotación</span>
+            </div>
+            <div class="spec-row highlight-row">
+              <span class="spec-label">En Sistema SporTenis:</span>
+              <span class="spec-val">Pedido creado y recibido manualmente en <code>/scm/pedidos</code></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tarjeta PULL -->
+        <div class="strategy-card pull-card">
+          <div class="strategy-badge-header">
+            <span class="tag-pull">ESTRATEGIA PULL</span>
+            <span class="strategy-alias">Reposición automática según la demanda</span>
+          </div>
+
+          <p class="strategy-summary">
+            Cada venta jala la reposición: cuando el inventario llega al mínimo, el sistema genera el pedido automáticamente y registra la entrada.
+          </p>
+
+          <!-- Diagrama de Flujo PULL -->
+          <div class="flow-diagram">
+            <div class="flow-step highlight">
+              <span class="step-num">1</span>
+              <span class="step-text">Venta del cliente</span>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+              <span class="step-num">2</span>
+              <span class="step-text">Stock llega al mínimo</span>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+              <span class="step-num">3</span>
+              <span class="step-text">Pedido automático</span>
+            </div>
+            <div class="flow-arrow">&rarr;</div>
+            <div class="flow-step">
+              <span class="step-num">4</span>
+              <span class="step-text">Entrada registrada</span>
+            </div>
+          </div>
+
+          <div class="strategy-specs-table">
+            <div class="spec-row">
+              <span class="spec-label">Disparador:</span>
+              <span class="spec-val">La demanda real lleva el stock al mínimo configurado</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-label">Nivel de Stock:</span>
               <span class="spec-val text-success">Mínimo / Magro (Inventario Lean)</span>
             </div>
             <div class="spec-row">
@@ -474,11 +474,11 @@ const autoDetection = {
             </div>
             <div class="spec-row">
               <span class="spec-label">Aplicación SporTenis:</span>
-              <span class="spec-val">Ediciones limitadas, tallas extremas y modelos premium de pádel/running</span>
+              <span class="spec-val">Zapatillas básicas, calzado escolar y modelos de alta demanda constante</span>
             </div>
             <div class="spec-row highlight-row">
               <span class="spec-label">En Sistema SporTenis:</span>
-              <span class="spec-val">Pedido creado y recibido manualmente en <code>/scm/pedidos</code></span>
+              <span class="spec-val">Orden automática completada y stock actualizado por el sistema</span>
             </div>
           </div>
         </div>
@@ -491,7 +491,7 @@ const autoDetection = {
         </div>
         <div>
           <h4>Estrategia Óptima SporTenis: Cadena Híbrida Push-Pull con Punto de Desacople</h4>
-          <p>La mejor práctica para nuestra tienda deportiva es operar los <strong>modelos clásicos y siluetas base bajo PUSH</strong> (reposición automática para mantener disponibilidad), y las <strong>colecciones de temporada, colores especiales y tallas de baja rotación bajo PULL</strong> (alerta y compra manual para evitar sobrestock).</p>
+          <p>La mejor práctica para nuestra tienda deportiva es operar los <strong>modelos clásicos y siluetas base bajo PULL</strong> (reposición automática conforme se venden), y las <strong>colecciones de temporada, colores especiales y tallas de baja rotación bajo PUSH</strong> (compra planeada y manual para evitar sobrestock).</p>
         </div>
       </div>
     </div>
@@ -895,7 +895,7 @@ const autoDetection = {
             <strong>Automatización de Pedidos Push al Punto de Reorden</strong>
             {autoDetection.c11 && <span class="auto-tag">Detectado en Sistema</span>}
           </div>
-          <p class="check-desc">Generación automática de reabastecimiento en productos PUSH; PULL conserva la gestión manual.</p>
+          <p class="check-desc">Generación automática de reabastecimiento en productos PULL; PUSH conserva la gestión manual.</p>
           <span class="check-impact">Impacto: Elimina fricción operativa manual y acelera el reabastecimiento.</span>
         </div>
       </label>

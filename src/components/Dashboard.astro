@@ -1,10 +1,11 @@
 ---
-import { canAccessCrm, canAccessScm } from '../lib/auth';
 import { db } from '../db/db';
 import { Productos, Modelos, Categorias, Clientes, Favoritos } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 
-const categories = ['Novedades', 'Tenis', 'Pádel', 'Running', 'Ropa', 'Accesorios'];
+// El menú muestra solo las categorías registradas en el catálogo (/scm/categorias)
+const categories = (await db.select({ nombre: Categorias.nombre }).from(Categorias).orderBy(asc(Categorias.nombre)))
+  .map(c => c.nombre);
 
 const rawProducts = await db
   .select({
@@ -45,11 +46,7 @@ const categoria = Astro.url.searchParams.get('categoria');
 const query = Astro.url.searchParams.get('q');
 
 if (categoria) {
-  if (categoria.toLowerCase() === 'novedades') {
-    products = products.filter(p => p.badge && p.badge.toLowerCase().includes('nuevo'));
-  } else {
-    products = products.filter(p => p.type && p.type.toLowerCase() === categoria.toLowerCase());
-  }
+  products = products.filter(p => p.type && p.type.toLowerCase() === categoria.toLowerCase());
 }
 
 if (query) {

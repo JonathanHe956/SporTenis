@@ -7,6 +7,10 @@ import { procesarLogisticaStock } from '../../lib/stockLogistics';
 import { canEditCatalogo } from '../../lib/auth';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+const { module } = Astro.params;
+if (module !== 'scm' && module !== 'erp') return Astro.redirect('/404');
+// La misma página se abre en su sección (/scm) o dentro del ERP (/erp)
+const base = `/${module}`;
 
 // El middleware limita /scm a administrador y logística; ventas solo consulta este catálogo
 const sessionUser = Astro.locals.user;
@@ -63,7 +67,7 @@ if (Astro.request.method === 'POST') {
     
     const newProductId = productoResult.insertId;
 
-    // PUSH repone automáticamente; PULL genera una alerta para pedido manual.
+    // PULL repone automáticamente; PUSH genera una alerta para pedido manual.
     await procesarLogisticaStock({ id_producto: newProductId, id_usuario: sessionUser.id });
     
     return Astro.redirect(Astro.url.pathname);
@@ -99,17 +103,9 @@ if (Astro.request.method === 'POST') {
       await db.update(Modelos).set({ ...(id_marca ? { id_marca } : {}), ...(id_categoria ? { id_categoria } : {}), nombre, descripcion, ...(imagen_url ? { imagen_url } : {}) }).where(eq(Modelos.id, id_modelo));
       await db.update(Productos).set({ id_proveedor, stock, stock_minimo, estrategia_logistica, costo, precio_venta, color, theme_class }).where(eq(Productos.id, id));
 
-      // PUSH repone automáticamente; PULL genera una alerta para pedido manual.
+      // PULL repone automáticamente; PUSH genera una alerta para pedido manual.
       await procesarLogisticaStock({ id_producto: id, id_usuario: sessionUser.id });
     }
-    return Astro.redirect(Astro.url.pathname);
-  } else if (action === 'create_marca') {
-    const nombre = formData.get('nombre') as string;
-    await db.insert(Marcas).values({ nombre });
-    return Astro.redirect(Astro.url.pathname);
-  } else if (action === 'create_categoria') {
-    const nombre = formData.get('nombre') as string;
-    await db.insert(Categorias).values({ nombre });
     return Astro.redirect(Astro.url.pathname);
   } else if (action === 'delete_producto') {
     const id = Number(formData.get('id'));
@@ -123,7 +119,7 @@ if (Astro.request.method === 'POST') {
   }
 }
 
-// Procesar productos bajo mínimo: reabastecimiento PUSH automático o alerta PULL manual.
+// Procesar productos bajo mínimo: reabastecimiento PULL automático o alerta PUSH manual.
 await procesarLogisticaStock({ id_usuario: sessionUser.id });
 
 const categoriasList = await db.select().from(Categorias);
@@ -169,13 +165,13 @@ if (q) {
 }
 ---
 
-<CrmLayout title="Productos SCM" activePath="/scm/productos">
+<CrmLayout title="Productos SCM" activePath={`${base}/productos`}>
   <div class="header-actions">
     <h1 class="crm-title">Catálogo SCM</h1>
     {puedeEditar && (
       <div style="display: flex; gap: 10px;">
-        <button class="btn-primary" onclick="document.getElementById('modalCreateMarca').showModal()">+ Nueva Marca</button>
-        <button class="btn-primary" onclick="document.getElementById('modalCreateCategoria').showModal()">+ Nueva Categoría</button>
+        <a class="btn-primary" href={`${base}/marcas`} style="text-decoration: none;">Marcas</a>
+        <a class="btn-primary" href={`${base}/categorias`} style="text-decoration: none;">Categorías</a>
         <button class="btn-primary" onclick="document.getElementById('modalCreateProducto').showModal()">+ Nuevo Producto</button>
       </div>
     )}
@@ -236,7 +232,7 @@ if (q) {
                 </span>
                 <span style="font-size: 11px; color: #a3a3a3; display: block; margin-top: 4px;">Min: {producto.stock_minimo || 0}</span>
               </td>
-              <td><span class={`badge ${producto.estrategia === 'PULL' ? 'badge-pull' : 'badge-push'}`}>{producto.estrategia === 'PULL' ? 'PULL (Manual)' : 'PUSH (Auto)'}</span></td>
+              <td><span class={`badge ${producto.estrategia === 'PULL' ? 'badge-pull' : 'badge-push'}`}>{producto.estrategia === 'PULL' ? 'PULL (Auto)' : 'PUSH (Manual)'}</span></td>
               <td>
                 Venta: ${producto.precio_venta}<br/>
                 <small style="color:#666;">Costo: ${producto.costo}</small>
@@ -359,8 +355,8 @@ if (q) {
           <label>Estrategia logistica</label>
           <div class="select-wrapper">
             <select name="estrategia_logistica" required>
-              <option value="PUSH" selected>PUSH (Automático)</option>
-              <option value="PULL">PULL (Manual)</option>
+              <option value="PUSH" selected>PUSH (Manual)</option>
+              <option value="PULL">PULL (Automático)</option>
             </select>
           </div>
         </div>
@@ -467,8 +463,8 @@ if (q) {
           <label>Estrategia logistica</label>
           <div class="select-wrapper">
             <select name="estrategia_logistica" id="edit_producto_estrategia" required>
-              <option value="PUSH">PUSH (Automático)</option>
-              <option value="PULL">PULL (Manual)</option>
+              <option value="PUSH">PUSH (Manual)</option>
+              <option value="PULL">PULL (Automático)</option>
             </select>
           </div>
         </div>
@@ -491,47 +487,6 @@ if (q) {
     </div>
   </dialog>
 
-  <!-- Modal: Crear Categoría SCM -->
-  <dialog id="modalCreateCategoria" class="crm-modal scm-modal" style="max-width: 400px;">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>Nueva Categoría</h2>
-        <button type="button" class="close-btn" onclick="document.getElementById('modalCreateCategoria').close()">×</button>
-      </div>
-      <form method="POST" class="scm-form">
-        <input type="hidden" name="action" value="create_categoria" />
-        <div class="form-row" style="flex-direction: column;">
-          <label style="width: 100%;">Nombre de la categoría *</label>
-          <input type="text" name="nombre" required placeholder="Ej. Raquetas" style="margin-top: 8px;" />
-        </div>
-        <div class="modal-footer" style="justify-content: flex-end; gap: 12px; margin-top: 24px;">
-          <button type="button" class="btn-cancel" onclick="document.getElementById('modalCreateCategoria').close()">Cancelar</button>
-          <button type="submit" class="btn-save">Guardar Categoría</button>
-        </div>
-      </form>
-    </div>
-  </dialog>
-
-  <!-- Modal: Crear Marca SCM -->
-  <dialog id="modalCreateMarca" class="crm-modal scm-modal" style="max-width: 400px;">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>Nueva Marca</h2>
-        <button type="button" class="close-btn" onclick="document.getElementById('modalCreateMarca').close()">×</button>
-      </div>
-      <form method="POST" class="scm-form">
-        <input type="hidden" name="action" value="create_marca" />
-        <div class="form-row" style="flex-direction: column;">
-          <label style="width: 100%;">Nombre de la marca *</label>
-          <input type="text" name="nombre" required placeholder="Ej. Puma" style="margin-top: 8px;" />
-        </div>
-        <div class="modal-footer" style="justify-content: flex-end; gap: 12px; margin-top: 24px;">
-          <button type="button" class="btn-cancel" onclick="document.getElementById('modalCreateMarca').close()">Cancelar</button>
-          <button type="submit" class="btn-save">Guardar Marca</button>
-        </div>
-      </form>
-    </div>
-  </dialog>
 </CrmLayout>
 
 <script is:inline>
