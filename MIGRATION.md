@@ -25,12 +25,14 @@ Debes tener un servidor MySQL corriendo en tu computadora (puedes usar XAMPP, MA
 	mysql -u root -p sportenis_db < db/migrations/0004_ordenes_erp.sql
 	mysql -u root -p sportenis_db < db/migrations/0005_historial_ordenes.sql
 	mysql -u root -p sportenis_db < db/migrations/0006_facturas_pagos_reportes.sql
+	mysql -u root -p sportenis_db < db/migrations/0007_presupuestos_cxc_cxp.sql
 	```
 	La primera migración crea de forma idempotente las tablas de movimientos, auditorías y configuración SCM. La segunda agrega a `PedidosCompra` las columnas de stock que usa el código; ejecútala una sola vez.
 	La tercera crea la tabla `Sesiones`; sin ella no se puede iniciar sesión. Las contraseñas que ya existan en texto plano se convierten a hash la primera vez que cada usuario inicia sesión.
 	La cuarta agrega a `Ventas` las columnas `estado` y `fecha_entrega` para las órdenes del ERP (Etapa 3); las ventas existentes quedan como `Confirmada`. Ejecútala una sola vez.
 	La quinta crea la tabla `HistorialOrdenes` (quién cambió el estado de cada orden y cuándo) y agrega a `MovimientosInventario` la columna `id_venta`, que liga cada salida o entrada con su orden. Ejecútala una sola vez.
 	La sexta crea las tablas `Facturas`, `Pagos` y `ReportesProgramados` (Etapa 4 del ERP) y genera la factura y el cobro conciliado de las ventas confirmadas o entregadas que ya existían. Sin ella no se pueden confirmar órdenes.
+	La séptima crea las tablas `Presupuestos`, `CuentasPorCobrar` y `CuentasPorPagar` (Etapa 5 del ERP) para planeación de flujo de efectivo y control de saldos pendientes con clientes y proveedores.
 4. Para crear todas las tablas del esquema en una base nueva, ejecuta `npx drizzle-kit push` después de configurar `DATABASE_URL`.
 
 ## 3. Configurar tus variables de entorno (.env)

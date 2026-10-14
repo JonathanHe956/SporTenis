@@ -330,3 +330,41 @@ export const ReportesProgramados = mysqlTable('ReportesProgramados', {
   pagos_con_diferencia: int('pagos_con_diferencia').notNull(),
   fecha_generacion: datetime('fecha_generacion').notNull(),
 });
+
+// Etapa 5 (ERP): Presupuestos mensuales para planear ingresos y egresos
+export const Presupuestos = mysqlTable('Presupuestos', {
+  id: int('id').autoincrement().primaryKey(),
+  periodo: varchar('periodo', { length: 7 }).notNull(), // YYYY-MM
+  ingresos_proyectados: decimal('ingresos_proyectados', { precision: 12, scale: 2 }).notNull(),
+  egresos_proyectados: decimal('egresos_proyectados', { precision: 12, scale: 2 }).notNull(),
+  notas: text('notas'),
+  fecha_creacion: datetime('fecha_creacion').notNull(),
+});
+
+// Etapa 5 (ERP): saldos pendientes de cobro a clientes
+export const CuentasPorCobrar = mysqlTable('CuentasPorCobrar', {
+  id: int('id').autoincrement().primaryKey(),
+  id_cliente: int('id_cliente').references(() => Clientes.id).notNull(),
+  id_venta: int('id_venta').references(() => Ventas.id),
+  concepto: varchar('concepto', { length: 255 }).notNull(),
+  monto: decimal('monto', { precision: 10, scale: 2 }).notNull(),
+  monto_pagado: decimal('monto_pagado', { precision: 10, scale: 2 }).default('0.00').notNull(),
+  estado: varchar('estado', { length: 50 }).default('Pendiente').notNull(),
+  fecha_emision: datetime('fecha_emision').notNull(),
+  fecha_vencimiento: datetime('fecha_vencimiento').notNull(),
+  fecha_pago: datetime('fecha_pago'),
+});
+
+// Etapa 5 (ERP): saldos pendientes de pago a proveedores
+export const CuentasPorPagar = mysqlTable('CuentasPorPagar', {
+  id: int('id').autoincrement().primaryKey(),
+  id_proveedor: int('id_proveedor').references(() => Proveedores.id).notNull(),
+  id_pedido_compra: int('id_pedido_compra').references(() => PedidosCompra.id),
+  concepto: varchar('concepto', { length: 255 }).notNull(),
+  monto: decimal('monto', { precision: 10, scale: 2 }).notNull(),
+  monto_pagado: decimal('monto_pagado', { precision: 10, scale: 2 }).default('0.00').notNull(),
+  estado: varchar('estado', { length: 50 }).default('Pendiente').notNull(),
+  fecha_emision: datetime('fecha_emision').notNull(),
+  fecha_vencimiento: datetime('fecha_vencimiento').notNull(),
+  fecha_pago: datetime('fecha_pago'),
+});

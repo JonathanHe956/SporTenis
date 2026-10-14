@@ -1,0 +1,837 @@
+---
+import CrmLayout from '../../layouts/CrmLayout.astro';
+import { db } from '../../db/db';
+import {
+  Presupuestos, CuentasPorCobrar, CuentasPorPagar,
+  Clientes, Proveedores, Ventas,
+} from '../../db/schema';
+import { desc, eq, sql } from 'drizzle-orm';
+import { ESTADOS_VENTA_EFECTIVA } from '../../lib/ventas';
+
+const sessionUser = Astro.locals.user;
+if (!sessionUser) return Astro.redirect('/login');
+
+// ─── Datos ─────────────────────────────────────────────────────
+const presupuestos = await db.select().from(Presupuestos).orderBy(desc(Presupuestos.periodo));
+const cuentasCobrar = await db.select({
+  id: CuentasPorCobrar.id,
+  concepto: CuentasPorCobrar.concepto,
+  monto: CuentasPorCobrar.monto,
+  monto_pagado: CuentasPorCobrar.monto_pagado,
+  estado: CuentasPorCobrar.estado,
+  fecha_emision: CuentasPorCobrar.fecha_emision,
+  fecha_vencimiento: CuentasPorCobrar.fecha_vencimiento,
+  fecha_pago: CuentasPorCobrar.fecha_pago,
+  cliente: Clientes.nombre,
+  id_venta: CuentasPorCobrar.id_venta,
+}).from(CuentasPorCobrar)
+  .leftJoin(Clientes, eq(CuentasPorCobrar.id_cliente, Clientes.id))
+  .orderBy(desc(CuentasPorCobrar.fecha_emision));
+
+const cuentasPagar = await db.select({
+  id: CuentasPorPagar.id,
+  concepto: CuentasPorPagar.concepto,
+  monto: CuentasPorPagar.monto,
+  monto_pagado: CuentasPorPagar.monto_pagado,
+  estado: CuentasPorPagar.estado,
+  fecha_emision: CuentasPorPagar.fecha_emision,
+  fecha_vencimiento: CuentasPorPagar.fecha_vencimiento,
+  fecha_pago: CuentasPorPagar.fecha_pago,
+  proveedor: Proveedores.nombre,
+  id_pedido_compra: CuentasPorPagar.id_pedido_compra,
+}).from(CuentasPorPagar)
+  .leftJoin(Proveedores, eq(CuentasPorPagar.id_proveedor, Proveedores.id))
+  .orderBy(desc(CuentasPorPagar.fecha_emision));
+
+const clientes = await db.select({ id: Clientes.id, nombre: Clientes.nombre }).from(Clientes).orderBy(Clientes.nombre);
+const proveedores = await db.select({ id: Proveedores.id, nombre: Proveedores.nombre }).from(Proveedores).orderBy(Proveedores.nombre);
+
+// ─── Métricas ──────────────────────────────────────────────────
+const totalPorCobrar = cuentasCobrar
+  .filter(c => c.estado !== 'Cobrada')
+  .reduce((sum, c) => sum + Number(c.monto) - Number(c.monto_pagado), 0);
+
+const totalPorPagar = cuentasPagar
+  .filter(c => c.estado !== 'Pagada')
+  .reduce((sum, c) => sum + Number(c.monto) - Number(c.monto_pagado), 0);
+
+const now = new Date();
+const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+const presupuestoActual = presupuestos.find(p => p.periodo === mesActual);
+
+const ingresosProyectados = presupuestoActual ? Number(presupuestoActual.ingresos_proyectados) : 0;
+const egresosProyectados = presupuestoActual ? Number(presupuestoActual.egresos_proyectados) : 0;
+const flujoNeto = totalPorCobrar - totalPorPagar;
+
+const cxcVencidas = cuentasCobrar.filter(c => c.estado !== 'Cobrada' && new Date(c.fecha_vencimiento) < now).length;
+const cxpVencidas = cuentasPagar.filter(c => c.estado !== 'Pagada' && new Date(c.fecha_vencimiento) < now).length;
+
+const fmt = (value: number) => new Intl.NumberFormat('es-MX', {
+  style: 'currency',
+  currency: 'MXN',
+}).format(value);
+
+const fmtFecha = (date: Date | string | null) => {
+  if (!date) return '—';
+  return new Date(date).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+---
+
+<CrmLayout title="Presupuestos y Cuentas" activePath="/erp/presupuestos">
+  <div class="header-actions">
+    <div>
+      <h1 class="crm-title">Presupuestos y Cuentas por Cobrar / Pagar</h1>
+      <p class="subtitle">Control de saldos pendientes de clientes y proveedores contra un presupuesto mensual.</p>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-number stat-cobrar">{fmt(totalPorCobrar)}</div>
+      <div class="stat-label">Por Cobrar</div>
+      {cxcVencidas > 0 && <div class="stat-alert">⚠ {cxcVencidas} vencida{cxcVencidas > 1 ? 's' : ''}</div>}
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-pagar">{fmt(totalPorPagar)}</div>
+      <div class="stat-label">Por Pagar</div>
+      {cxpVencidas > 0 && <div class="stat-alert">⚠ {cxpVencidas} vencida{cxpVencidas > 1 ? 's' : ''}</div>}
+    </div>
+    <div class="stat-card">
+      <div class={`stat-number ${flujoNeto >= 0 ? 'stat-success' : 'stat-danger'}`}>{fmt(flujoNeto)}</div>
+      <div class="stat-label">Flujo Neto Proyectado</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number stat-info">{presupuestos.length}</div>
+      <div class="stat-label">Presupuestos Registrados</div>
+    </div>
+  </div>
+
+  <!-- Presupuesto actual -->
+  {presupuestoActual ? (
+    <div class="crm-card budget-summary">
+      <div class="budget-header">
+        <div>
+          <h2>Presupuesto {mesActual}</h2>
+          <p class="budget-notes">{presupuestoActual.notas || 'Sin notas'}</p>
+        </div>
+        <span class="badge badge-success">Activo</span>
+      </div>
+      <div class="budget-bars">
+        <div class="budget-row">
+          <div class="budget-row-label">
+            <span>Ingresos Proyectados</span>
+            <strong>{fmt(ingresosProyectados)}</strong>
+          </div>
+          <div class="budget-track">
+            <div class="budget-fill budget-fill-in" style={`width: ${ingresosProyectados > 0 ? Math.min(100, (totalPorCobrar / ingresosProyectados) * 100) : 0}%`}></div>
+          </div>
+          <span class="budget-pct">{ingresosProyectados > 0 ? ((totalPorCobrar / ingresosProyectados) * 100).toFixed(0) : 0}% pendiente</span>
+        </div>
+        <div class="budget-row">
+          <div class="budget-row-label">
+            <span>Egresos Proyectados</span>
+            <strong>{fmt(egresosProyectados)}</strong>
+          </div>
+          <div class="budget-track">
+            <div class="budget-fill budget-fill-out" style={`width: ${egresosProyectados > 0 ? Math.min(100, (totalPorPagar / egresosProyectados) * 100) : 0}%`}></div>
+          </div>
+          <span class="budget-pct">{egresosProyectados > 0 ? ((totalPorPagar / egresosProyectados) * 100).toFixed(0) : 0}% pendiente</span>
+        </div>
+      </div>
+    </div>
+  ) : (
+    <div class="crm-card budget-empty">
+      <p>No hay presupuesto registrado para <strong>{mesActual}</strong>. Crea uno para comenzar a planear el flujo de efectivo.</p>
+    </div>
+  )}
+
+  <!-- Pestañas -->
+  <div class="tabs-container">
+    <div class="tabs-header">
+      <button class="tab-btn active" data-tab="presupuestos">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+        Presupuestos
+      </button>
+      <button class="tab-btn" data-tab="cxc">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Cuentas por Cobrar <span class="tab-count">{cuentasCobrar.length}</span>
+      </button>
+      <button class="tab-btn" data-tab="cxp">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><path d="M1 10h22"/></svg>
+        Cuentas por Pagar <span class="tab-count">{cuentasPagar.length}</span>
+      </button>
+    </div>
+
+    <!-- Tab: Presupuestos -->
+    <div class="tab-content active" id="tab-presupuestos">
+      <div class="tab-toolbar">
+        <h3>Presupuestos Mensuales</h3>
+        <button class="btn-primary" id="btnNuevoPresupuesto">+ Nuevo Presupuesto</button>
+      </div>
+      {presupuestos.length === 0 ? (
+        <div class="empty-state">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          <p>No hay presupuestos registrados aún.</p>
+        </div>
+      ) : (
+        <div class="table-responsive">
+          <table class="crm-table">
+            <thead>
+              <tr>
+                <th>Periodo</th>
+                <th class="text-right">Ingresos Proyectados</th>
+                <th class="text-right">Egresos Proyectados</th>
+                <th class="text-right">Superávit / Déficit</th>
+                <th>Notas</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {presupuestos.map(p => {
+                const ing = Number(p.ingresos_proyectados);
+                const egr = Number(p.egresos_proyectados);
+                const diff = ing - egr;
+                return (
+                  <tr>
+                    <td><strong>{p.periodo}</strong></td>
+                    <td class="text-right">{fmt(ing)}</td>
+                    <td class="text-right">{fmt(egr)}</td>
+                    <td class="text-right">
+                      <span class={diff >= 0 ? 'text-success' : 'text-danger'}>{fmt(diff)}</span>
+                    </td>
+                    <td class="notes-cell">{p.notas || '—'}</td>
+                    <td>
+                      <button class="action-btn text-danger btn-del-presupuesto" data-id={p.id} title="Eliminar">🗑</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+
+    <!-- Tab: Cuentas por Cobrar -->
+    <div class="tab-content" id="tab-cxc">
+      <div class="tab-toolbar">
+        <h3>Cuentas por Cobrar (Clientes)</h3>
+        <button class="btn-primary" id="btnNuevaCxc">+ Nueva Cuenta</button>
+      </div>
+      {cuentasCobrar.length === 0 ? (
+        <div class="empty-state">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" stroke-width="1.5"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          <p>No hay cuentas por cobrar registradas.</p>
+        </div>
+      ) : (
+        <div class="table-responsive">
+          <table class="crm-table">
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Concepto</th>
+                <th class="text-right">Monto</th>
+                <th class="text-right">Pagado</th>
+                <th class="text-right">Saldo</th>
+                <th>Vencimiento</th>
+                <th>Estado</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {cuentasCobrar.map(c => {
+                const saldo = Number(c.monto) - Number(c.monto_pagado);
+                const vencida = c.estado !== 'Cobrada' && new Date(c.fecha_vencimiento) < now;
+                return (
+                  <tr class={vencida ? 'row-vencida' : ''}>
+                    <td><strong>{c.cliente}</strong></td>
+                    <td>
+                      {c.concepto}
+                      {c.id_venta && <span class="ref-tag">Venta #{c.id_venta}</span>}
+                    </td>
+                    <td class="text-right">{fmt(Number(c.monto))}</td>
+                    <td class="text-right">{fmt(Number(c.monto_pagado))}</td>
+                    <td class="text-right"><strong>{fmt(saldo)}</strong></td>
+                    <td class={vencida ? 'text-danger' : ''}>
+                      {fmtFecha(c.fecha_vencimiento)}
+                      {vencida && <span class="vencida-tag">Vencida</span>}
+                    </td>
+                    <td>
+                      <span class={`badge ${c.estado === 'Cobrada' ? 'badge-success' : c.estado === 'Parcial' ? 'badge-warning' : 'badge-neutral'}`}>
+                        {c.estado}
+                      </span>
+                    </td>
+                    <td>
+                      {c.estado !== 'Cobrada' && (
+                        <button class="action-btn action-cobrar btn-cobrar-cxc" data-id={c.id} data-saldo={saldo.toFixed(2)} title="Registrar cobro">💰</button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+
+    <!-- Tab: Cuentas por Pagar -->
+    <div class="tab-content" id="tab-cxp">
+      <div class="tab-toolbar">
+        <h3>Cuentas por Pagar (Proveedores)</h3>
+        <button class="btn-primary" id="btnNuevaCxp">+ Nueva Cuenta</button>
+      </div>
+      {cuentasPagar.length === 0 ? (
+        <div class="empty-state">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" stroke-width="1.5"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><path d="M1 10h22"/></svg>
+          <p>No hay cuentas por pagar registradas.</p>
+        </div>
+      ) : (
+        <div class="table-responsive">
+          <table class="crm-table">
+            <thead>
+              <tr>
+                <th>Proveedor</th>
+                <th>Concepto</th>
+                <th class="text-right">Monto</th>
+                <th class="text-right">Pagado</th>
+                <th class="text-right">Saldo</th>
+                <th>Vencimiento</th>
+                <th>Estado</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {cuentasPagar.map(c => {
+                const saldo = Number(c.monto) - Number(c.monto_pagado);
+                const vencida = c.estado !== 'Pagada' && new Date(c.fecha_vencimiento) < now;
+                return (
+                  <tr class={vencida ? 'row-vencida' : ''}>
+                    <td><strong>{c.proveedor}</strong></td>
+                    <td>
+                      {c.concepto}
+                      {c.id_pedido_compra && <span class="ref-tag">Pedido #{c.id_pedido_compra}</span>}
+                    </td>
+                    <td class="text-right">{fmt(Number(c.monto))}</td>
+                    <td class="text-right">{fmt(Number(c.monto_pagado))}</td>
+                    <td class="text-right"><strong>{fmt(saldo)}</strong></td>
+                    <td class={vencida ? 'text-danger' : ''}>
+                      {fmtFecha(c.fecha_vencimiento)}
+                      {vencida && <span class="vencida-tag">Vencida</span>}
+                    </td>
+                    <td>
+                      <span class={`badge ${c.estado === 'Pagada' ? 'badge-success' : c.estado === 'Parcial' ? 'badge-warning' : 'badge-neutral'}`}>
+                        {c.estado}
+                      </span>
+                    </td>
+                    <td>
+                      {c.estado !== 'Pagada' && (
+                        <button class="action-btn action-pagar btn-pagar-cxp" data-id={c.id} data-saldo={saldo.toFixed(2)} title="Registrar pago">💸</button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  </div>
+
+  <!-- Modal: Nuevo Presupuesto -->
+  <dialog class="scm-modal" id="modalPresupuesto">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nuevo Presupuesto Mensual</h2>
+        <button class="close-btn" data-close-modal>&times;</button>
+      </div>
+      <form class="scm-form" id="formPresupuesto">
+        <div class="form-row">
+          <label for="pPeriodo">Periodo</label>
+          <input type="month" id="pPeriodo" required />
+        </div>
+        <div class="form-row">
+          <label for="pIngresos">Ingresos Proyectados</label>
+          <input type="number" id="pIngresos" step="0.01" min="0" required placeholder="0.00" />
+        </div>
+        <div class="form-row">
+          <label for="pEgresos">Egresos Proyectados</label>
+          <input type="number" id="pEgresos" step="0.01" min="0" required placeholder="0.00" />
+        </div>
+        <div class="form-row">
+          <label for="pNotas">Notas</label>
+          <input type="text" id="pNotas" placeholder="Opcional" />
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-cancel" data-close-modal>Cancelar</button>
+          <button type="submit" class="btn-save">Guardar Presupuesto</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Modal: Nueva CxC -->
+  <dialog class="scm-modal" id="modalCxc">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nueva Cuenta por Cobrar</h2>
+        <button class="close-btn" data-close-modal>&times;</button>
+      </div>
+      <form class="scm-form" id="formCxc">
+        <div class="form-row">
+          <label for="cxcCliente">Cliente</label>
+          <div class="select-wrapper">
+            <select id="cxcCliente" required>
+              <option value="">Selecciona un cliente</option>
+              {clientes.map(c => <option value={c.id}>{c.nombre}</option>)}
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <label for="cxcConcepto">Concepto</label>
+          <input type="text" id="cxcConcepto" required placeholder="Ej: Venta a crédito #123" />
+        </div>
+        <div class="form-row">
+          <label for="cxcMonto">Monto</label>
+          <input type="number" id="cxcMonto" step="0.01" min="0.01" required placeholder="0.00" />
+        </div>
+        <div class="form-row">
+          <label for="cxcVencimiento">Fecha de Vencimiento</label>
+          <input type="date" id="cxcVencimiento" required />
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-cancel" data-close-modal>Cancelar</button>
+          <button type="submit" class="btn-save">Registrar Cuenta</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Modal: Nueva CxP -->
+  <dialog class="scm-modal" id="modalCxp">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Nueva Cuenta por Pagar</h2>
+        <button class="close-btn" data-close-modal>&times;</button>
+      </div>
+      <form class="scm-form" id="formCxp">
+        <div class="form-row">
+          <label for="cxpProveedor">Proveedor</label>
+          <div class="select-wrapper">
+            <select id="cxpProveedor" required>
+              <option value="">Selecciona un proveedor</option>
+              {proveedores.map(p => <option value={p.id}>{p.nombre}</option>)}
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <label for="cxpConcepto">Concepto</label>
+          <input type="text" id="cxpConcepto" required placeholder="Ej: Pedido compra #45" />
+        </div>
+        <div class="form-row">
+          <label for="cxpMonto">Monto</label>
+          <input type="number" id="cxpMonto" step="0.01" min="0.01" required placeholder="0.00" />
+        </div>
+        <div class="form-row">
+          <label for="cxpVencimiento">Fecha de Vencimiento</label>
+          <input type="date" id="cxpVencimiento" required />
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-cancel" data-close-modal>Cancelar</button>
+          <button type="submit" class="btn-save">Registrar Cuenta</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Modal: Registrar cobro/pago -->
+  <dialog class="scm-modal" id="modalPago">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="pagoModalTitle">Registrar Pago</h2>
+        <button class="close-btn" data-close-modal>&times;</button>
+      </div>
+      <form class="scm-form" id="formPago">
+        <input type="hidden" id="pagoId" />
+        <input type="hidden" id="pagoTipo" />
+        <div class="form-row">
+          <label for="pagoSaldo">Saldo Pendiente</label>
+          <input type="text" id="pagoSaldo" readonly class="input-readonly" />
+        </div>
+        <div class="form-row">
+          <label for="pagoMonto">Monto a Abonar</label>
+          <input type="number" id="pagoMonto" step="0.01" min="0.01" required placeholder="0.00" />
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-cancel" data-close-modal>Cancelar</button>
+          <button type="submit" class="btn-save">Registrar</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+</CrmLayout>
+
+<script is:inline>
+(() => {
+  const API = '/api/erp/presupuestos';
+
+  // ─── Tabs ───
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.dataset.tab)?.classList.add('active');
+    });
+  });
+
+  // ─── Modals ───
+  function openModal(id) { document.getElementById(id)?.showModal(); }
+  function closeModals() { document.querySelectorAll('dialog.scm-modal').forEach(d => d.close()); }
+  document.querySelectorAll('[data-close-modal]').forEach(btn => {
+    btn.addEventListener('click', closeModals);
+  });
+
+  function toast(msg, kind = 'success') {
+    const region = document.getElementById('appToastRegion');
+    if (!region) return;
+    const el = document.createElement('div');
+    el.className = 'app-toast';
+    el.dataset.kind = kind;
+    el.textContent = msg;
+    region.appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+  }
+
+  async function apiCall(body) {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return res.json();
+  }
+
+  // ─── Nuevo Presupuesto ───
+  document.getElementById('btnNuevoPresupuesto')?.addEventListener('click', () => openModal('modalPresupuesto'));
+  document.getElementById('formPresupuesto')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const result = await apiCall({
+      action: 'crear_presupuesto',
+      periodo: document.getElementById('pPeriodo').value,
+      ingresos_proyectados: document.getElementById('pIngresos').value,
+      egresos_proyectados: document.getElementById('pEgresos').value,
+      notas: document.getElementById('pNotas').value,
+    });
+    if (result.success) { toast('Presupuesto registrado.'); location.reload(); }
+    else toast(result.error || 'Error.', 'error');
+  });
+
+  // ─── Eliminar Presupuesto ───
+  document.querySelectorAll('.btn-del-presupuesto').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('¿Eliminar este presupuesto?')) return;
+      const result = await apiCall({ action: 'eliminar_presupuesto', id: btn.dataset.id });
+      if (result.success) { toast('Presupuesto eliminado.'); location.reload(); }
+      else toast(result.error || 'Error.', 'error');
+    });
+  });
+
+  // ─── Nueva CxC ───
+  document.getElementById('btnNuevaCxc')?.addEventListener('click', () => openModal('modalCxc'));
+  document.getElementById('formCxc')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const result = await apiCall({
+      action: 'crear_cxc',
+      id_cliente: document.getElementById('cxcCliente').value,
+      concepto: document.getElementById('cxcConcepto').value,
+      monto: document.getElementById('cxcMonto').value,
+      fecha_vencimiento: document.getElementById('cxcVencimiento').value,
+    });
+    if (result.success) { toast('Cuenta por cobrar registrada.'); location.reload(); }
+    else toast(result.error || 'Error.', 'error');
+  });
+
+  // ─── Nueva CxP ───
+  document.getElementById('btnNuevaCxp')?.addEventListener('click', () => openModal('modalCxp'));
+  document.getElementById('formCxp')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const result = await apiCall({
+      action: 'crear_cxp',
+      id_proveedor: document.getElementById('cxpProveedor').value,
+      concepto: document.getElementById('cxpConcepto').value,
+      monto: document.getElementById('cxpMonto').value,
+      fecha_vencimiento: document.getElementById('cxpVencimiento').value,
+    });
+    if (result.success) { toast('Cuenta por pagar registrada.'); location.reload(); }
+    else toast(result.error || 'Error.', 'error');
+  });
+
+  // ─── Cobrar CxC ───
+  document.querySelectorAll('.btn-cobrar-cxc').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('pagoModalTitle').textContent = 'Registrar Cobro';
+      document.getElementById('pagoId').value = btn.dataset.id;
+      document.getElementById('pagoTipo').value = 'cxc';
+      document.getElementById('pagoSaldo').value = '$' + btn.dataset.saldo;
+      document.getElementById('pagoMonto').value = '';
+      document.getElementById('pagoMonto').max = btn.dataset.saldo;
+      openModal('modalPago');
+    });
+  });
+
+  // ─── Pagar CxP ───
+  document.querySelectorAll('.btn-pagar-cxp').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('pagoModalTitle').textContent = 'Registrar Pago';
+      document.getElementById('pagoId').value = btn.dataset.id;
+      document.getElementById('pagoTipo').value = 'cxp';
+      document.getElementById('pagoSaldo').value = '$' + btn.dataset.saldo;
+      document.getElementById('pagoMonto').value = '';
+      document.getElementById('pagoMonto').max = btn.dataset.saldo;
+      openModal('modalPago');
+    });
+  });
+
+  // ─── Submit cobro/pago ───
+  document.getElementById('formPago')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const tipo = document.getElementById('pagoTipo').value;
+    const action = tipo === 'cxc' ? 'cobrar_cxc' : 'pagar_cxp';
+    const result = await apiCall({
+      action,
+      id: document.getElementById('pagoId').value,
+      monto_pago: document.getElementById('pagoMonto').value,
+    });
+    if (result.success) {
+      toast(tipo === 'cxc' ? 'Cobro registrado.' : 'Pago registrado.');
+      location.reload();
+    } else toast(result.error || 'Error.', 'error');
+  });
+})();
+</script>
+
+<style>
+  .header-actions { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+  .crm-title { margin-bottom: 4px; }
+  .subtitle { margin: 0; font-size: 13px; color: var(--color-text-muted); }
+
+  /* KPIs */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+  }
+  .stat-number {
+    font-size: 28px;
+    font-weight: 900;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .stat-cobrar { color: #2563eb; }
+  .stat-pagar { color: #d97706; }
+  .stat-success { color: var(--color-success); }
+  .stat-danger { color: var(--color-danger); }
+  .stat-info { color: #6366f1; }
+  .stat-label {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .stat-alert {
+    font-size: 11px;
+    color: var(--color-danger);
+    font-weight: 700;
+    margin-top: 6px;
+  }
+
+  /* Presupuesto actual */
+  .budget-summary { padding: 24px; margin-bottom: 24px; }
+  .budget-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+  }
+  .budget-header h2 { margin: 0 0 4px; font-size: 18px; }
+  .budget-notes { margin: 0; font-size: 12px; color: var(--color-text-muted); }
+  .budget-bars { display: flex; flex-direction: column; gap: 16px; }
+  .budget-row { display: flex; align-items: center; gap: 16px; }
+  .budget-row-label { width: 220px; flex-shrink: 0; }
+  .budget-row-label span { display: block; font-size: 12px; color: var(--color-text-muted); font-weight: 700; text-transform: uppercase; }
+  .budget-row-label strong { font-size: 16px; }
+  .budget-track {
+    flex: 1;
+    height: 10px;
+    background: #e2e8f0;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .budget-fill {
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.4s ease;
+  }
+  .budget-fill-in { background: linear-gradient(90deg, #2563eb, #60a5fa); }
+  .budget-fill-out { background: linear-gradient(90deg, #d97706, #fbbf24); }
+  .budget-pct { font-size: 12px; font-weight: 700; color: var(--color-text-muted); width: 100px; text-align: right; }
+  .budget-empty {
+    text-align: center;
+    padding: 32px;
+    margin-bottom: 24px;
+    color: var(--color-text-muted);
+    font-size: 14px;
+  }
+
+  /* Tabs */
+  .tabs-container {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .tabs-header {
+    display: flex;
+    border-bottom: 2px solid var(--color-border);
+    background: #fafaf8;
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 14px 20px;
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+  }
+  .tab-btn:hover { color: var(--color-text); background: rgba(0,0,0,0.02); }
+  .tab-btn.active {
+    color: var(--color-text);
+    border-bottom-color: #171717;
+    background: var(--color-surface);
+  }
+  .tab-count {
+    background: #e5e5e5;
+    color: #555;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 800;
+  }
+  .tab-content { display: none; padding: 24px; }
+  .tab-content.active { display: block; }
+  .tab-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+  }
+  .tab-toolbar h3 { margin: 0; font-size: 16px; }
+
+  /* Tablas */
+  .table-responsive { overflow-x: auto; margin: 0 -24px; }
+  .crm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .crm-table th { text-align: left; padding: 12px 24px; border-bottom: 2px solid var(--color-border); color: var(--color-text-muted); font-weight: 700; font-size: 11px; text-transform: uppercase; }
+  .crm-table td { padding: 14px 24px; border-bottom: 1px solid var(--color-border); }
+  .crm-table tbody tr:hover { background: var(--color-bg); }
+  .text-right { text-align: right; }
+  .text-success { color: var(--color-success); font-weight: 700; }
+  .text-danger { color: var(--color-danger); font-weight: 700; }
+  .notes-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-muted); font-size: 12px; }
+
+  .row-vencida { background: #fff8f7; }
+  .row-vencida:hover { background: #fff1ef !important; }
+
+  .ref-tag {
+    display: inline-block;
+    margin-left: 6px;
+    font-size: 10px;
+    background: #e0f2fe;
+    color: #0369a1;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-weight: 700;
+  }
+  .vencida-tag {
+    display: inline-block;
+    margin-left: 4px;
+    font-size: 10px;
+    background: #fee2e2;
+    color: #dc2626;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-weight: 700;
+  }
+
+  .badge-warning { background: #fef3c7; color: #d97706; }
+
+  /* Empty state */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 48px 0;
+    color: var(--color-text-muted);
+    font-size: 14px;
+  }
+
+  /* Botones de acción */
+  .action-btn { background: none; border: none; cursor: pointer; font-size: 16px; opacity: 0.65; padding: 4px; border-radius: 4px; transition: all 0.2s ease; }
+  .action-btn:hover { opacity: 1; transform: scale(1.1); }
+  .action-btn.text-danger:hover { background: #fee2e2; }
+  .action-cobrar:hover { background: #dcfce7; }
+  .action-pagar:hover { background: #fef3c7; }
+
+  /* Modal */
+  .scm-modal { border: none; border-radius: 12px; padding: 0; width: 100%; max-width: 520px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
+  .scm-modal::backdrop { background: rgba(0,0,0,0.5); backdrop-filter: blur(3px); }
+  .modal-content { padding: 32px; background: #ffffff; border-radius: 12px; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .modal-header h2 { margin: 0; font-size: 18px; color: #001632; font-weight: 700; }
+  .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #64748b; font-weight: bold; line-height: 1; }
+  .close-btn:hover { color: #001632; }
+
+  /* Forms */
+  .scm-form .form-row { display: flex; align-items: flex-start; margin-bottom: 16px; gap: 16px; }
+  .scm-form label { width: 160px; font-size: 13px; color: #4a5568; padding-top: 10px; flex-shrink: 0; }
+  .scm-form input, .scm-form select { flex: 1; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-family: inherit; font-size: 14px; color: #4a5568; background-color: #ffffff; width: 100%; }
+  .scm-form input:focus, .scm-form select:focus { outline: none; border-color: #a0aec0; }
+  .input-readonly { background: #f8fafc !important; font-weight: 700; }
+  .select-wrapper { flex: 1; position: relative; }
+  .select-wrapper::after { content: "▼"; font-size: 10px; color: #4a5568; position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+  .scm-form select { appearance: none; padding-right: 30px; }
+
+  .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+  .btn-cancel { background: transparent; border: 1px solid #00564d; color: #00564d; padding: 9px 20px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: background 0.2s ease; }
+  .btn-cancel:hover { background: rgba(0,0,0,0.03); }
+  .btn-save { background: #00564d; border: 1px solid #00564d; color: white; padding: 9px 20px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: opacity 0.2s ease; }
+  .btn-save:hover { opacity: 0.9; }
+
+  @media (max-width: 768px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .budget-row { flex-direction: column; align-items: flex-start; }
+    .budget-row-label { width: 100%; }
+    .budget-pct { width: 100%; text-align: left; }
+  }
+</style>

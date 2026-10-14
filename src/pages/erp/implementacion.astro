@@ -4,6 +4,7 @@ import { db } from '../../db/db';
 import {
   Auditorias, Clientes, Facturas, HistorialOrdenes, Interacciones, MetodosPago, MovimientosInventario,
   Notificaciones, Pagos, PedidosCompra, Productos, Proveedores, ReportesProgramados, Usuarios, Ventas,
+  Presupuestos, CuentasPorCobrar, CuentasPorPagar,
 } from '../../db/schema';
 import { ESTADOS_VENTA_EFECTIVA } from '../../lib/ventas';
 
@@ -37,6 +38,9 @@ const historial = await safe(db.select({ id: HistorialOrdenes.id }).from(Histori
 const facturas = await safe(db.select({ id: Facturas.id }).from(Facturas));
 const pagos = await safe(db.select({ estado: Pagos.estado }).from(Pagos));
 const reportesProgramados = await safe(db.select({ id: ReportesProgramados.id }).from(ReportesProgramados));
+const presupuestos = await safe(db.select({ id: Presupuestos.id }).from(Presupuestos));
+const cuentasPorCobrar = await safe(db.select({ id: CuentasPorCobrar.id }).from(CuentasPorCobrar));
+const cuentasPorPagar = await safe(db.select({ id: CuentasPorPagar.id }).from(CuentasPorPagar));
 
 // Integración entre módulos: qué maneja cada uno y con qué llaves se relacionan
 const modulos = [
@@ -56,6 +60,7 @@ const modulos = [
     items: [
       { label: 'Órdenes de clientes', valor: ventas.length },
       { label: 'Cambios de estado registrados', valor: historial.length },
+      { label: 'Presupuestos y Cuentas', valor: presupuestos.length + cuentasPorCobrar.length + cuentasPorPagar.length },
     ],
   },
   {
@@ -166,7 +171,7 @@ const criterios = [
     impacto: 'Mantiene la confiabilidad de los datos con los que se toman decisiones.',
   },
   {
-    id: 'e12', etapa: 'cat-optimizado', auto: false,
+    id: 'e12', etapa: 'cat-optimizado', auto: presupuestos.length > 0 || cuentasPorCobrar.length > 0 || cuentasPorPagar.length > 0,
     titulo: 'Presupuestos y Cuentas por Cobrar / Pagar',
     desc: 'Control de saldos pendientes de clientes y proveedores contra un presupuesto.',
     impacto: 'Permite planear el flujo de efectivo en lugar de solo registrarlo.',
