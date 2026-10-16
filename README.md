@@ -103,12 +103,14 @@ npm run preview
 
 ```text
 /
+├── db/                     Esquema de Drizzle, seed y migraciones SQL
 ├── public/                 Archivos públicos y recursos estáticos
 ├── src/
 │   ├── assets/             Recursos utilizados por la interfaz
 │   ├── components/         Componentes Astro reutilizables
 │   ├── layouts/            Plantillas generales de página
 │   └── pages/              Rutas de la aplicación
+├── tests/                  Pruebas unitarias (Vitest)
 ├── astro.config.mjs        Configuración de Astro
 ├── package.json            Dependencias y scripts del proyecto
 └── tsconfig.json           Configuración de TypeScript
@@ -122,6 +124,7 @@ npm run preview
 | `npm run dev` | Inicia el servidor de desarrollo. |
 | `npm run build` | Genera la compilación de producción. |
 | `npm run preview` | Previsualiza la compilación generada. |
+| `npm test` | Ejecuta las pruebas unitarias con Vitest. |
 | `npm run astro` | Ejecuta comandos de la CLI de Astro. |
 
 ## Tecnologías
