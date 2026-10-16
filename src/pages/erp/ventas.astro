@@ -914,6 +914,43 @@ const backHref = '/erp/ventas' + (backParams.toString() ? '?' + backParams.toStr
       font-size: 13px;
     }
 
+    .order-flow {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin: 0 0 20px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .order-flow-step {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid var(--color-border);
+      border-radius: 7px;
+      background: #f8fafc;
+    }
+
+    .order-flow-step > span {
+      display: grid;
+      flex: 0 0 26px;
+      width: 26px;
+      height: 26px;
+      place-items: center;
+      border-radius: 50%;
+      background: #2563eb;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .order-flow-step div { display: grid; gap: 2px; }
+    .order-flow-step strong { font-size: 12px; }
+    .order-flow-step small { color: var(--color-text-muted); font-size: 10px; }
+
     @media (max-width: 768px) {
       .kpi-row {
         grid-template-columns: 1fr 1fr;
@@ -921,6 +958,7 @@ const backHref = '/erp/ventas' + (backParams.toString() ? '?' + backParams.toStr
       .grid-fields-2, .detail-cards-2 {
         grid-template-columns: 1fr;
       }
+      .order-flow { grid-template-columns: 1fr; gap: 7px; }
     }
   </style>
 
@@ -1101,6 +1139,21 @@ const backHref = '/erp/ventas' + (backParams.toString() ? '?' + backParams.toStr
           </div>
           <button type="button" class="btn-dismiss-modal" onclick="document.getElementById('modalCreateVenta').close()">×</button>
         </div>
+
+        <ol class="order-flow" aria-label="Resumen visual de los pasos de la orden">
+          <li class="order-flow-step">
+            <span>3</span>
+            <div><strong>Cliente</strong><small>Seleccionar comprador</small></div>
+          </li>
+          <li class="order-flow-step">
+            <span>4</span>
+            <div><strong>Productos</strong><small>Artículos y cantidades</small></div>
+          </li>
+          <li class="order-flow-step">
+            <span>5</span>
+            <div><strong>Resumen</strong><small>Revisar el total</small></div>
+          </li>
+        </ol>
 
         <form method="POST" action="/erp/ventas" id="formVenta">
           <input type="hidden" name="action" value="create_venta" />

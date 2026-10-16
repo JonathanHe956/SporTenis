@@ -227,6 +227,32 @@ const modules = [
   .map((m) => ({ ...m, href: menus[m.id][0].path }));
 const moduleHome = modules.find((m) => m.id === currentModule)?.href ?? `/${currentModule}`;
 const showModuleSwitcher = modules.length > 1;
+const erpFlowSteps = [
+  { stage: "1", path: "/erp", label: "Dashboard ERP", detail: "Resumen del negocio" },
+  { stage: "2", path: "/erp/ordenes", label: "Órdenes de clientes", detail: "Listado y seguimiento" },
+  { stage: "3–5", path: "/erp/ventas", label: "Nueva orden", detail: "Cliente · productos · resumen" },
+  { stage: "6–7", path: "/erp/ordenes?estado=Procesando", label: "Procesar orden", detail: "Confirmación · resultado" },
+  { stage: "8", path: "/erp/implementacion", label: "Nivel ERP", detail: "Integración CRM · SCM" },
+  { stage: "9", path: "/erp/reportes", label: "Reportes", detail: "Indicadores del negocio" },
+].filter((step) => canAccessRoute(roleStr as any, new URL(step.path, Astro.url).pathname));
+const erpStepIsCurrent = (step: (typeof erpFlowSteps)[number]) => {
+  const currentPath = new URL(step.path, Astro.url).pathname;
+  if (currentPath !== activePath) return false;
+  if (step.stage === "2") {
+    return !Astro.url.searchParams.has("actualizada")
+      && Astro.url.searchParams.get("estado") !== "Procesando";
+  }
+  if (step.stage === "6–7") {
+    return Astro.url.searchParams.get("actualizada") === "1"
+      || Astro.url.searchParams.get("estado") === "Procesando";
+  }
+  return true;
+};
+const currentRoleLabel: Record<string, string> = {
+  administrador: "Administrador",
+  vendedor: "Ventas",
+  logistica: "Logística",
+};
 ---
 
 <!doctype html>
@@ -406,6 +432,33 @@ const showModuleSwitcher = modules.length > 1;
 
         <!-- Page Content -->
         <main class="content-area">
+          {currentModule === "erp" && (
+            <nav class="erp-flow-nav" aria-label="Flujo principal del ERP">
+              <div class="erp-flow-heading">
+                <strong>Flujo ERP</strong>
+                <span class="erp-flow-context">
+                  CRM <i aria-hidden="true">→</i> ERP <i aria-hidden="true">→</i> SCM
+                  <b>10 · Vista {currentRoleLabel[roleStr] ?? "del usuario"}</b>
+                </span>
+              </div>
+              <ol>
+                {erpFlowSteps.map((step) => (
+                  <li class:list={["erp-flow-step", erpStepIsCurrent(step) && "is-current"]}>
+                    <a
+                      href={step.path}
+                      aria-current={erpStepIsCurrent(step) ? "page" : undefined}
+                    >
+                      <span class="erp-flow-number">{step.stage}</span>
+                      <span class="erp-flow-copy">
+                        <strong>{step.label}</strong>
+                        <small>{step.detail}</small>
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          )}
           <slot />
         </main>
       </div>
@@ -743,6 +796,82 @@ const showModuleSwitcher = modules.length > 1;
         flex: 1;
         padding: 32px;
         overflow-y: auto;
+      }
+
+      .erp-flow-nav {
+        margin: 0 0 24px;
+        padding: 14px 18px;
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        background: var(--color-surface);
+      }
+      .erp-flow-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+        color: var(--color-text-muted);
+        font-size: 11px;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+      }
+      .erp-flow-heading strong { color: var(--color-text); }
+      .erp-flow-heading i { padding: 0 5px; color: var(--color-success); font-style: normal; }
+      .erp-flow-context { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+      .erp-flow-context b {
+        padding: 4px 8px;
+        border-radius: 12px;
+        background: #ecfdf5;
+        color: #166534;
+        font-size: 10px;
+        letter-spacing: 0;
+      }
+      .erp-flow-nav ol {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .erp-flow-step a {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        min-height: 48px;
+        padding: 7px 9px;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        color: var(--color-text);
+        text-decoration: none;
+        transition: background-color .15s ease, border-color .15s ease;
+      }
+      .erp-flow-step a:hover { background: var(--color-bg); }
+      .erp-flow-step.is-current a {
+        border-color: #b8d7f5;
+        background: #eff6ff;
+      }
+      .erp-flow-number {
+        display: grid;
+        flex: 0 0 36px;
+        width: 36px;
+        height: 28px;
+        place-items: center;
+        border-radius: 50%;
+        background: #e5e7eb;
+        color: #374151;
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .erp-flow-step.is-current .erp-flow-number { background: #2563eb; color: #fff; }
+      .erp-flow-copy { display: grid; gap: 2px; }
+      .erp-flow-copy strong { font-size: 12px; }
+      .erp-flow-copy small { color: var(--color-text-muted); font-size: 10px; }
+      @media (max-width: 760px) {
+        .erp-flow-nav { padding: 12px; }
+        .erp-flow-nav ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .erp-flow-heading { align-items: flex-start; flex-direction: column; }
       }
 
       /* Utilidades CRM Globales */
