@@ -14,6 +14,16 @@ describe('desglosarIva', () => {
     expect(total).toBe(2499);
     expect(Math.round((subtotal + iva) * 100)).toBe(249900);
   });
+
+  it('desglosa en ceros un total de cero', () => {
+    expect(desglosarIva(0)).toEqual({ subtotal: 0, iva: 0, total: 0 });
+  });
+
+  it('redondea a centavos un total con más decimales', () => {
+    const { subtotal, iva, total } = desglosarIva(99.999);
+    expect(total).toBe(100);
+    expect(Math.round((subtotal + iva) * 100)).toBe(10000);
+  });
 });
 
 describe('estadoConciliacion', () => {
@@ -21,11 +31,19 @@ describe('estadoConciliacion', () => {
     expect(estadoConciliacion(1998, 1998)).toBe('Conciliado');
     expect(estadoConciliacion(1998, 1998.01)).toBe('Con diferencia');
   });
+
+  it('no marca diferencia por errores de punto flotante', () => {
+    expect(estadoConciliacion(0.1 + 0.2, 0.3)).toBe('Conciliado');
+  });
 });
 
 describe('folioFactura', () => {
   it('deriva el folio del número de venta', () => {
     expect(folioFactura(12)).toBe('FAC-000012');
+  });
+
+  it('no recorta folios de más de seis dígitos', () => {
+    expect(folioFactura(1234567)).toBe('FAC-1234567');
   });
 });
 
