@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { CartError, clearCart, getCartItems, resumirCarrito, setCartItem } from '../../lib/cart';
+import { CartError, clearCart, getCartItems, resumirCarrito, setCartItem, sincronizarConStock } from '../../lib/cart';
 import { findClientId, getOrCreateClientId } from '../../lib/clientes';
 
 const json = (body: unknown, status = 200): Response =>
@@ -16,7 +16,12 @@ const cartResponse = async (clientId: number | null, status = 200): Promise<Resp
 export const GET: APIRoute = async ({ locals }) => {
   if (!locals.user) return json({ ok: false, error: 'Debes iniciar sesión para usar el carrito.' }, 401);
 
-  return cartResponse(await findClientId(locals.user.id));
+  const clientId = await findClientId(locals.user.id);
+  if (!clientId) return cartResponse(null);
+
+  // Si algo se agotó desde que se agregó, el carrito se corrige y se avisa al cliente
+  const { items, avisos } = await sincronizarConStock(clientId);
+  return json({ ok: true, items, resumen: resumirCarrito(items), avisos });
 };
 
 export const POST: APIRoute = async ({ request, locals }) => {

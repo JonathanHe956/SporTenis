@@ -92,7 +92,54 @@ export const resumirCarrito = (items: CartItem[]): CartSummary => ({
   unidades: items.reduce((total, item) => total + item.cantidad, 0),
 });
 
-export const carritoAItemsVenta = (items: CartItem[]): ItemVenta[] =>
+export interface CarritoAjustado {
+  items: CartItem[];
+  avisos: string[];
+}
+
+/**
+ * Ajusta el carrito al stock actual: quita lo que se agotó y baja la cantidad
+ * de lo que ya no alcanza, con un aviso para el cliente por cada cambio.
+ */
+export const ajustarAlStock = (items: CartItem[]): CarritoAjustado => {
+  const avisos: string[] = [];
+  const ajustados: CartItem[] = [];
+
+  for (const item of items) {
+    const disponible = Math.max(0, item.stock);
+
+    if (disponible === 0) {
+      avisos.push(`${item.nombre} (${item.variante}) se agotó y se quitó de tu carrito.`);
+    } else if (item.cantidad > disponible) {
+      avisos.push(`Solo quedan ${disponible} de ${item.nombre} (${item.variante}); ajustamos la cantidad.`);
+      ajustados.push({
+        ...item,
+        cantidad: disponible,
+        subtotal: calcularTotales([{ precio: item.precio, cantidad: disponible }], 0).subtotal,
+      });
+    } else {
+      ajustados.push(item);
+    }
+  }
+
+  return { items: ajustados, avisos };
+};
+
+/** Lee el carrito, guarda los ajustes por falta de stock y devuelve los avisos. */
+export const sincronizarConStock = async (clientId: number): Promise<CarritoAjustado> => {
+  const originales = await getCartItems(clientId);
+  const ajuste = ajustarAlStock(originales);
+
+  for (const item of originales) {
+    const nuevo = ajuste.items.find((i) => i.id_producto === item.id_producto);
+    const cantidad = nuevo?.cantidad ?? 0;
+    if (cantidad !== item.cantidad) await setCartItem(clientId, item.id_producto, cantidad);
+  }
+
+  return ajuste;
+};
+
+export const carritoAItemsVenta =(items: CartItem[]): ItemVenta[] =>
   items.map((item) => ({ id_producto: item.id_producto, cantidad: item.cantidad }));
 
 /**
