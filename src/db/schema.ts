@@ -88,6 +88,12 @@ export const Clientes = mysqlTable('Clientes', {
   fecha_registro: datetime('fecha_registro').notNull(),
 });
 
+export const Monederos = mysqlTable('Monederos', {
+  id: int('id').autoincrement().primaryKey(),
+  id_cliente: int('id_cliente').references(() => Clientes.id).unique().notNull(),
+  saldo: decimal('saldo', { precision: 10, scale: 2 }).default('0.00').notNull(),
+});
+
 export const Direcciones = mysqlTable('Direcciones', {
   id: int('id').autoincrement().primaryKey(),
   id_cliente: int('id_cliente').references(() => Clientes.id).notNull(),

@@ -119,6 +119,13 @@ if (user?.role === 'administrador') {
                   <small>Ver y editar tu perfil</small>
                 </span>
               </a>
+              <a href="/monedero" class="dropdown-item" role="menuitem">
+                <span class="dropdown-icon">＄</span>
+                <span>
+                  <strong>Mi monedero</strong>
+                  <small>Consulta y administra tu saldo</small>
+                </span>
+              </a>
               <div class="dropdown-divider"></div>
               <form method="POST" action="/login" class="logout-form">
                 <input type="hidden" name="action" value="logout" />
