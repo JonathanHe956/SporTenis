@@ -2,6 +2,7 @@
 import { db } from '../db/db';
 import { Productos, Modelos, Categorias, Clientes, Favoritos } from '../db/schema';
 import { asc, eq } from 'drizzle-orm';
+import { getCartItems } from '../lib/cart';
 
 // El menú muestra solo las categorías registradas en el catálogo (/scm/categorias)
 const categories = (await db.select({ nombre: Categorias.nombre }).from(Categorias).orderBy(asc(Categorias.nombre)))
@@ -58,6 +59,8 @@ const isLoggedIn = user !== null;
 const isFavoritos = Astro.url.pathname.includes('/favoritos');
 
 let favoriteProductIds: number[] = [];
+// Unidades guardadas en el carrito del cliente, para el contador del ícono
+let cartUnits = 0;
 if (user) {
   const client = await db
     .select({ id: Clientes.id })
@@ -65,6 +68,8 @@ if (user) {
     .where(eq(Clientes.id_usuario, user.id));
 
   if (client[0]) {
+    cartUnits = (await getCartItems(client[0].id)).reduce((total, item) => total + item.cantidad, 0);
+
     const favorites = await db
       .select({ productId: Favoritos.id_producto })
       .from(Favoritos)
@@ -154,7 +159,7 @@ if (user?.role === 'administrador') {
       </a>
       <a href="/carrito" class="cart" aria-label="Carrito de compra" style="text-decoration: none; color: inherit; display: flex; align-items: center;">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-        <b>0</b>
+        <b>{cartUnits}</b>
       </a>
     </div>
   </header>
@@ -193,6 +198,7 @@ if (user?.role === 'administrador') {
               <button
                 class="detail-button"
                 type="button"
+                data-product-id={product.id}
                 data-product={product.name}
                 data-type={product.type}
                 data-price={product.price}
@@ -212,7 +218,7 @@ if (user?.role === 'administrador') {
 <dialog class="product-dialog" id="productDialog" aria-labelledby="dialogTitle">
   <button class="dialog-close" type="button" aria-label="Cerrar detalle">Cerrar</button>
   <div class="dialog-visual" id="dialogVisual"><i></i></div>
-  <div class="dialog-content"><p class="eyebrow" id="dialogType"></p><h2 id="dialogTitle"></h2><strong class="dialog-price" id="dialogPrice"></strong><p class="dialog-description" id="dialogDescription"></p><label for="productOption">Color</label><select id="productOption"></select><label for="productQuantity">Cantidad</label><input id="productQuantity" type="number" min="1" value="1" oninput="this.value = this.value.replace(/[^0-9]/g, '')" /><button class="primary-button add-button" type="button" id="addToCart">Añadir al carrito <span>↗</span></button><p class="dialog-feedback" id="dialogFeedback" role="status"></p></div>
+  <div class="dialog-content"><p class="eyebrow" id="dialogType"></p><h2 id="dialogTitle"></h2><strong class="dialog-price" id="dialogPrice"></strong><p class="dialog-description" id="dialogDescription"></p><label for="productOption">Color</label><select id="productOption"></select><label for="productQuantity">Cantidad</label><input id="productQuantity" type="number" min="1" value="1" oninput="this.value = this.value.replace(/[^0-9]/g, '')" /><button class="primary-button add-button" type="button" id="addToCart">Añadir al carrito <span>↗</span></button><p class="dialog-feedback" id="dialogFeedback" role="status"></p><a class="view-cart-button" id="viewCartLink" href="/carrito" hidden>Ver carrito <span aria-hidden="true">→</span></a></div>
 </dialog>
 
 <style>
@@ -226,7 +232,7 @@ if (user?.role === 'administrador') {
   @media (max-width: 900px) { nav { display: none; } .topbar { justify-content: space-between; } .hero { grid-template-columns: 1fr; } .hero-art { min-height: 300px; } .hero-copy { padding-bottom: 50px; } .benefits { grid-template-columns: repeat(2, 1fr); gap: 22px 0; } .benefits div:nth-child(2) { border: 0; } } @media (max-width: 600px) { .topbar { gap: 12px; min-height: 66px; padding: 0 16px; } .actions { gap: 10px; } .search { width: 35px; padding: 8px; } .search input { display: none; } .icon-button { font-size: 20px; } .brand { font-size: 20px; } .brand-mark { height: 25px; width: 25px; } .hero-copy { padding: 48px 24px; } h1 { font-size: 68px; } .hero-art { min-height: 260px; } .tennis-ball { right: 22%; top: 15%; } .benefits { padding: 22px 20px; } .benefits div { padding: 0 12px; } .products-section { padding: 42px 20px 55px; } .product-grid { grid-template-columns: 1fr; } .product-visual { height: 240px; } }
   .product-card { min-width: 0; } .detail-button { background: transparent; border: 0; border-bottom: 1px solid #171717; color: #171717; cursor: pointer; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; margin-top: 17px; padding: 0 0 4px; text-transform: uppercase; } .detail-button span { font-size: 15px; margin-left: 8px; }
   .empty-favorites { font-family: Arial, sans-serif; font-size: 13px; grid-column: 1 / -1; padding: 40px 0; text-align: center; }
-  .product-dialog { border: 0; box-shadow: 0 20px 80px rgba(23,23,23,.28); grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr); max-width: 760px; padding: 0; width: calc(100% - 32px); } .product-dialog[open] { display: grid; } .product-dialog::backdrop { background: rgba(23,23,23,.58); } .dialog-close { background: #fffdf3; border: 0; cursor: pointer; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; padding: 10px; position: absolute; right: 14px; text-transform: uppercase; top: 14px; z-index: 2; } .dialog-visual { align-items: center; background: #edc319; display: flex; justify-content: center; min-height: 410px; overflow: hidden; position: relative; } .dialog-visual i { background: #d8ee32; border-radius: 50%; box-shadow: 18px 22px 0 rgba(27,27,27,.15); height: 220px; position: relative; transform: rotate(-27deg); width: 220px; } .dialog-visual i:after { border: 5px solid #f7d21c; border-radius: 50%; content: ''; height: 75%; left: 27%; position: absolute; top: 12%; transform: rotate(25deg); width: 35%; } .dialog-content { display: flex; flex-direction: column; gap: 10px; padding: 58px 38px 36px; } .dialog-content .eyebrow { color: #d93e2e; margin: 0; } .dialog-content h2 { font-size: 37px; margin: 0; } .dialog-price { font-family: Arial, sans-serif; font-size: 17px; } .dialog-description { color: #716e67; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.5; margin: 6px 0 12px; } .dialog-content label { font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; text-transform: uppercase; } .dialog-content select, .dialog-content input { background: #f6f4ed; border: 1px solid #d8d3c3; font-family: Arial, sans-serif; font-size: 12px; padding: 12px; } .dialog-content input { width: 80px; } .add-button { border: 0; cursor: pointer; justify-content: space-between; margin-top: 15px; } .dialog-feedback { color: #4b7b39; font-family: Arial, sans-serif; font-size: 11px; min-height: 15px; }
+  .product-dialog { border: 0; box-shadow: 0 20px 80px rgba(23,23,23,.28); grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr); max-width: 760px; padding: 0; width: calc(100% - 32px); } .product-dialog[open] { display: grid; } .product-dialog::backdrop { background: rgba(23,23,23,.58); } .dialog-close { background: #fffdf3; border: 0; cursor: pointer; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; padding: 10px; position: absolute; right: 14px; text-transform: uppercase; top: 14px; z-index: 2; } .dialog-visual { align-items: center; background: #edc319; display: flex; justify-content: center; min-height: 410px; overflow: hidden; position: relative; } .dialog-visual i { background: #d8ee32; border-radius: 50%; box-shadow: 18px 22px 0 rgba(27,27,27,.15); height: 220px; position: relative; transform: rotate(-27deg); width: 220px; } .dialog-visual i:after { border: 5px solid #f7d21c; border-radius: 50%; content: ''; height: 75%; left: 27%; position: absolute; top: 12%; transform: rotate(25deg); width: 35%; } .dialog-content { display: flex; flex-direction: column; gap: 10px; padding: 58px 38px 36px; } .dialog-content .eyebrow { color: #d93e2e; margin: 0; } .dialog-content h2 { font-size: 37px; margin: 0; } .dialog-price { font-family: Arial, sans-serif; font-size: 17px; } .dialog-description { color: #716e67; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.5; margin: 6px 0 12px; } .dialog-content label { font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; text-transform: uppercase; } .dialog-content select, .dialog-content input { background: #f6f4ed; border: 1px solid #d8d3c3; font-family: Arial, sans-serif; font-size: 12px; padding: 12px; } .dialog-content input { width: 80px; } .add-button { border: 0; cursor: pointer; justify-content: space-between; margin-top: 15px; } .dialog-feedback { color: #4b7b39; font-family: Arial, sans-serif; font-size: 11px; min-height: 15px; } .view-cart-button { align-items: center; border: 2px solid #171717; color: #171717; display: flex; font-family: Arial, sans-serif; font-size: 11px; font-weight: 800; justify-content: space-between; margin-top: 4px; padding: 13px 18px; text-decoration: none; text-transform: uppercase; transition: background .15s ease; } .view-cart-button:hover { background: #f7d21c; } .view-cart-button[hidden] { display: none; }
   /* ── Menú de cuenta ─────────────────────────────────────── */
   .account-menu { position: relative; display: inline-flex; }
 
@@ -345,11 +351,14 @@ if (user?.role === 'administrador') {
   const productQuantity = document.getElementById('productQuantity') as HTMLInputElement | null;
   const closeBtn = document.querySelector('.dialog-close') as HTMLButtonElement | null;
   const addToCartBtn = document.getElementById('addToCart') as HTMLButtonElement | null;
+  const viewCartLink = document.getElementById('viewCartLink') as HTMLAnchorElement | null;
 
   let selectedProduct = '';
+  let selectedProductId = 0;
 
   const openProductDialog = (button: HTMLButtonElement) => {
     selectedProduct = button.dataset.product || '';
+    selectedProductId = Number(button.dataset.productId || 0);
 
     if (dialogType) dialogType.textContent = button.dataset.type || '';
     if (dialogTitle) dialogTitle.textContent = selectedProduct;
@@ -372,6 +381,7 @@ if (user?.role === 'administrador') {
     }
 
     if (dialogFeedback) dialogFeedback.textContent = '';
+    if (viewCartLink) viewCartLink.hidden = true;
     if (productQuantity) productQuantity.value = '1';
 
     if (!productDialog?.open) {
@@ -392,21 +402,54 @@ if (user?.role === 'administrador') {
     productDialog?.close();
   });
 
-  addToCartBtn?.addEventListener('click', () => {
-    const qty = Number(productQuantity?.value || 1);
-    const currentCount = Number(cartCount?.textContent || 0);
+  // Guarda el producto en el carrito del cliente (tabla DetalleCarritos) vía /api/carrito
+  addToCartBtn?.addEventListener('click', async () => {
+    const qty = Math.max(1, Math.floor(Number(productQuantity?.value || 1)));
+    const setFeedback = (text: string) => {
+      if (dialogFeedback) dialogFeedback.textContent = text;
+    };
 
-    if (cartCount) {
-      cartCount.textContent = String(currentCount + qty);
+    if (!selectedProductId) {
+      setFeedback('No se pudo identificar el producto.');
+      return;
     }
 
-    if (dialogFeedback) {
-      dialogFeedback.textContent = `${selectedProduct} se añadió al carrito.`;
-    }
-    
-    // Track event: add to cart
-    if (typeof (window as any).trackEvent === 'function') {
-      (window as any).trackEvent('agregar_carrito', { producto: selectedProduct, cantidad: qty });
+    addToCartBtn.disabled = true;
+    setFeedback('Agregando…');
+
+    try {
+      const res = await fetch('/api/carrito', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ action: 'add', productId: selectedProductId, cantidad: qty }),
+      });
+      const data = await res.json();
+
+      if (res.status === 401) {
+        setFeedback('Inicia sesión para agregar productos al carrito.');
+        return;
+      }
+      if (!res.ok || !data.ok) {
+        setFeedback(data.error || 'No se pudo agregar al carrito.');
+        return;
+      }
+
+      if (cartCount) cartCount.textContent = String(data.resumen?.unidades ?? 0);
+      setFeedback(`${selectedProduct} se añadió al carrito.`);
+      // Acceso directo al carrito después de agregar
+      if (viewCartLink) {
+        viewCartLink.hidden = false;
+        viewCartLink.focus();
+      }
+
+      // Track event: add to cart
+      if (typeof (window as any).trackEvent === 'function') {
+        (window as any).trackEvent('agregar_carrito', { producto: selectedProduct, cantidad: qty });
+      }
+    } catch {
+      setFeedback('No se pudo agregar al carrito. Revisa tu conexión.');
+    } finally {
+      addToCartBtn.disabled = false;
     }
   });
 </script>

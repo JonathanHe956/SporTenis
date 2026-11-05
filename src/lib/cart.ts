@@ -1,6 +1,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { db } from '../db/db';
 import { Carritos, Categorias, DetalleCarritos, Modelos, Productos } from '../db/schema';
+import { desglosarIva, TASA_IVA } from './facturacion';
 import { calcularTotales, type ItemVenta, type TotalesVenta } from './ventas';
 
 /** Error de negocio cuyo mensaje sí se puede mostrar al usuario. */
@@ -27,6 +28,11 @@ export interface CartItem {
 
 export interface CartSummary extends TotalesVenta {
   unidades: number;
+  /** Total (productos + envío) sin IVA, igual que lo desglosará la factura. */
+  base_sin_iva: number;
+  /** IVA incluido en el total. */
+  iva: number;
+  tasa_iva: number;
 }
 
 const findCartId = async (clientId: number): Promise<number | null> => {
@@ -87,10 +93,18 @@ export const getCartItems = async (clientId: number): Promise<CartItem[]> => {
   });
 };
 
-export const resumirCarrito = (items: CartItem[]): CartSummary => ({
-  ...calcularTotales(items),
-  unidades: items.reduce((total, item) => total + item.cantidad, 0),
-});
+// Los precios ya traen IVA: se desglosa del total con la misma función que usa la factura
+export const resumirCarrito = (items: CartItem[]): CartSummary => {
+  const totales = calcularTotales(items);
+  const { subtotal: base_sin_iva, iva } = desglosarIva(totales.total);
+  return {
+    ...totales,
+    unidades: items.reduce((total, item) => total + item.cantidad, 0),
+    base_sin_iva,
+    iva,
+    tasa_iva: TASA_IVA,
+  };
+};
 
 export interface CarritoAjustado {
   items: CartItem[];

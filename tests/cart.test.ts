@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 // Las reglas probadas son puras: se evita abrir el pool de MySQL
 vi.mock('../src/db/db', () => ({ db: {} }));
 
-import { ajustarAlStock, type CartItem } from '../src/lib/cart';
+import { ajustarAlStock, resumirCarrito, type CartItem } from '../src/lib/cart';
 
 const item = (cambios: Partial<CartItem>): CartItem => ({
   id_producto: 1,
@@ -38,5 +38,22 @@ describe('ajustarAlStock', () => {
 
   it('trata un stock negativo como agotado', () => {
     expect(ajustarAlStock([item({ stock: -3 })]).items).toEqual([]);
+  });
+});
+
+describe('resumirCarrito', () => {
+  it('desglosa el IVA del total cuando el envío es gratis', () => {
+    const resumen = resumirCarrito([item({ precio: 2400, subtotal: 2400 })]);
+    expect(resumen).toMatchObject({ subtotal: 2400, envio: 0, total: 2400, unidades: 1, tasa_iva: 0.16 });
+    expect(resumen.base_sin_iva).toBe(2068.97);
+    expect(resumen.iva).toBe(331.03);
+  });
+
+  it('incluye el envío en el desglose y no pierde centavos', () => {
+    const resumen = resumirCarrito([item({ precio: 1500, subtotal: 1500 })]);
+    expect(resumen).toMatchObject({ subtotal: 1500, envio: 500, total: 2000 });
+    expect(resumen.base_sin_iva).toBe(1724.14);
+    expect(resumen.iva).toBe(275.86);
+    expect(Math.round((resumen.base_sin_iva + resumen.iva) * 100)).toBe(Math.round(resumen.total * 100));
   });
 });
