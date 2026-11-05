@@ -1,0 +1,476 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { db } from '../../db/db';
+import { Ventas, Facturas, Usuarios, Clientes } from '../../db/schema';
+import { findClientId } from '../../lib/clientes';
+import { eq, desc } from 'drizzle-orm';
+
+const sessionUser = Astro.locals.user;
+
+if (!sessionUser) {
+  return Astro.redirect('/login');
+}
+
+// Buscar el cliente asociado al usuario
+const clientId = await findClientId(sessionUser.id);
+
+type Compra = {
+  id: number;
+  folio: string | null;
+  fecha: Date;
+  total: string;
+  estado: string;
+};
+
+let compras: Compra[] = [];
+
+if (clientId !== null) {
+  // Consultar ventas del más reciente al más antiguo
+  const ventas = await db
+    .select({
+      id: Ventas.id,
+      fecha_venta: Ventas.fecha_venta,
+      total: Ventas.total,
+      estado: Ventas.estado,
+    })
+    .from(Ventas)
+    .where(eq(Ventas.id_cliente, clientId))
+    .orderBy(desc(Ventas.fecha_venta));
+
+  // Para cada venta, buscar el folio en Facturas (si existe)
+  for (const venta of ventas) {
+    const factura = await db
+      .select({ folio: Facturas.folio })
+      .from(Facturas)
+      .where(eq(Facturas.id_venta, venta.id))
+      .limit(1);
+
+    compras.push({
+      id: venta.id,
+      folio: factura[0]?.folio ?? null,
+      fecha: venta.fecha_venta,
+      total: venta.total,
+      estado: venta.estado,
+    });
+  }
+}
+
+// Nombre del usuario para el saludo
+const user = await db
+  .select({ nombre: Usuarios.nombre })
+  .from(Usuarios)
+  .where(eq(Usuarios.id, sessionUser.id))
+  .limit(1);
+
+const nombreUsuario = user[0]?.nombre?.split(' ')[0] ?? 'Usuario';
+
+// Mapa de colores por estado
+const estadoConfig: Record<string, { label: string; color: string; bg: string }> = {
+  'Procesando':  { label: 'Procesando',  color: '#b45309', bg: '#fef3c7' },
+  'Confirmada':  { label: 'Confirmada',  color: '#1d4ed8', bg: '#dbeafe' },
+  'Entregada':   { label: 'Entregada',   color: '#15803d', bg: '#dcfce7' },
+  'Cancelada':   { label: 'Cancelada',   color: '#b91c1c', bg: '#fee2e2' },
+};
+
+function getEstadoStyle(estado: string) {
+  return estadoConfig[estado] ?? { label: estado, color: '#374151', bg: '#f3f4f6' };
+}
+
+function formatFecha(fecha: Date): string {
+  return new Intl.DateTimeFormat('es-MX', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date(fecha));
+}
+
+function formatMonto(monto: string): string {
+  return new Intl.NumberFormat('es-MX', {
+    style: 'currency',
+    currency: 'MXN',
+  }).format(Number(monto));
+}
+---
+
+<Layout>
+  <div class="compras-page">
+    <!-- Header -->
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="SporTenis, inicio">
+        <span class="brand-mark">S</span>
+        <span>Spor<span>Tenis</span></span>
+      </a>
+
+      <div class="store-actions">
+        <a href="/cuenta" class="back-link">← Mi cuenta</a>
+
+        <div class="user-nav">
+          <a href="/cuenta" class="nav-icon" title="Mi Cuenta">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </a>
+          <a href="/monedero" class="nav-icon" title="Mi Monedero">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 9h18M16 15h.01"/><path d="M7 5V3h10v2"/></svg>
+          </a>
+          <a href="/favoritos" class="nav-icon" title="Mis Favoritos">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+          </a>
+          <a href="/carrito" class="nav-icon" title="Mi Carrito">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main class="compras-main">
+      <div class="compras-container">
+        <!-- Encabezado de sección -->
+        <div class="section-header">
+          <div class="section-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <path d="M16 10a4 4 0 0 1-8 0"/>
+            </svg>
+          </div>
+          <div>
+            <h1>Mis compras</h1>
+            <p class="section-sub">Hola, <strong>{nombreUsuario}</strong>. Aquí está tu historial de pedidos.</p>
+          </div>
+        </div>
+
+        <!-- Tabla / lista de compras -->
+        {compras.length === 0 ? (
+          <div class="empty-state">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <path d="M16 10a4 4 0 0 1-8 0"/>
+            </svg>
+            <p>Aún no tienes compras registradas.</p>
+            <a href="/" class="btn-shop">Ir a la tienda</a>
+          </div>
+        ) : (
+          <>
+            <!-- Vista desktop: tabla -->
+            <div class="table-wrap">
+              <table class="compras-table">
+                <thead>
+                  <tr>
+                    <th>Folio / Pedido</th>
+                    <th>Fecha</th>
+                    <th>Total</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {compras.map((c) => {
+                    const est = getEstadoStyle(c.estado);
+                    return (
+                      <tr>
+                        <td class="folio-cell">
+                          {c.folio ? (
+                            <span class="folio">{c.folio}</span>
+                          ) : (
+                            <span class="folio folio-id">#{c.id}</span>
+                          )}
+                        </td>
+                        <td class="fecha-cell">{formatFecha(c.fecha)}</td>
+                        <td class="total-cell">{formatMonto(c.total)}</td>
+                        <td>
+                          <span
+                            class="badge"
+                            style={`color:${est.color}; background:${est.bg};`}
+                          >
+                            {est.label}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Vista móvil: tarjetas -->
+            <div class="cards-list">
+              {compras.map((c) => {
+                const est = getEstadoStyle(c.estado);
+                return (
+                  <div class="compra-card">
+                    <div class="card-top">
+                      <span class="folio">
+                        {c.folio ?? `#${c.id}`}
+                      </span>
+                      <span
+                        class="badge"
+                        style={`color:${est.color}; background:${est.bg};`}
+                      >
+                        {est.label}
+                      </span>
+                    </div>
+                    <div class="card-bottom">
+                      <span class="card-fecha">{formatFecha(c.fecha)}</span>
+                      <span class="card-total">{formatMonto(c.total)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<style>
+  /* ── Reset & base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  .compras-page {
+    min-height: 100vh;
+    background: #faf9f7;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+  }
+
+  /* ── Topbar (mismo estilo que cuenta.astro) ── */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 32px;
+    height: 64px;
+    background: #fff;
+    border-bottom: 1px solid #eee;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+    color: #171717;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .brand-mark {
+    width: 32px;
+    height: 32px;
+    background: #d93e2e;
+    color: #fff;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    font-size: 15px;
+    font-weight: 900;
+    flex-shrink: 0;
+  }
+  .brand span span { color: #d93e2e; }
+
+  .store-actions {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+  .back-link {
+    font-size: 13px;
+    color: #555;
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .back-link:hover { color: #171717; }
+
+  .user-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .nav-icon {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    color: #555;
+    text-decoration: none;
+    transition: background 0.15s, color 0.15s;
+  }
+  .nav-icon:hover, .nav-icon.active {
+    background: #f3f3f1;
+    color: #171717;
+  }
+
+  /* ── Main ── */
+  .compras-main {
+    padding: 48px 24px 72px;
+  }
+
+  .compras-container {
+    max-width: 860px;
+    margin: 0 auto;
+  }
+
+  /* ── Encabezado ── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .section-icon {
+    width: 56px;
+    height: 56px;
+    background: #171717;
+    color: #fff;
+    border-radius: 16px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+  h1 {
+    font-size: clamp(22px, 3vw, 32px);
+    font-weight: 400;
+    letter-spacing: -1px;
+    color: #171717;
+  }
+  .section-sub {
+    color: #716e67;
+    font-size: 14px;
+    margin-top: 2px;
+  }
+  .section-sub strong { color: #171717; font-weight: 600; }
+
+  /* ── Tabla desktop ── */
+  .table-wrap {
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #eee;
+    overflow: hidden;
+  }
+
+  .compras-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  .compras-table thead tr {
+    background: #f7f6f4;
+    border-bottom: 1px solid #eee;
+  }
+  .compras-table th {
+    padding: 14px 20px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #888;
+  }
+  .compras-table td {
+    padding: 16px 20px;
+    border-bottom: 1px solid #f3f3f1;
+    color: #171717;
+    vertical-align: middle;
+  }
+  .compras-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .compras-table tbody tr:hover td {
+    background: #faf9f7;
+  }
+
+  .folio {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: #171717;
+    background: #f3f3f1;
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .folio-id { color: #888; }
+
+  .fecha-cell { color: #555; }
+  .total-cell { font-weight: 600; }
+
+  /* ── Badge de estado ── */
+  .badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* ── Tarjetas móvil ── */
+  .cards-list { display: none; }
+
+  .compra-card {
+    background: #fff;
+    border: 1px solid #eee;
+    border-radius: 14px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+  }
+  .card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .card-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+  }
+  .card-fecha { color: #888; }
+  .card-total { font-weight: 600; color: #171717; }
+
+  /* ── Estado vacío ── */
+  .empty-state {
+    text-align: center;
+    padding: 72px 24px;
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #eee;
+    color: #aaa;
+  }
+  .empty-state svg { margin-bottom: 16px; }
+  .empty-state p {
+    font-size: 15px;
+    margin-bottom: 24px;
+    color: #888;
+  }
+  .btn-shop {
+    display: inline-block;
+    padding: 12px 28px;
+    background: #171717;
+    color: #fff;
+    border-radius: 999px;
+    font-size: 14px;
+    text-decoration: none;
+    transition: background 0.18s;
+  }
+  .btn-shop:hover { background: #333; }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    .topbar { padding: 0 16px; }
+    .compras-main { padding: 28px 16px 48px; }
+
+    .table-wrap { display: none; }
+    .cards-list { display: block; }
+
+    .section-header { gap: 12px; }
+    .section-icon { width: 46px; height: 46px; border-radius: 12px; }
+    .back-link { display: none; }
+  }
+</style>
+

@@ -92,6 +92,10 @@ if (user.length > 0) {
             </div>
             <p class="deco-text">Hola,<br /><strong>{userData.nombre}</strong></p>
             <p class="deco-sub">Administra tus datos personales y preferencias de tu cuenta.</p>
+            <a href="/cuenta/compras" class="deco-compras-link">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+              Mis compras
+            </a>
           </div>
         </div>
 
@@ -326,6 +330,26 @@ if (user.length > 0) {
     font-size: 12px;
     line-height: 1.6;
     margin: 0;
+  }
+
+  .deco-compras-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 16px;
+    padding: 8px 18px;
+    background: #171717;
+    color: #fff;
+    border-radius: 999px;
+    font-size: 13px;
+    font-family: Arial, sans-serif;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background 0.18s, transform 0.15s;
+  }
+  .deco-compras-link:hover {
+    background: #333;
+    transform: translateY(-1px);
   }
 
   .cuenta-card-right { padding: 44px 40px; }
