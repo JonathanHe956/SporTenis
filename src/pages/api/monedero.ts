@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { findClientId, getOrCreateClientId } from '../../lib/clientes';
-import { consultarSaldo, descontar, MonederoError, recargar } from '../../lib/monedero';
+import { consultarMovimientos, consultarSaldo, descontar, MonederoError, recargar } from '../../lib/monedero';
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), {
@@ -15,7 +15,8 @@ export const GET: APIRoute = async ({ locals }) => {
   try {
     const clientId = await findClientId(user.id);
     const saldo = clientId ? await consultarSaldo(clientId) : 0;
-    return json({ saldo });
+    const movimientos = clientId ? await consultarMovimientos(clientId) : [];
+    return json({ saldo, movimientos });
   } catch (error: unknown) {
     console.error('Error al consultar el monedero:', error);
     return json({ error: 'Error interno al consultar el monedero.' }, 500);

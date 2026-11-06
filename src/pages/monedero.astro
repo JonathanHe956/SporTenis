@@ -95,6 +95,29 @@ if (!Astro.locals.user) {
         </section>
       </div>
 
+      <section class="history-card" aria-labelledby="history-title">
+        <div class="history-heading">
+          <div>
+            <p class="eyebrow">Actividad de tu monedero</p>
+            <h2 id="history-title">Últimos movimientos</h2>
+          </div>
+        </div>
+        <div class="history-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Fecha</th>
+                <th scope="col">Movimiento</th>
+                <th scope="col">Monto</th>
+              </tr>
+            </thead>
+            <tbody id="movementHistory">
+              <tr><td class="history-empty" colspan="3">Cargando movimientos...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <a href="/" class="continue-link">Seguir explorando la tienda <span aria-hidden="true">↗</span></a>
     </main>
   </div>
@@ -164,6 +187,20 @@ if (!Astro.locals.user) {
   .feedback[data-kind="error"] { color: #c62828; }
   .demo-note { border-top: 1px solid #e8e3d8; color: #716e67; font-family: Arial, sans-serif; font-size: 9px; line-height: 1.5; margin: 14px 0 0; padding-top: 12px; }
   .demo-note strong { color: #171717; }
+  .history-card { background: #fffdf7; border: 1px solid #e8e3d8; margin-top: 30px; padding: 25px 28px; }
+  .history-heading { align-items: center; display: flex; justify-content: space-between; margin-bottom: 18px; }
+  .history-heading .eyebrow { margin-bottom: 7px; }
+  .history-table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; min-width: 440px; text-align: left; width: 100%; }
+  th { color: #716e67; font-family: Arial, sans-serif; font-size: 9px; letter-spacing: 1px; padding: 0 12px 12px; text-transform: uppercase; }
+  td { border-top: 1px solid #e8e3d8; font-family: Arial, sans-serif; font-size: 12px; padding: 14px 12px; }
+  td:last-child { font-weight: 700; text-align: right; }
+  th:last-child { text-align: right; }
+  .history-type { align-items: center; display: inline-flex; gap: 8px; }
+  .history-type::before { border-radius: 50%; content: ''; height: 7px; width: 7px; }
+  .history-type[data-type="Recarga"]::before { background: #25834b; }
+  .history-type[data-type="Descuento"]::before { background: #d93e2e; }
+  .history-empty { color: #716e67; padding: 20px 12px; text-align: center !important; }
   .continue-link { color: #171717; display: inline-flex; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; gap: 8px; margin-top: 25px; text-decoration: none; text-transform: uppercase; }
   .continue-link span { font-size: 16px; }
   @media (max-width: 720px) {
@@ -187,6 +224,7 @@ if (!Astro.locals.user) {
 
 <script>
   const balanceOutput = document.getElementById('walletBalance');
+  const movementHistory = document.getElementById('movementHistory');
   const feedback = document.getElementById('walletFeedback');
   const amountInput = document.getElementById('amount') as HTMLInputElement | null;
   const submitButton = document.getElementById('submitMovement') as HTMLButtonElement | null;
@@ -197,6 +235,42 @@ if (!Astro.locals.user) {
 
   const formatMoney = (amount: number): string =>
     new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amount);
+
+  const renderHistory = (movimientos: Array<{ tipo: 'Recarga' | 'Descuento'; monto: string | number; fecha: string }>): void => {
+    if (!movementHistory) return;
+    movementHistory.replaceChildren();
+
+    if (movimientos.length === 0) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 3;
+      cell.className = 'history-empty';
+      cell.textContent = 'Aún no tienes movimientos.';
+      row.append(cell);
+      movementHistory.append(row);
+      return;
+    }
+
+    movimientos.forEach((movimiento) => {
+      const row = document.createElement('tr');
+      const dateCell = document.createElement('td');
+      const typeCell = document.createElement('td');
+      const amountCell = document.createElement('td');
+      const typeLabel = document.createElement('span');
+      const date = new Date(movimiento.fecha);
+
+      dateCell.textContent = Number.isNaN(date.getTime())
+        ? 'Fecha no disponible'
+        : new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+      typeLabel.className = 'history-type';
+      typeLabel.dataset.type = movimiento.tipo;
+      typeLabel.textContent = movimiento.tipo;
+      typeCell.append(typeLabel);
+      amountCell.textContent = formatMoney(Number(movimiento.monto));
+      row.append(dateCell, typeCell, amountCell);
+      movementHistory.append(row);
+    });
+  };
 
   const showFeedback = (message: string, kind: 'success' | 'error'): void => {
     if (!feedback) return;
@@ -213,6 +287,7 @@ if (!Astro.locals.user) {
         balanceOutput.textContent = formatMoney(Number(result.saldo));
         balanceOutput.setAttribute('aria-busy', 'false');
       }
+      renderHistory(result.movimientos ?? []);
     } catch (error) {
       if (balanceOutput) {
         balanceOutput.textContent = 'No disponible';
@@ -266,6 +341,7 @@ if (!Astro.locals.user) {
       if (!response.ok) throw new Error(result.error || 'No se pudo completar el movimiento.');
 
       if (balanceOutput) balanceOutput.textContent = formatMoney(Number(result.saldo));
+      void loadBalance();
       showFeedback(
         selectedAction === 'recargar' ? 'Recarga aplicada correctamente.' : 'Saldo descontado correctamente.',
         'success',

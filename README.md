@@ -45,7 +45,14 @@ mysql -u root -p sportenis_db < db/migrations/0002_pedidos_stock.sql
 mysql -u root -p sportenis_db < db/migrations/0003_sesiones.sql
 mysql -u root -p sportenis_db < db/migrations/0004_ordenes_erp.sql
 mysql -u root -p sportenis_db < db/migrations/0005_historial_ordenes.sql
+mysql -u root -p sportenis_db < db/migrations/0005_erp_settings.sql
+mysql -u root -p sportenis_db < db/migrations/0006_facturas_pagos_reportes.sql
+mysql -u root -p sportenis_db < db/migrations/0007_presupuestos_cxc_cxp.sql
+mysql -u root -p sportenis_db < db/migrations/0008_monedero.sql
+mysql -u root -p sportenis_db < db/migrations/0009_movimientos_monedero.sql
 ```
+
+Ejecuta solo las migraciones que aún no hayas aplicado, en orden. La `0009` es necesaria para que funcionen las recargas y el historial del monedero.
 
 ### Usuarios de prueba
 
