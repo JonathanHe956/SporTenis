@@ -1,0 +1,366 @@
+---
+// Panel lateral de favoritos, disponible en todas las páginas de la tienda (se incluye en Layout).
+// Cualquier enlace a /favoritos lo abre; solo "Ver todos mis favoritos" (data-fav-page) lleva a la página completa.
+import { getFavoriteIds, getStoreProducts, productDataAttrs } from '../lib/catalogo';
+
+const user = Astro.locals.user;
+const isLoggedIn = Boolean(user);
+const favoriteIds = user ? await getFavoriteIds(user.id) : [];
+const favorites = isLoggedIn ? await getStoreProducts(favoriteIds) : [];
+---
+
+<dialog
+  class="fav-drawer"
+  id="favDrawer"
+  aria-labelledby="favDrawerTitle"
+  data-logged-in={String(isLoggedIn)}
+  data-favorite-ids={favorites.map((p) => p.id).join(',')}
+>
+  <header class="fav-head">
+    <div>
+      <p class="fav-eyebrow">Tu lista</p>
+      <h2 id="favDrawerTitle">Favoritos <span id="favDrawerCount">({favorites.length})</span></h2>
+    </div>
+    <button class="fav-close" type="button" id="favClose" aria-label="Cerrar favoritos">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </header>
+
+  {isLoggedIn ? (
+    <>
+      <ul class="fav-list" id="favList">
+        {favorites.map((product) => (
+          <li class="fav-item" data-fav-item={product.id}>
+            <button type="button" class={`fav-thumb ${product.className} js-fav-view`} {...productDataAttrs(product)} aria-label={`Ver ${product.name}`}>
+              {product.imageUrl ? <img src={product.imageUrl} alt="" loading="lazy" decoding="async" /> : <i aria-hidden="true"></i>}
+            </button>
+            <div class="fav-info">
+              <p class="fav-type">{product.type}</p>
+              <h3 class="fav-name">{product.name}</h3>
+              <strong class="fav-price">{product.price}<small> MXN</small></strong>
+              <div class="fav-actions">
+                <button type="button" class="fav-view js-fav-view" {...productDataAttrs(product)}>Ver producto <span aria-hidden="true">→</span></button>
+                <button type="button" class="fav-remove" data-product-id={product.id} data-product-name={product.name}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                  Quitar
+                </button>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      <!-- Molde para los productos que se agregan sin recargar la página -->
+      <template id="favItemTemplate">
+        <li class="fav-item">
+          <button type="button" class="fav-thumb js-fav-view"><i aria-hidden="true"></i><img alt="" decoding="async" hidden /></button>
+          <div class="fav-info">
+            <p class="fav-type"></p>
+            <h3 class="fav-name"></h3>
+            <strong class="fav-price"><span></span><small> MXN</small></strong>
+            <div class="fav-actions">
+              <button type="button" class="fav-view js-fav-view">Ver producto <span aria-hidden="true">→</span></button>
+              <button type="button" class="fav-remove">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                Quitar
+              </button>
+            </div>
+          </div>
+        </li>
+      </template>
+
+      <div class="fav-empty" id="favEmpty" hidden={favorites.length > 0}>
+        <span class="fav-empty-icon" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        </span>
+        <h3>Aún no tienes favoritos</h3>
+        <p>Toca el corazón de cualquier producto para guardarlo aquí.</p>
+        <a class="fav-cta fav-cta--ghost" href="/#productos">Explorar productos <span aria-hidden="true">↗</span></a>
+      </div>
+
+      <footer class="fav-foot">
+        <a class="fav-cta" href="/favoritos" data-fav-page>Ver todos mis favoritos <span aria-hidden="true">↗</span></a>
+      </footer>
+    </>
+  ) : (
+    <div class="fav-empty">
+      <span class="fav-empty-icon" aria-hidden="true">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+      </span>
+      <h3>Guarda lo que te gusta</h3>
+      <p>Inicia sesión para crear tu lista de favoritos y verla desde cualquier dispositivo.</p>
+      <a class="fav-cta" href="/login">Iniciar sesión <span aria-hidden="true">↗</span></a>
+    </div>
+  )}
+</dialog>
+
+<style>
+  .fav-drawer {
+    background: #fffdf3; border: 0; box-shadow: -20px 0 60px rgba(23,23,23,.2); color: #171717; flex-direction: column;
+    font-family: Georgia, 'Times New Roman', serif; height: 100dvh; margin: 0 0 0 auto; max-height: 100dvh; max-width: 100vw;
+    padding: 0; width: min(430px, 100vw);
+  }
+  .fav-drawer[open] { animation: fav-drawer-in .45s var(--ease-out); display: flex; }
+  .fav-drawer[open]::backdrop { animation: fav-fade-in .35s ease both; }
+  .fav-drawer.is-closing { animation: fav-drawer-out .26s ease-in forwards; }
+  .fav-drawer.is-closing::backdrop { animation: fav-fade-out .26s ease-in forwards; }
+  .fav-drawer::backdrop { backdrop-filter: blur(3px); background: rgba(23,23,23,.5); }
+  @keyframes fav-drawer-in { from { transform: translateX(100%); } to { transform: none; } }
+  @keyframes fav-drawer-out { to { transform: translateX(100%); } }
+  @keyframes fav-fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fav-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+  .fav-head { align-items: flex-start; background: #f7d21c; display: flex; justify-content: space-between; padding: 26px 24px 22px; }
+  .fav-eyebrow { color: #d93e2e; font-family: var(--font-ui); font-size: 11px; font-weight: 700; letter-spacing: 2px; margin: 0 0 6px; text-transform: uppercase; }
+  .fav-head h2 { font-size: 32px; font-weight: 400; letter-spacing: -1.2px; margin: 0; }
+  .fav-head h2 span { color: #57534e; font-family: var(--font-ui); font-size: 15px; letter-spacing: 0; }
+  .fav-close {
+    align-items: center; background: #fffdf3; border: 0; border-radius: 50%; color: #171717; cursor: pointer; display: flex; flex-shrink: 0;
+    height: 40px; justify-content: center; transition: transform .35s var(--ease-spring), background .2s, color .2s; width: 40px;
+  }
+  .fav-close:hover { background: #171717; color: #f7d21c; transform: rotate(90deg); }
+
+  .fav-list { display: flex; flex: 1; flex-direction: column; list-style: none; margin: 0; overflow-y: auto; padding: 8px 24px; }
+  .fav-item {
+    animation: fav-item-in .5s var(--ease-out) backwards; animation-delay: calc(var(--i, 0) * 60ms + 150ms);
+    border-bottom: 1px solid #e8e4da; display: flex; gap: 16px; padding: 18px 0;
+  }
+  .fav-item.is-leaving { animation: fav-item-out .32s ease-in forwards; }
+  @keyframes fav-item-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+  @keyframes fav-item-out { to { opacity: 0; transform: translateX(40px); } }
+
+  .fav-thumb { background: #ece7da; border: 0; cursor: pointer; flex-shrink: 0; height: 96px; overflow: hidden; padding: 0; position: relative; width: 96px; }
+  .fav-thumb img { height: 100%; inset: 0; object-fit: contain; padding: 8px; position: absolute; transition: transform .5s var(--ease-out); width: 100%; }
+  .fav-thumb img[hidden] { display: none; }
+  .fav-thumb:hover img { transform: scale(1.08); }
+  .fav-thumb.has-photo i { display: none; }
+  .fav-thumb i { background: #d8ee32; border-radius: 50%; display: block; height: 44px; left: 26px; position: absolute; top: 26px; width: 44px; }
+  .fav-thumb.product-padel { background: #d7e1c3; }
+  .fav-thumb.product-shoe { background: #e9c8bd; }
+  .fav-thumb.product-shirt { background: #d9d3ed; }
+  .fav-thumb.product-padel i { background: #242424; border-radius: 50% 50% 44% 44%; height: 66px; left: 36px; top: 15px; transform: rotate(28deg); width: 30px; }
+  .fav-thumb.product-shoe i { background: #fffdf3; border-bottom: 8px solid #d93e2e; border-radius: 45% 55% 18% 20%; height: 36px; left: 14px; top: 32px; transform: rotate(-12deg); width: 70px; }
+
+  .fav-info { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; }
+  .fav-type { color: #716e67; font-family: var(--font-ui); font-size: 10px; font-weight: 700; letter-spacing: .6px; margin: 0; text-transform: uppercase; }
+  .fav-name { font-size: 17px; font-weight: 400; line-height: 1.25; margin: 0; }
+  .fav-price { font-family: var(--font-ui); font-size: 14px; }
+  .fav-price small { color: #716e67; font-size: 10px; }
+  .fav-actions { align-items: center; display: flex; gap: 14px; justify-content: space-between; margin-top: auto; padding-top: 10px; }
+  .fav-view {
+    background: none; border: 0; border-bottom: 1.5px solid #171717; color: #171717; cursor: pointer; font-family: var(--font-ui); font-size: 11px;
+    font-weight: 800; letter-spacing: .5px; padding: 0 0 2px; text-transform: uppercase;
+  }
+  .fav-view span { display: inline-block; transition: transform .3s var(--ease-out); }
+  .fav-view:hover span { transform: translateX(3px); }
+  .fav-remove {
+    align-items: center; background: #fffdf3; border: 1.5px solid #d93e2e; color: #d93e2e; cursor: pointer; display: inline-flex; font-family: var(--font-ui);
+    font-size: 11px; font-weight: 800; gap: 6px; letter-spacing: .5px; padding: 6px 10px; text-transform: uppercase;
+    transition: background .15s ease, color .15s ease, transform .15s var(--ease-out);
+  }
+  .fav-remove:hover:not(:disabled) { background: #d93e2e; color: #fffdf3; }
+  .fav-remove:active:not(:disabled) { transform: scale(.95); }
+  .fav-remove:disabled { cursor: wait; opacity: .5; }
+
+  .fav-empty { align-items: center; display: flex; flex: 1; flex-direction: column; justify-content: center; padding: 40px 32px; text-align: center; }
+  .fav-empty[hidden] { display: none; }
+  .fav-empty-icon { align-items: center; background: #f7d21c; border-radius: 50%; display: flex; height: 64px; justify-content: center; margin-bottom: 18px; width: 64px; }
+  .fav-empty h3 { font-size: 24px; font-weight: 400; letter-spacing: -.6px; margin: 0 0 8px; }
+  .fav-empty p { color: #716e67; font-family: var(--font-ui); font-size: 14px; line-height: 1.5; margin: 0 0 22px; max-width: 300px; }
+
+  .fav-foot { border-top: 1px solid #e8e4da; padding: 18px 24px 22px; }
+  .fav-cta {
+    align-items: center; background: #171717; color: #fffdf3; display: inline-flex; font-family: var(--font-ui); font-size: 12px; font-weight: 800; gap: 22px;
+    isolation: isolate; justify-content: space-between; letter-spacing: .4px; overflow: hidden; padding: 15px 20px; position: relative;
+    text-decoration: none; text-transform: uppercase;
+  }
+  .fav-cta::before { background: #d93e2e; content: ''; inset: 0; position: absolute; transform: scaleX(0); transform-origin: right; transition: transform .45s var(--ease-out); z-index: -1; }
+  .fav-cta:hover::before { transform: scaleX(1); transform-origin: left; }
+  .fav-cta span { display: inline-block; font-size: 16px; transition: transform .35s var(--ease-out); }
+  .fav-cta:hover span { transform: translate(3px, -3px); }
+  .fav-foot .fav-cta { width: 100%; }
+  .fav-cta--ghost { background: transparent; border: 2px solid #171717; color: #171717; }
+  .fav-cta--ghost::before { background: #f7d21c; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fav-drawer, .fav-drawer *, .fav-drawer::backdrop { animation: none !important; transition-duration: .01ms !important; }
+  }
+</style>
+
+<script>
+  type ProductData = Record<string, string | undefined>;
+
+  const drawer = document.getElementById('favDrawer') as HTMLDialogElement | null;
+
+  if (drawer) {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const isLoggedIn = drawer.dataset.loggedIn === 'true';
+    const list = document.getElementById('favList');
+    const template = document.getElementById('favItemTemplate') as HTMLTemplateElement | null;
+    const empty = document.getElementById('favEmpty');
+    const drawerCount = document.getElementById('favDrawerCount');
+    const ids = new Set((drawer.dataset.favoriteIds || '').split(',').filter(Boolean).map(Number));
+    let lastTrigger: HTMLElement | null = null;
+
+    // Contadores (ícono del header y título del panel) y estado vacío
+    const refresh = () => {
+      const total = ids.size;
+      document.querySelectorAll<HTMLElement>('[data-fav-count]').forEach((badge) => {
+        const changed = badge.dataset.count !== String(total);
+        badge.textContent = String(total);
+        badge.dataset.count = String(total);
+        if (changed && total > 0 && !reduceMotion) {
+          badge.classList.remove('bump');
+          void badge.offsetWidth;
+          badge.classList.add('bump');
+        }
+      });
+      if (drawerCount) drawerCount.textContent = `(${total})`;
+      if (empty) empty.hidden = total > 0;
+    };
+
+    const setData = (el: HTMLElement, data: ProductData) => {
+      Object.entries(data).forEach(([key, value]) => {
+        if (value !== undefined) el.dataset[key] = value;
+      });
+    };
+
+    // Crea la fila de un producto agregado desde una tarjeta, con los mismos datos del detalle
+    const buildItem = (data: ProductData): HTMLElement | null => {
+      const fragment = template?.content.cloneNode(true) as DocumentFragment | undefined;
+      const item = fragment?.querySelector<HTMLElement>('.fav-item');
+      if (!item) return null;
+      item.dataset.favItem = data.productId || '';
+
+      const thumb = item.querySelector<HTMLElement>('.fav-thumb');
+      if (thumb) {
+        setData(thumb, data);
+        thumb.setAttribute('aria-label', `Ver ${data.product || ''}`);
+        if (data.theme) thumb.classList.add(data.theme);
+        const img = thumb.querySelector('img');
+        if (img && data.image) {
+          img.src = data.image;
+          img.hidden = false;
+          thumb.classList.add('has-photo');
+        }
+      }
+      const view = item.querySelector<HTMLElement>('.fav-view');
+      if (view) setData(view, data);
+      const remove = item.querySelector<HTMLElement>('.fav-remove');
+      if (remove) {
+        remove.dataset.productId = data.productId || '';
+        remove.dataset.productName = data.product || '';
+      }
+      const setText = (selector: string, text: string) => {
+        const el = item.querySelector(selector);
+        if (el) el.textContent = text;
+      };
+      setText('.fav-type', data.type || '');
+      setText('.fav-name', data.product || '');
+      setText('.fav-price span', data.price || '');
+      return item;
+    };
+
+    const removeItem = (productId: number) => {
+      const item = list?.querySelector<HTMLElement>(`[data-fav-item="${productId}"]`);
+      if (!item) return;
+      if (reduceMotion || !drawer.open) {
+        item.remove();
+        return;
+      }
+      item.classList.add('is-leaving');
+      window.setTimeout(() => item.remove(), 320);
+    };
+
+    // Todas las partes de la página avisan con este evento cuando cambia un favorito
+    document.addEventListener('favorites:change', (event: Event) => {
+      const { productId, active, product } = (event as CustomEvent).detail as { productId: number; active: boolean; product?: ProductData };
+      if (active) {
+        ids.add(productId);
+        if (!list?.querySelector(`[data-fav-item="${productId}"]`) && product) {
+          const item = buildItem({ ...product, productId: String(productId) });
+          if (item) list?.prepend(item);
+        }
+      } else {
+        ids.delete(productId);
+        removeItem(productId);
+      }
+      refresh();
+    });
+
+    const open = (trigger?: HTMLElement | null) => {
+      if (drawer.open) return;
+      lastTrigger = trigger ?? null;
+      drawer.classList.remove('is-closing');
+      list?.querySelectorAll<HTMLElement>('.fav-item').forEach((item, i) => item.style.setProperty('--i', String(i)));
+      drawer.showModal();
+      lastTrigger?.setAttribute('aria-expanded', 'true');
+    };
+
+    const close = (instant = false) => {
+      if (!drawer.open || drawer.classList.contains('is-closing')) return;
+      lastTrigger?.setAttribute('aria-expanded', 'false');
+      if (instant || reduceMotion) {
+        drawer.close();
+        return;
+      }
+      drawer.classList.add('is-closing');
+      window.setTimeout(() => {
+        drawer.classList.remove('is-closing');
+        drawer.close();
+      }, 260);
+    };
+    (window as any).closeFavDrawer = close;
+    (window as any).openFavDrawer = open;
+
+    // Cualquier enlace a /favoritos abre el panel, salvo el de "Ver todos mis favoritos"
+    document.addEventListener('click', (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const trigger = (event.target as HTMLElement | null)?.closest<HTMLElement>('a[href="/favoritos"], [data-fav-open]');
+      if (!trigger || trigger.hasAttribute('data-fav-page')) return;
+      event.preventDefault();
+      open(trigger);
+    });
+
+    document.getElementById('favClose')?.addEventListener('click', () => close());
+    drawer.addEventListener('cancel', (event: Event) => {
+      event.preventDefault();
+      close();
+    });
+    drawer.addEventListener('click', (event: MouseEvent) => {
+      if (event.target === drawer) close();
+    });
+
+    list?.addEventListener('click', async (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+
+      // "Ver producto": la tienda abre el detalle; en otras páginas se va a la tienda con ese producto
+      const view = target.closest<HTMLElement>('.js-fav-view');
+      if (view) {
+        const handled = !document.dispatchEvent(new CustomEvent('favorites:view', { cancelable: true, detail: { button: view } }));
+        if (handled) close(true);
+        else window.location.href = `/?ver=${encodeURIComponent(view.dataset.productId || '')}`;
+        return;
+      }
+
+      const remove = target.closest<HTMLButtonElement>('.fav-remove');
+      if (!remove || !isLoggedIn) return;
+      const productId = Number(remove.dataset.productId);
+      remove.disabled = true;
+      try {
+        const response = await fetch('/api/favoritos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productId }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'No se pudo actualizar el favorito.');
+        document.dispatchEvent(new CustomEvent('favorites:change', { detail: { productId, active: Boolean(result.favorite) } }));
+        (window as any).trackEvent?.(result.favorite ? 'favorito_agregado' : 'favorito_removido', { producto: remove.dataset.productName || '' });
+      } catch (error) {
+        console.error(error);
+        remove.disabled = false;
+      }
+    });
+  }
+</script>

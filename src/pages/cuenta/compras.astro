@@ -1,9 +1,13 @@
 ---
 import Layout from '../../layouts/Layout.astro';
+import AccountHeader from '../../components/AccountHeader.astro';
+import EstadoPedido from '../../components/EstadoPedido.astro';
 import { db } from '../../db/db';
-import { Ventas, Facturas, Usuarios, Clientes } from '../../db/schema';
+import { Usuarios } from '../../db/schema';
 import { findClientId } from '../../lib/clientes';
-import { eq, desc } from 'drizzle-orm';
+import { getComprasCliente, type CompraResumen } from '../../lib/compras';
+import { ESTADOS_VENTA_EFECTIVA } from '../../lib/ventas';
+import { eq } from 'drizzle-orm';
 
 const sessionUser = Astro.locals.user;
 
@@ -13,47 +17,7 @@ if (!sessionUser) {
 
 // Buscar el cliente asociado al usuario
 const clientId = await findClientId(sessionUser.id);
-
-type Compra = {
-  id: number;
-  folio: string | null;
-  fecha: Date;
-  total: string;
-  estado: string;
-};
-
-let compras: Compra[] = [];
-
-if (clientId !== null) {
-  // Consultar ventas del más reciente al más antiguo
-  const ventas = await db
-    .select({
-      id: Ventas.id,
-      fecha_venta: Ventas.fecha_venta,
-      total: Ventas.total,
-      estado: Ventas.estado,
-    })
-    .from(Ventas)
-    .where(eq(Ventas.id_cliente, clientId))
-    .orderBy(desc(Ventas.fecha_venta));
-
-  // Para cada venta, buscar el folio en Facturas (si existe)
-  for (const venta of ventas) {
-    const factura = await db
-      .select({ folio: Facturas.folio })
-      .from(Facturas)
-      .where(eq(Facturas.id_venta, venta.id))
-      .limit(1);
-
-    compras.push({
-      id: venta.id,
-      folio: factura[0]?.folio ?? null,
-      fecha: venta.fecha_venta,
-      total: venta.total,
-      estado: venta.estado,
-    });
-  }
-}
+const compras: CompraResumen[] = clientId !== null ? await getComprasCliente(clientId) : [];
 
 // Nombre del usuario para el saludo
 const user = await db
@@ -64,413 +28,251 @@ const user = await db
 
 const nombreUsuario = user[0]?.nombre?.split(' ')[0] ?? 'Usuario';
 
-// Mapa de colores por estado
-const estadoConfig: Record<string, { label: string; color: string; bg: string }> = {
-  'Procesando':  { label: 'Procesando',  color: '#b45309', bg: '#fef3c7' },
-  'Confirmada':  { label: 'Confirmada',  color: '#1d4ed8', bg: '#dbeafe' },
-  'Entregada':   { label: 'Entregada',   color: '#15803d', bg: '#dcfce7' },
-  'Cancelada':   { label: 'Cancelada',   color: '#b91c1c', bg: '#fee2e2' },
-};
+const efectivas = compras.filter((c) => ESTADOS_VENTA_EFECTIVA.includes(c.estado));
+const totalInvertido = efectivas.reduce((total, c) => total + c.total, 0);
+const entregadas = compras.filter((c) => c.estado === 'Entregada').length;
 
-function getEstadoStyle(estado: string) {
-  return estadoConfig[estado] ?? { label: estado, color: '#374151', bg: '#f3f4f6' };
-}
+// Grupo de cada pedido para los filtros
+const grupo = (estado: string) =>
+  estado === 'Entregada' ? 'entregados' : estado === 'Cancelada' ? 'cancelados' : 'en-proceso';
+
+const filtros = [
+  { id: 'todos', label: 'Todos', total: compras.length },
+  { id: 'en-proceso', label: 'En proceso', total: compras.filter((c) => grupo(c.estado) === 'en-proceso').length },
+  { id: 'entregados', label: 'Entregados', total: entregadas },
+  { id: 'cancelados', label: 'Cancelados', total: compras.filter((c) => grupo(c.estado) === 'cancelados').length },
+];
 
 function formatFecha(fecha: Date): string {
-  return new Intl.DateTimeFormat('es-MX', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-  }).format(new Date(fecha));
+  return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date(fecha));
 }
 
-function formatMonto(monto: string): string {
-  return new Intl.NumberFormat('es-MX', {
-    style: 'currency',
-    currency: 'MXN',
-  }).format(Number(monto));
+function formatMonto(monto: number): string {
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(monto);
 }
 ---
 
-<Layout>
+<Layout title="Mis compras | SporTenis">
   <div class="compras-page">
-    <!-- Header -->
-    <header class="topbar">
-      <a class="brand" href="/" aria-label="SporTenis, inicio">
-        <span class="brand-mark">S</span>
-        <span>Spor<span>Tenis</span></span>
-      </a>
-
-      <div class="store-actions">
-        <a href="/cuenta" class="back-link">← Mi cuenta</a>
-
-        <div class="user-nav">
-          <a href="/cuenta" class="nav-icon" title="Mi Cuenta">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          </a>
-          <a href="/monedero" class="nav-icon" title="Mi Monedero">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 9h18M16 15h.01"/><path d="M7 5V3h10v2"/></svg>
-          </a>
-          <a href="/favoritos" class="nav-icon" title="Mis Favoritos">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-          </a>
-          <a href="/carrito" class="nav-icon" title="Mi Carrito">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-          </a>
-        </div>
-      </div>
-    </header>
+    <AccountHeader backHref="/" backLabel="Volver a la tienda" active="compras" />
 
     <main class="compras-main">
-      <div class="compras-container">
-        <!-- Encabezado de sección -->
-        <div class="section-header">
-          <div class="section-icon">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
-              <line x1="3" y1="6" x2="21" y2="6"/>
-              <path d="M16 10a4 4 0 0 1-8 0"/>
-            </svg>
-          </div>
-          <div>
-            <h1>Mis compras</h1>
-            <p class="section-sub">Hola, <strong>{nombreUsuario}</strong>. Aquí está tu historial de pedidos.</p>
-          </div>
+      <section class="page-head">
+        <div>
+          <nav class="breadcrumb enter" aria-label="Ruta de navegación" style="--d: 0ms">
+            <a href="/cuenta">Mi cuenta</a><span aria-hidden="true">/</span><span>Mis compras</span>
+          </nav>
+          <p class="eyebrow enter" style="--d: 60ms"><span></span> Tu historial</p>
+          <h1 class="enter" style="--d: 120ms">Mis <em>compras</em></h1>
+          <p class="head-sub enter" style="--d: 180ms">Hola, <strong>{nombreUsuario}</strong>. Consulta el estado y los detalles de cada uno de tus pedidos.</p>
         </div>
-
-        <!-- Tabla / lista de compras -->
-        {compras.length === 0 ? (
-          <div class="empty-state">
-            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
-              <line x1="3" y1="6" x2="21" y2="6"/>
-              <path d="M16 10a4 4 0 0 1-8 0"/>
-            </svg>
-            <p>Aún no tienes compras registradas.</p>
-            <a href="/" class="btn-shop">Ir a la tienda</a>
-          </div>
-        ) : (
-          <>
-            <!-- Vista desktop: tabla -->
-            <div class="table-wrap">
-              <table class="compras-table">
-                <thead>
-                  <tr>
-                    <th>Folio / Pedido</th>
-                    <th>Fecha</th>
-                    <th>Total</th>
-                    <th>Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {compras.map((c) => {
-                    const est = getEstadoStyle(c.estado);
-                    return (
-                      <tr>
-                        <td class="folio-cell">
-                          {c.folio ? (
-                            <span class="folio">{c.folio}</span>
-                          ) : (
-                            <span class="folio folio-id">#{c.id}</span>
-                          )}
-                        </td>
-                        <td class="fecha-cell">{formatFecha(c.fecha)}</td>
-                        <td class="total-cell">{formatMonto(c.total)}</td>
-                        <td>
-                          <span
-                            class="badge"
-                            style={`color:${est.color}; background:${est.bg};`}
-                          >
-                            {est.label}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <!-- Vista móvil: tarjetas -->
-            <div class="cards-list">
-              {compras.map((c) => {
-                const est = getEstadoStyle(c.estado);
-                return (
-                  <div class="compra-card">
-                    <div class="card-top">
-                      <span class="folio">
-                        {c.folio ?? `#${c.id}`}
-                      </span>
-                      <span
-                        class="badge"
-                        style={`color:${est.color}; background:${est.bg};`}
-                      >
-                        {est.label}
-                      </span>
-                    </div>
-                    <div class="card-bottom">
-                      <span class="card-fecha">{formatFecha(c.fecha)}</span>
-                      <span class="card-total">{formatMonto(c.total)}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
+        {compras.length > 0 && (
+          <dl class="head-stats enter" style="--d: 240ms">
+            <div><dt>{compras.length}</dt><dd>{compras.length === 1 ? 'Pedido' : 'Pedidos'}</dd></div>
+            <div><dt>{entregadas}</dt><dd>{entregadas === 1 ? 'Entregado' : 'Entregados'}</dd></div>
+            <div><dt>{formatMonto(totalInvertido)}</dt><dd>Total comprado</dd></div>
+          </dl>
         )}
-      </div>
+      </section>
+
+      {compras.length === 0 ? (
+        <div class="empty-state enter" style="--d: 260ms">
+          <span class="empty-icon" aria-hidden="true">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+          </span>
+          <h2>Aún no tienes compras</h2>
+          <p>Cuando hagas tu primer pedido aparecerá aquí con todos sus detalles.</p>
+          <a href="/" class="primary-button">Ir a la tienda <span aria-hidden="true">↗</span></a>
+        </div>
+      ) : (
+        <>
+          <div class="filters enter" role="tablist" aria-label="Filtrar pedidos" style="--d: 260ms">
+            {filtros.map((f, i) => (
+              <button type="button" role="tab" class="filter-chip" data-filter={f.id} aria-selected={i === 0 ? 'true' : 'false'} disabled={f.total === 0 && i !== 0}>
+                {f.label} <span>{f.total}</span>
+              </button>
+            ))}
+          </div>
+
+          <ol class="orders" id="ordersList">
+            {compras.map((c, i) => (
+              <li class="order-card" data-group={grupo(c.estado)} style={`--i: ${Math.min(i, 8)}`}>
+                <a href={`/cuenta/compras/${c.id}`} class="order-link" aria-label={`Ver detalles del pedido ${c.folio ?? `#${c.id}`}`}>
+                  <div class="order-thumbs" aria-hidden="true">
+                    {c.vistaPrevia.map((p) => (
+                      <span class={`thumb ${p.tema ?? ''}`}>
+                        {p.imagen ? <img src={p.imagen} alt="" loading="lazy" decoding="async" /> : <i></i>}
+                      </span>
+                    ))}
+                    {c.productosExtra > 0 && <span class="thumb thumb-more">+{c.productosExtra}</span>}
+                  </div>
+
+                  <div class="order-main">
+                    <div class="order-top">
+                      <span class="order-folio">{c.folio ?? `Pedido #${c.id}`}</span>
+                      <EstadoPedido estado={c.estado} />
+                    </div>
+                    <p class="order-names">{c.vistaPrevia.map((p) => p.nombre).join(', ')}{c.productosExtra > 0 ? ` y ${c.productosExtra} más` : ''}</p>
+                    <p class="order-meta">{formatFecha(c.fecha)} · {c.unidades} {c.unidades === 1 ? 'artículo' : 'artículos'}</p>
+                  </div>
+
+                  <div class="order-side">
+                    <span class="order-total-label">Total</span>
+                    <strong class="order-total">{formatMonto(c.total)}</strong>
+                    <span class="order-cta">Ver detalles <span aria-hidden="true">→</span></span>
+                  </div>
+                </a>
+              </li>
+            ))}
+          </ol>
+          <p class="filter-empty" id="filterEmpty" hidden>No hay pedidos en esta categoría.</p>
+        </>
+      )}
     </main>
   </div>
 </Layout>
 
 <style>
-  /* ── Reset & base ── */
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :global(*) { box-sizing: border-box; }
+  :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; margin: 0; -webkit-font-smoothing: antialiased; }
 
-  .compras-page {
-    min-height: 100vh;
-    background: #faf9f7;
-    font-family: 'Helvetica Neue', Arial, sans-serif;
-  }
+  .compras-page { min-height: 100vh; }
+  .compras-main { margin: 0 auto; max-width: 1120px; padding: clamp(28px, 4vw, 48px) clamp(20px, 4vw, 48px) 80px; }
 
-  /* ── Topbar (mismo estilo que cuenta.astro) ── */
-  .topbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 32px;
-    height: 64px;
-    background: #fff;
-    border-bottom: 1px solid #eee;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-  }
+  /* ── Encabezado ─────────────────────────────────────────── */
+  .page-head { align-items: flex-end; display: flex; flex-wrap: wrap; gap: 28px; justify-content: space-between; margin-bottom: 30px; }
+  .breadcrumb { align-items: center; display: flex; font-family: var(--font-ui); font-size: 12px; gap: 8px; margin-bottom: 18px; }
+  .breadcrumb a { color: #716e67; text-decoration: none; }
+  .breadcrumb a:hover { color: #171717; text-decoration: underline; }
+  .breadcrumb span:last-child { font-weight: 700; }
+  .eyebrow { color: #d93e2e; font-family: var(--font-ui); font-size: 11px; font-weight: 700; letter-spacing: 2px; margin: 0 0 8px; text-transform: uppercase; }
+  .eyebrow span { background: #f7d21c; display: inline-block; height: 7px; margin-right: 8px; width: 7px; }
+  h1 { font-size: clamp(40px, 5.5vw, 64px); font-weight: 400; letter-spacing: -2.5px; line-height: .95; margin: 0 0 14px; }
+  h1 em { color: #d93e2e; font-style: italic; }
+  .head-sub { color: #57534e; font-family: var(--font-ui); font-size: 14px; line-height: 1.6; margin: 0; max-width: 460px; }
+  .head-sub strong { color: #171717; }
+  .head-stats { background: #fffdf3; border: 2px solid #171717; box-shadow: 6px 6px 0 #171717; display: flex; margin: 0; }
+  .head-stats div { border-right: 1px solid #e8e4da; display: flex; flex-direction: column; gap: 6px; padding: 16px 22px; }
+  .head-stats div:last-child { border-right: 0; }
+  .head-stats dt { font-size: 24px; font-variant-numeric: tabular-nums; letter-spacing: -.6px; line-height: 1; }
+  .head-stats dd { color: #716e67; font-family: var(--font-ui); font-size: 10px; font-weight: 700; letter-spacing: 1px; margin: 0; text-transform: uppercase; }
 
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    text-decoration: none;
-    color: #171717;
-    font-size: 20px;
-    font-weight: 700;
-    letter-spacing: -0.5px;
+  /* ── Filtros ────────────────────────────────────────────── */
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  .filter-chip {
+    align-items: center; background: transparent; border: 1.5px solid #d8d3c3; border-radius: 999px; color: #171717; cursor: pointer; display: inline-flex;
+    font-family: var(--font-ui); font-size: 12px; font-weight: 700; gap: 8px; padding: 8px 14px; transition: background .2s, border-color .2s, color .2s;
   }
-  .brand-mark {
-    width: 32px;
-    height: 32px;
-    background: #d93e2e;
-    color: #fff;
-    border-radius: 8px;
-    display: grid;
-    place-items: center;
-    font-size: 15px;
-    font-weight: 900;
-    flex-shrink: 0;
-  }
-  .brand span span { color: #d93e2e; }
+  .filter-chip span { background: #ece7da; border-radius: 999px; font-size: 10px; padding: 2px 7px; transition: background .2s, color .2s; }
+  .filter-chip:hover:not(:disabled) { border-color: #171717; }
+  .filter-chip[aria-selected="true"] { background: #171717; border-color: #171717; color: #f7d21c; }
+  .filter-chip[aria-selected="true"] span { background: #f7d21c; color: #171717; }
+  .filter-chip:disabled { cursor: not-allowed; opacity: .45; }
 
-  .store-actions {
-    display: flex;
-    align-items: center;
-    gap: 24px;
+  /* ── Pedidos ────────────────────────────────────────────── */
+  .orders { display: flex; flex-direction: column; gap: 14px; list-style: none; margin: 0; padding: 0; }
+  .order-card { animation: rise .55s var(--ease-out) backwards; animation-delay: calc(var(--i, 0) * 70ms + 300ms); }
+  .order-card[hidden] { display: none; }
+  .order-card.is-filtered-in { animation: rise .4s var(--ease-out) backwards; animation-delay: calc(var(--i, 0) * 50ms); }
+  .order-link {
+    align-items: center; background: #fffdf3; border: 2px solid #171717; color: inherit; display: grid; gap: 22px;
+    grid-template-columns: auto 1fr auto; padding: 18px 22px; text-decoration: none;
+    transition: box-shadow .3s var(--ease-out), transform .3s var(--ease-out);
   }
-  .back-link {
-    font-size: 13px;
-    color: #555;
-    text-decoration: none;
-    transition: color 0.15s;
-  }
-  .back-link:hover { color: #171717; }
+  .order-link:hover { box-shadow: 6px 6px 0 #171717; transform: translate(-3px, -3px); }
+  .order-link:active { box-shadow: 2px 2px 0 #171717; transform: translate(-1px, -1px); }
 
-  .user-nav {
-    display: flex;
-    align-items: center;
-    gap: 4px;
+  .order-thumbs { display: flex; width: 130px; }
+  .thumb {
+    align-items: center; background: #ece7da; border: 2px solid #fffdf3; display: flex; flex-shrink: 0; height: 72px; justify-content: center;
+    overflow: hidden; position: relative; transition: transform .35s var(--ease-out); width: 72px;
   }
-  .nav-icon {
-    width: 38px;
-    height: 38px;
-    display: grid;
-    place-items: center;
-    border-radius: 10px;
-    color: #555;
-    text-decoration: none;
-    transition: background 0.15s, color 0.15s;
-  }
-  .nav-icon:hover, .nav-icon.active {
-    background: #f3f3f1;
-    color: #171717;
-  }
+  .thumb + .thumb { margin-left: -18px; }
+  .order-link:hover .thumb:nth-child(2) { transform: translateX(8px); }
+  .order-link:hover .thumb:nth-child(3) { transform: translateX(16px); }
+  .thumb img { height: 100%; inset: 0; object-fit: contain; padding: 6px; position: absolute; width: 100%; }
+  .thumb i { background: #d8ee32; border-radius: 50%; display: block; height: 34px; width: 34px; }
+  .thumb.product-padel { background: #d7e1c3; }
+  .thumb.product-shoe { background: #e9c8bd; }
+  .thumb.product-shirt { background: #d9d3ed; }
+  .thumb.product-padel i { background: #242424; border-radius: 50% 50% 44% 44%; height: 50px; transform: rotate(28deg); width: 22px; }
+  .thumb.product-shoe i { background: #fffdf3; border-bottom: 6px solid #d93e2e; border-radius: 45% 55% 18% 20%; height: 26px; transform: rotate(-12deg); width: 52px; }
+  .thumb-more { background: #171717; color: #f7d21c; font-family: var(--font-ui); font-size: 13px; font-weight: 800; }
 
-  /* ── Main ── */
-  .compras-main {
-    padding: 48px 24px 72px;
-  }
+  .order-main { min-width: 0; }
+  .order-top { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+  .order-folio { font-family: var(--font-ui); font-size: 13px; font-weight: 800; letter-spacing: .4px; }
+  .order-names { font-size: 18px; line-height: 1.25; margin: 0 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .order-meta { color: #716e67; font-family: var(--font-ui); font-size: 12px; margin: 0; }
 
-  .compras-container {
-    max-width: 860px;
-    margin: 0 auto;
+  .order-side { align-items: flex-end; display: flex; flex-direction: column; gap: 4px; text-align: right; }
+  .order-total-label { color: #716e67; font-family: var(--font-ui); font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+  .order-total { font-family: var(--font-ui); font-size: 18px; white-space: nowrap; }
+  .order-cta {
+    border-bottom: 1.5px solid #171717; font-family: var(--font-ui); font-size: 11px; font-weight: 800; letter-spacing: .5px;
+    margin-top: 8px; padding-bottom: 2px; text-transform: uppercase; white-space: nowrap;
   }
+  .order-cta span { display: inline-block; transition: transform .3s var(--ease-out); }
+  .order-link:hover .order-cta span { transform: translateX(4px); }
+  .filter-empty { color: #716e67; font-family: var(--font-ui); font-size: 14px; padding: 30px 0; text-align: center; }
 
-  /* ── Encabezado ── */
-  .section-header {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 32px;
+  /* ── Vacío ──────────────────────────────────────────────── */
+  .empty-state { align-items: center; background: #fffdf3; border: 2px solid #171717; box-shadow: 6px 6px 0 #171717; display: flex; flex-direction: column; padding: 60px 24px; text-align: center; }
+  .empty-icon { align-items: center; background: #f7d21c; border-radius: 50%; display: flex; height: 68px; justify-content: center; margin-bottom: 18px; width: 68px; }
+  .empty-state h2 { font-size: 28px; font-weight: 400; letter-spacing: -.8px; margin: 0 0 8px; }
+  .empty-state p { color: #716e67; font-family: var(--font-ui); font-size: 14px; margin: 0 0 24px; }
+  .primary-button {
+    align-items: center; background: #171717; color: #fffdf3; display: inline-flex; font-family: var(--font-ui); font-size: 12px; font-weight: 800; gap: 22px;
+    isolation: isolate; letter-spacing: .4px; overflow: hidden; padding: 15px 20px; position: relative; text-decoration: none; text-transform: uppercase;
   }
-  .section-icon {
-    width: 56px;
-    height: 56px;
-    background: #171717;
-    color: #fff;
-    border-radius: 16px;
-    display: grid;
-    place-items: center;
-    flex-shrink: 0;
-  }
-  h1 {
-    font-size: clamp(22px, 3vw, 32px);
-    font-weight: 400;
-    letter-spacing: -1px;
-    color: #171717;
-  }
-  .section-sub {
-    color: #716e67;
-    font-size: 14px;
-    margin-top: 2px;
-  }
-  .section-sub strong { color: #171717; font-weight: 600; }
+  .primary-button::before { background: #d93e2e; content: ''; inset: 0; position: absolute; transform: scaleX(0); transform-origin: right; transition: transform .45s var(--ease-out); z-index: -1; }
+  .primary-button:hover::before { transform: scaleX(1); transform-origin: left; }
+  .primary-button span { font-size: 16px; }
 
-  /* ── Tabla desktop ── */
-  .table-wrap {
-    background: #fff;
-    border-radius: 16px;
-    border: 1px solid #eee;
-    overflow: hidden;
+  .enter { animation: rise .7s var(--ease-out) backwards; animation-delay: var(--d, 0ms); }
+  @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+
+  @media (max-width: 760px) {
+    .head-stats { width: 100%; }
+    .head-stats div { flex: 1; padding: 14px; }
+    .head-stats dt { font-size: 19px; }
+    .order-link { gap: 14px 16px; grid-template-columns: auto 1fr; padding: 16px; }
+    .order-side { align-items: center; border-top: 1px dashed #d8d3c3; flex-direction: row; grid-column: 1 / -1; justify-content: space-between; padding-top: 12px; }
+    .order-total-label { display: none; }
+    .order-cta { margin-top: 0; }
+    .thumb { height: 56px; width: 56px; }
+    .order-thumbs { width: 98px; }
+    .order-names { font-size: 16px; white-space: normal; }
   }
 
-  .compras-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 14px;
-  }
-
-  .compras-table thead tr {
-    background: #f7f6f4;
-    border-bottom: 1px solid #eee;
-  }
-  .compras-table th {
-    padding: 14px 20px;
-    text-align: left;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #888;
-  }
-  .compras-table td {
-    padding: 16px 20px;
-    border-bottom: 1px solid #f3f3f1;
-    color: #171717;
-    vertical-align: middle;
-  }
-  .compras-table tbody tr:last-child td {
-    border-bottom: none;
-  }
-  .compras-table tbody tr:hover td {
-    background: #faf9f7;
-  }
-
-  .folio {
-    font-family: 'Courier New', monospace;
-    font-size: 13px;
-    font-weight: 600;
-    color: #171717;
-    background: #f3f3f1;
-    padding: 3px 8px;
-    border-radius: 6px;
-  }
-  .folio-id { color: #888; }
-
-  .fecha-cell { color: #555; }
-  .total-cell { font-weight: 600; }
-
-  /* ── Badge de estado ── */
-  .badge {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
-  /* ── Tarjetas móvil ── */
-  .cards-list { display: none; }
-
-  .compra-card {
-    background: #fff;
-    border: 1px solid #eee;
-    border-radius: 14px;
-    padding: 16px 20px;
-    margin-bottom: 12px;
-  }
-  .card-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 10px;
-  }
-  .card-bottom {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 13px;
-  }
-  .card-fecha { color: #888; }
-  .card-total { font-weight: 600; color: #171717; }
-
-  /* ── Estado vacío ── */
-  .empty-state {
-    text-align: center;
-    padding: 72px 24px;
-    background: #fff;
-    border-radius: 16px;
-    border: 1px solid #eee;
-    color: #aaa;
-  }
-  .empty-state svg { margin-bottom: 16px; }
-  .empty-state p {
-    font-size: 15px;
-    margin-bottom: 24px;
-    color: #888;
-  }
-  .btn-shop {
-    display: inline-block;
-    padding: 12px 28px;
-    background: #171717;
-    color: #fff;
-    border-radius: 999px;
-    font-size: 14px;
-    text-decoration: none;
-    transition: background 0.18s;
-  }
-  .btn-shop:hover { background: #333; }
-
-  /* ── Responsive ── */
-  @media (max-width: 640px) {
-    .topbar { padding: 0 16px; }
-    .compras-main { padding: 28px 16px 48px; }
-
-    .table-wrap { display: none; }
-    .cards-list { display: block; }
-
-    .section-header { gap: 12px; }
-    .section-icon { width: 46px; height: 46px; border-radius: 12px; }
-    .back-link { display: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .enter, .order-card, .order-card.is-filtered-in { animation: none; }
+    .order-link, .thumb, .primary-button::before { transition: none; }
   }
 </style>
 
+<script>
+  // Filtros de pedidos (solo cambia lo que se muestra; no modifica nada)
+  const chips = Array.from(document.querySelectorAll<HTMLButtonElement>('.filter-chip'));
+  const cards = Array.from(document.querySelectorAll<HTMLElement>('.order-card'));
+  const filterEmpty = document.getElementById('filterEmpty');
+
+  chips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const filter = chip.dataset.filter;
+      chips.forEach((c) => c.setAttribute('aria-selected', String(c === chip)));
+      let visible = 0;
+      cards.forEach((card) => {
+        const show = filter === 'todos' || card.dataset.group === filter;
+        card.hidden = !show;
+        card.classList.remove('is-filtered-in');
+        if (show) {
+          card.style.setProperty('--i', String(Math.min(visible++, 8)));
+          void card.offsetWidth;
+          card.classList.add('is-filtered-in');
+        }
+      });
+      if (filterEmpty) filterEmpty.hidden = visible > 0;
+    });
+  });
+</script>

@@ -1,0 +1,165 @@
+---
+// Los 3 botones del header en todas las pantallas: perfil (con menú), favoritos (abre el panel) y carrito.
+// Los contadores llevan data-fav-count / data-cart-count para que los scripts los actualicen sin recargar.
+import { getCartItems } from '../lib/cart';
+import { getFavoriteIds, getStoreProducts } from '../lib/catalogo';
+import { findClientId } from '../lib/clientes';
+
+interface Props {
+  current?: 'cuenta' | 'favoritos' | 'carrito';
+}
+
+const { current } = Astro.props;
+const user = Astro.locals.user;
+const isLoggedIn = Boolean(user);
+
+let cartUnits = 0;
+let favoriteCount = 0;
+if (user) {
+  const clientId = await findClientId(user.id);
+  if (clientId !== null) {
+    cartUnits = (await getCartItems(clientId)).reduce((total, item) => total + item.cantidad, 0);
+  }
+  // Solo cuentan los favoritos de productos activos, igual que en el panel
+  favoriteCount = (await getStoreProducts(await getFavoriteIds(user.id))).length;
+}
+---
+
+<div class="hdr-actions">
+  <div class="hdr-account">
+    <button
+      class:list={['hdr-icon', { 'is-current': current === 'cuenta' }]}
+      type="button"
+      aria-label="Mi cuenta"
+      aria-haspopup="true"
+      aria-expanded="false"
+      data-account-btn
+    >
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    </button>
+    <div class="hdr-dropdown" role="menu" data-account-menu>
+      {isLoggedIn ? (
+        <>
+          <a href="/cuenta" class="hdr-item" role="menuitem">
+            <span class="hdr-item-icon" aria-hidden="true">◉</span>
+            <span><strong>Mi perfil</strong><small>Ver y editar tus datos</small></span>
+          </a>
+          <a href="/cuenta/compras" class="hdr-item" role="menuitem">
+            <span class="hdr-item-icon" aria-hidden="true">▤</span>
+            <span><strong>Mis compras</strong><small>Historial de tus pedidos</small></span>
+          </a>
+          <a href="/monedero" class="hdr-item" role="menuitem">
+            <span class="hdr-item-icon" aria-hidden="true">＄</span>
+            <span><strong>Mi monedero</strong><small>Consulta y administra tu saldo</small></span>
+          </a>
+          <div class="hdr-divider"></div>
+          <form method="POST" action="/login" class="hdr-logout">
+            <input type="hidden" name="action" value="logout" />
+            <button type="submit" class="hdr-item" role="menuitem">
+              <span class="hdr-item-icon" aria-hidden="true">↩</span>
+              <span><strong>Cerrar sesión</strong><small>Salir de tu cuenta</small></span>
+            </button>
+          </form>
+        </>
+      ) : (
+        <a href="/login" class="hdr-item hdr-item--highlight" role="menuitem">
+          <span class="hdr-item-icon" aria-hidden="true">↗</span>
+          <span><strong>Registrarse / Iniciar sesión</strong><small>Accede a tu cuenta</small></span>
+        </a>
+      )}
+    </div>
+  </div>
+
+  <a href="/favoritos" class:list={['hdr-icon', { 'is-current': current === 'favoritos' }]} aria-label="Abrir favoritos" aria-haspopup="dialog" aria-controls="favDrawer">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+    <b class="hdr-badge hdr-badge--fav" data-fav-count data-count={favoriteCount}>{favoriteCount}</b>
+  </a>
+
+  <a href="/carrito" class:list={['hdr-icon', { 'is-current': current === 'carrito' }]} aria-label="Carrito de compra">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+    <b class="hdr-badge hdr-badge--cart" data-cart-count data-count={cartUnits}>{cartUnits}</b>
+  </a>
+</div>
+
+<style>
+  .hdr-actions { align-items: center; display: flex; gap: 6px; }
+  .hdr-icon {
+    align-items: center; background: transparent; border: 0; border-radius: 50%; color: #171717; cursor: pointer; display: flex; height: 40px;
+    justify-content: center; padding: 0; position: relative; text-decoration: none; transition: background .2s, color .2s, transform .2s var(--ease-out); width: 40px;
+  }
+  .hdr-icon:hover { background: rgba(23,23,23,.08); }
+  .hdr-icon:active { transform: scale(.92); }
+  .hdr-icon.is-current { background: #171717; color: #f7d21c; }
+
+  .hdr-badge {
+    align-items: center; border: 2px solid #f7d21c; border-radius: 999px; display: flex; font-family: var(--font-ui); font-size: 10px; height: 19px;
+    justify-content: center; min-width: 19px; padding: 0 4px; position: absolute; right: -4px; top: -3px; transition: transform .35s var(--ease-spring);
+  }
+  .hdr-badge--cart { background: #d93e2e; color: #fff; }
+  .hdr-badge--fav { background: #171717; color: #f7d21c; }
+  .hdr-icon.is-current .hdr-badge--fav { background: #d93e2e; color: #fff; }
+  .hdr-badge[data-count="0"] { transform: scale(0); }
+  .hdr-badge:global(.bump) { animation: hdr-bump .55s var(--ease-spring); }
+  @keyframes hdr-bump { 0% { transform: scale(1); } 35% { transform: scale(1.45); } 100% { transform: scale(1); } }
+
+  /* ── Menú de perfil ─────────────────────────────────────── */
+  .hdr-account { display: inline-flex; position: relative; }
+  .hdr-account::after { content: ''; height: 14px; left: -20px; position: absolute; right: -20px; top: 100%; }
+  .hdr-dropdown {
+    background: #fff; border-radius: 12px; box-shadow: 0 18px 50px rgba(23,23,23,.18), 0 2px 8px rgba(23,23,23,.06); display: flex; flex-direction: column;
+    min-width: 250px; opacity: 0; padding: 8px; pointer-events: none; position: absolute; right: -8px; top: calc(100% + 12px);
+    transform: translateY(-8px) scale(.97); transform-origin: top right; visibility: hidden; z-index: 200;
+    transition: opacity .2s ease, transform .3s var(--ease-out), visibility 0s linear .3s;
+  }
+  .hdr-dropdown::before { border: 7px solid transparent; border-bottom-color: #fff; content: ''; position: absolute; right: 21px; top: -14px; }
+  .hdr-account:hover .hdr-dropdown, .hdr-dropdown.open {
+    opacity: 1; pointer-events: auto; transform: none; transition: opacity .2s ease, transform .3s var(--ease-out), visibility 0s; visibility: visible;
+  }
+  .hdr-item {
+    align-items: center; background: transparent; border: 0; border-radius: 8px; color: #171717; cursor: pointer; display: flex; font: inherit; gap: 12px;
+    padding: 10px 12px; text-align: left; text-decoration: none; transition: background .15s, transform .2s var(--ease-out); width: 100%;
+  }
+  .hdr-item:hover { background: #f6f4ed; transform: translateX(2px); }
+  .hdr-item--highlight { color: #d93e2e; }
+  .hdr-item--highlight:hover { background: #fff1ef; }
+  .hdr-item-icon { font-size: 18px; line-height: 1; text-align: center; width: 22px; }
+  .hdr-item strong { display: block; font-family: var(--font-ui); font-size: 13px; font-weight: 700; }
+  .hdr-item small { color: #716e67; font-family: var(--font-ui); font-size: 11px; }
+  .hdr-item--highlight small { color: #e87060; }
+  .hdr-divider { background: #e8e4da; height: 1px; margin: 4px 0; }
+  .hdr-logout { margin: 0; }
+
+  @media (max-width: 600px) {
+    .hdr-actions { gap: 2px; }
+    .hdr-icon { height: 36px; width: 36px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hdr-dropdown, .hdr-badge, .hdr-item { transition: none; }
+    .hdr-badge:global(.bump) { animation: none; }
+  }
+</style>
+
+<script>
+  // Menú de perfil: se abre con hover (escritorio) o con click/teclado (táctil)
+  document.querySelectorAll<HTMLElement>('.hdr-account').forEach((account) => {
+    const btn = account.querySelector<HTMLElement>('[data-account-btn]');
+    const menu = account.querySelector<HTMLElement>('[data-account-menu]');
+    if (!btn || !menu) return;
+
+    const setOpen = (open: boolean) => {
+      menu.classList.toggle('open', open);
+      btn.setAttribute('aria-expanded', String(open));
+    };
+
+    btn.addEventListener('click', () => setOpen(!menu.classList.contains('open')));
+    document.addEventListener('click', (e: MouseEvent) => {
+      if (!account.contains(e.target as Node)) setOpen(false);
+    });
+    document.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && menu.classList.contains('open')) {
+        setOpen(false);
+        btn.focus();
+      }
+    });
+  });
+</script>

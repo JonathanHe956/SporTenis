@@ -1,0 +1,65 @@
+---
+// Barra superior de las páginas fuera del catálogo (cuenta, compras, carrito, monedero).
+// Lleva los mismos 3 botones que la tienda: perfil, favoritos y carrito.
+import HeaderActions from './HeaderActions.astro';
+
+interface Props {
+  backHref?: string;
+  backLabel?: string;
+  active?: 'cuenta' | 'compras' | 'monedero' | 'favoritos' | 'carrito';
+}
+
+const { backHref = '/', backLabel = 'Volver a la tienda', active } = Astro.props;
+
+// Perfil, compras y monedero viven en el menú de perfil, así que resaltan ese botón
+const current = active === 'favoritos' || active === 'carrito' ? active : active ? 'cuenta' : undefined;
+---
+
+<header class="account-topbar">
+  <a class="brand" href="/" aria-label="SporTenis, inicio">
+    <span class="brand-mark">S</span>
+    <span>Spor<span>Tenis</span></span>
+  </a>
+
+  <div class="store-actions">
+    <a href={backHref} class="back-link"><span aria-hidden="true">←</span> {backLabel}</a>
+    <div class="actions-divider" aria-hidden="true"></div>
+    <HeaderActions current={current} />
+  </div>
+</header>
+
+<style>
+  .account-topbar {
+    align-items: center;
+    background: #f7d21c;
+    box-shadow: 0 1px 0 rgba(23,23,23,.08);
+    display: flex;
+    justify-content: space-between;
+    min-height: 76px;
+    padding: 0 clamp(20px, 4vw, 64px);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  .brand { align-items: center; color: #171717; display: flex; font-family: Arial, sans-serif; font-size: 25px; font-weight: 900; letter-spacing: -1.5px; text-decoration: none; }
+  .brand span span { font-weight: 400; }
+  .brand-mark {
+    align-items: center; border: 3px solid #171717; border-radius: 50%; display: inline-flex; font-size: 15px; height: 30px;
+    justify-content: center; margin-right: 8px; transition: transform .6s var(--ease-spring); width: 30px;
+  }
+  .brand:hover .brand-mark { transform: rotate(-360deg); }
+  .store-actions { align-items: center; display: flex; gap: 20px; }
+  .back-link {
+    color: #171717; font-family: var(--font-ui); font-size: 12px; font-weight: 700; letter-spacing: .4px; text-decoration: none;
+    text-transform: uppercase; transition: transform .3s var(--ease-out);
+  }
+  .back-link:hover { text-decoration: underline; transform: translateX(-3px); }
+  .actions-divider { background: rgba(23,23,23,.35); height: 26px; width: 1px; }
+
+  @media (max-width: 640px) {
+    .account-topbar { min-height: 62px; padding: 0 16px; }
+    .brand { font-size: 20px; }
+    .brand-mark { height: 25px; width: 25px; }
+    .back-link, .actions-divider { display: none; }
+  }
+</style>

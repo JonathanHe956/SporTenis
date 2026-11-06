@@ -1,15 +1,36 @@
+---
+import FavoritesDrawer from '../components/FavoritesDrawer.astro';
+
+interface Props {
+	title?: string;
+	description?: string;
+}
+
+const {
+	title = 'SporTenis | Equípate para jugar',
+	description = 'SporTenis: equipo de tenis y pádel. Raquetas, calzado, ropa y accesorios con envío a todo México.',
+} = Astro.props;
+---
+
 <!doctype html>
 	<html lang="es">
 	<head>
 		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content={description} />
+		<meta name="theme-color" content="#f7d21c" />
+		<meta property="og:title" content={title} />
+		<meta property="og:description" content={description} />
+		<meta property="og:type" content="website" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<link rel="icon" href="/favicon.ico" />
 		<meta name="generator" content={Astro.generator} />
-		<title>SporTenis | Equípate para jugar</title>
+		<title>{title}</title>
+		<script is:inline>document.documentElement.classList.add('js');</script>
 	</head>
 	<body>
 		<slot />
+		<FavoritesDrawer />
 		<dialog class="app-dialog" id="appDialog" aria-labelledby="appDialogTitle" aria-describedby="appDialogMessage">
 			<form method="dialog" class="app-dialog-content">
 				<span class="app-dialog-mark" aria-hidden="true">!</span>
@@ -36,8 +57,12 @@
 			.app-toast-region { position: fixed; z-index: 10000; right: 20px; bottom: 20px; display: grid; gap: 10px; width: min(360px, calc(100vw - 40px)); }
 			.app-toast { padding: 14px 16px; border-left: 4px solid #15803d; border-radius: 5px; background: #fff; color: #171717; box-shadow: 0 8px 28px #17171720; animation: app-toast-in .18s ease-out; }
 			.app-toast[data-kind="error"] { border-color: #d93e2e; }
+			.app-dialog[open] { animation: app-dialog-in .28s cubic-bezier(.22,1,.36,1); }
+			.app-dialog[open]::backdrop { animation: app-fade-in .28s ease-out; }
+			@keyframes app-dialog-in { from { opacity: 0; transform: translateY(12px) scale(.97); } to { opacity: 1; transform: none; } }
+			@keyframes app-fade-in { from { opacity: 0; } to { opacity: 1; } }
 			@keyframes app-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-			@media (prefers-reduced-motion: reduce) { .app-toast { animation: none; } }
+			@media (prefers-reduced-motion: reduce) { .app-toast, .app-dialog[open], .app-dialog[open]::backdrop { animation: none; } }
 		</style>
 		<script is:inline>
 			(() => {
@@ -97,8 +122,75 @@
 				});
 			})();
 		</script>
+		<script is:inline>
+			// Animaciones de aparición al hacer scroll: cualquier elemento con data-reveal.
+			// Un contenedor con data-reveal-stagger escalona la entrada de sus hijos data-reveal.
+			(() => {
+				const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+				const show = (el) => el.classList.add('is-visible');
+				const prepare = (root) => {
+					root.querySelectorAll('[data-reveal-stagger]').forEach((group) => {
+						const step = Number(group.dataset.revealStagger) || 80;
+						group.querySelectorAll(':scope > [data-reveal]').forEach((child, index) => {
+							child.style.setProperty('--reveal-delay', `${Math.min(index, 8) * step}ms`);
+						});
+					});
+				};
+				const items = () => document.querySelectorAll('[data-reveal]:not(.is-visible)');
+				if (reduce || !('IntersectionObserver' in window)) {
+					window.revealIn = (root = document) => root.querySelectorAll('[data-reveal]').forEach(show);
+					items().forEach(show);
+					return;
+				}
+				const observer = new IntersectionObserver((entries) => {
+					entries.forEach((entry) => {
+						if (!entry.isIntersecting) return;
+						show(entry.target);
+						observer.unobserve(entry.target);
+					});
+				}, { rootMargin: '0px 0px -8% 0px', threshold: 0.12 });
+				window.revealIn = (root = document) => {
+					prepare(root);
+					root.querySelectorAll('[data-reveal]:not(.is-visible)').forEach((el) => observer.observe(el));
+				};
+				window.revealIn(document);
+			})();
+		</script>
 	</body>
 </html>
+
+<style is:global>
+	:root {
+		--font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+		--ease-out: cubic-bezier(.22, 1, .36, 1);
+		--ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+	}
+
+	/* Transición suave entre páginas de la tienda (navegadores con View Transitions) */
+	@view-transition { navigation: auto; }
+	::view-transition-old(root) { animation: .22s ease-in both vt-out; }
+	::view-transition-new(root) { animation: .32s var(--ease-out) both vt-in; }
+	@keyframes vt-out { to { opacity: 0; } }
+	@keyframes vt-in { from { opacity: 0; transform: translateY(8px); } }
+
+	.js [data-reveal] {
+		opacity: 0;
+		transform: translateY(22px);
+		transition: opacity .7s var(--ease-out), transform .7s var(--ease-out);
+		transition-delay: var(--reveal-delay, 0ms);
+	}
+	.js [data-reveal="fade"] { transform: none; }
+	.js [data-reveal="scale"] { transform: scale(.96); }
+	.js [data-reveal].is-visible { opacity: 1; transform: none; }
+
+	:focus-visible { outline: 2px solid #d93e2e; outline-offset: 2px; }
+
+	@media (prefers-reduced-motion: reduce) {
+		.js [data-reveal] { opacity: 1; transform: none; transition: none; }
+		::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+		html { scroll-behavior: auto !important; }
+	}
+</style>
 
 <style>
 	html,

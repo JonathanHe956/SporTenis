@@ -2,25 +2,20 @@
 // src/pages/carrito.astro
 // El carrito se carga en el navegador desde /api/carrito (ver el <script> de abajo).
 import Layout from '../layouts/Layout.astro';
-import { COSTO_ENVIO, ENVIO_GRATIS_SOBRE } from '../lib/ventas';
+import AccountHeader from '../components/AccountHeader.astro';
+import { COSTO_ENVIO, ENVIO_GRATIS_DESDE } from '../lib/ventas';
 
 const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
 ---
 
 <Layout title="Carrito de Compras | SporTenis">
   <div class="cart-wrapper">
-    <header class="topbar">
-      <a class="brand" href="/" aria-label="SporTenis, inicio">
-        <span class="brand-mark">S</span>
-        <span>Spor<span>Tenis</span></span>
-      </a>
-      <a href="/" class="return-link">← Volver al catálogo</a>
-    </header>
+    <AccountHeader backLabel="Volver al catálogo" active="carrito" />
 
     <main class="cart-main">
       <div class="header-section">
-        <p class="eyebrow"><span></span> Tu selección</p>
-        <h1>Carrito de <em>Compra</em></h1>
+        <p class="eyebrow enter" style="--d: 40ms"><span></span> Tu selección</p>
+        <h1 class="enter" style="--d: 120ms">Carrito de <em>Compra</em></h1>
       </div>
 
       <div id="cartNotices" class="cart-notices" role="status" hidden>
@@ -28,7 +23,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
         <ul id="cartNoticesList"></ul>
       </div>
 
-      <div class="cart-grid">
+      <div class="cart-grid enter" style="--d: 200ms">
         <!-- Listado de Productos -->
         <section class="items-card" aria-label="Productos en el carrito" aria-busy="true" id="itemsCard">
           <div class="table-head">
@@ -38,7 +33,15 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
             <span class="text-right">Quitar</span>
           </div>
 
-          <p id="loadingMessage" class="loading-state">Cargando tu carrito…</p>
+          <div id="loadingMessage" class="loading-state" role="status" aria-label="Cargando tu carrito…">
+            {[0, 1, 2].map(() => (
+              <div class="skeleton-row" aria-hidden="true">
+                <span class="sk sk-box"></span>
+                <span class="sk-lines"><span class="sk sk-line"></span><span class="sk sk-line short"></span></span>
+                <span class="sk sk-pill"></span>
+              </div>
+            ))}
+          </div>
 
           <div class="items-body" id="itemsList"></div>
 
@@ -56,13 +59,16 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
           </div>
 
           <div id="emptyMessage" class="empty-state" style="display: none;">
+            <span class="empty-icon" aria-hidden="true">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+            </span>
             <p id="emptyText">Tu carrito está actualmente vacío.</p>
             <a href="/" id="emptyLink" class="primary-button inline"><span id="emptyLinkText">Explorar artículos</span> <span>↗</span></a>
           </div>
         </section>
 
         <!-- Resumen de Pago -->
-        <aside class="order-summary" aria-label="Resumen del pedido" data-envio-gratis-sobre={ENVIO_GRATIS_SOBRE}>
+        <aside class="order-summary" aria-label="Resumen del pedido" data-envio-gratis-desde={ENVIO_GRATIS_DESDE}>
           <h2>Resumen</h2>
 
           <div class="summary-line">
@@ -76,8 +82,9 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
           </div>
 
           <p class="shipping-hint" id="shippingHint" hidden></p>
+          <div class="ship-progress" id="shipProgress" hidden aria-hidden="true"><span id="shipProgressBar"></span></div>
           <p class="shipping-rule">
-            Envío de {fmt(COSTO_ENVIO)} si la compra no supera {fmt(ENVIO_GRATIS_SOBRE)}; gratis si la supera.
+            Envío de {fmt(COSTO_ENVIO)} si la compra es menor a {fmt(ENVIO_GRATIS_DESDE)}; gratis a partir de {fmt(ENVIO_GRATIS_DESDE)}.
           </p>
 
           <div class="promo-input-group">
@@ -109,8 +116,14 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
           </button>
 
           <div class="badges-list">
-            <p>Pago 100% protegido y cifrado</p>
-            <p>Devoluciones sin costo por 30 días</p>
+            <p>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+              Pago 100% protegido y cifrado
+            </p>
+            <p>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+              Devoluciones sin costo por 30 días
+            </p>
           </div>
         </aside>
       </div>
@@ -120,7 +133,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   <template id="cartRowTemplate">
     <article class="cart-row">
       <div class="product-cell">
-        <div class="product-box"><i></i></div>
+        <div class="product-box"><i></i><img class="product-photo" alt="" loading="lazy" decoding="async" hidden /></div>
         <div class="product-meta">
           <span class="cat-tag"></span>
           <h3 class="item-name"></h3>
@@ -162,6 +175,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     cantidad: number;
     stock: number;
     subtotal: number;
+    imagen?: string | null;
   }
 
   interface CartSummary {
@@ -204,8 +218,22 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   const subtotalDisplay = $('subtotalDisplay');
   const shippingDisplay = $('shippingDisplay');
   const shippingHint = $('shippingHint');
-  // Umbral de envío gratis (ENVIO_GRATIS_SOBRE en src/lib/ventas.ts), lo pasa el servidor
-  const envioGratisSobre = Number(document.querySelector<HTMLElement>('.order-summary')?.dataset.envioGratisSobre || 0);
+  const shipProgress = $('shipProgress');
+  const shipProgressBar = $('shipProgressBar');
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Para animar solo lo que cambia entre un render y otro
+  let firstRender = true;
+  const previousSubtotals = new Map<number, number>();
+  let previousTotal: number | null = null;
+
+  const restartAnimation = (el: Element | null | undefined, className: string): void => {
+    if (!el || reduceMotion) return;
+    el.classList.remove(className);
+    void (el as HTMLElement).offsetWidth;
+    el.classList.add(className);
+  };
+  // Umbral de envío gratis (ENVIO_GRATIS_DESDE en src/lib/ventas.ts), lo pasa el servidor
+  const envioGratisDesde = Number(document.querySelector<HTMLElement>('.order-summary')?.dataset.envioGratisDesde || 0);
   const totalDisplay = $('totalDisplay');
   const baseDisplay = $('baseDisplay');
   const ivaDisplay = $('ivaDisplay');
@@ -217,7 +245,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     `$${value.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
   const themeFor = (categoria: string | null): string =>
-    /p[aá]del/i.test(categoria ?? '') ? 'theme-padel' : 'theme-shoe';
+    /p[aá]del|raquet/i.test(categoria ?? '') ? 'theme-padel' : 'theme-shoe';
 
   const setText = (root: ParentNode, selector: string, text: string): void => {
     const el = root.querySelector(selector);
@@ -265,11 +293,26 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
       shippingHint.hidden = !hasItems;
       shippingHint.classList.toggle('is-free', !cobraEnvio);
       shippingHint.textContent = cobraEnvio
-        ? `Supera ${money(envioGratisSobre)} para tener envío gratis (llevas ${money(r.subtotal)}).`
-        : `Tu compra supera ${money(envioGratisSobre)}: el envío es gratis.`;
+        ? `Te faltan ${money(Math.max(0, envioGratisDesde - r.subtotal))} para tener envío gratis (llevas ${money(r.subtotal)}).`
+        : `Tu compra alcanza ${money(envioGratisDesde)}: el envío es gratis.`;
+    }
+    if (shipProgress && shipProgressBar) {
+      shipProgress.hidden = !hasItems;
+      const pct = envioGratisDesde > 0 ? Math.min(100, (r.subtotal / envioGratisDesde) * 100) : 100;
+      shipProgressBar.style.width = `${cobraEnvio ? pct : 100}%`;
+      shipProgress.classList.toggle('is-complete', !cobraEnvio);
     }
     if (totalDisplay) totalDisplay.textContent = `${money(r.total)} MXN`;
+    if (previousTotal !== null && previousTotal !== r.total) restartAnimation(totalDisplay?.closest('.total-line'), 'flash');
+    previousTotal = r.total;
     if (totalItemsCount) totalItemsCount.textContent = String(r.unidades);
+    // Contador del ícono del carrito en el header (HeaderActions)
+    if (resumen) {
+      document.querySelectorAll<HTMLElement>('[data-cart-count]').forEach((badge) => {
+        badge.textContent = String(r.unidades);
+        badge.dataset.count = String(r.unidades);
+      });
+    }
     if (checkoutBtn) checkoutBtn.disabled = !hasItems;
   }
 
@@ -282,7 +325,20 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     row.dataset.qty = String(item.cantidad);
     row.dataset.stock = String(item.stock);
 
-    row.querySelector('.product-box')?.classList.add(themeFor(item.categoria));
+    const box = row.querySelector<HTMLElement>('.product-box');
+    box?.classList.add(themeFor(item.categoria));
+    // Foto real del producto; si no tiene, se queda la ilustración del tema
+    const photo = row.querySelector<HTMLImageElement>('.product-photo');
+    if (photo && item.imagen) {
+      photo.src = item.imagen;
+      photo.alt = item.nombre;
+      photo.hidden = false;
+      box?.classList.add('has-photo');
+      photo.addEventListener('error', () => {
+        photo.hidden = true;
+        box?.classList.remove('has-photo');
+      }, { once: true });
+    }
     setText(row, '.cat-tag', item.categoria ?? '');
     setText(row, '.item-name', item.nombre);
     setText(row, '.variant', item.variante);
@@ -313,7 +369,23 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     const items = data.items ?? [];
     if (loadingMsg) loadingMsg.style.display = 'none';
 
-    itemsList?.replaceChildren(...items.map(buildRow).filter((row): row is HTMLElement => row !== null));
+    const rows = items.map(buildRow).filter((row): row is HTMLElement => row !== null);
+    rows.forEach((row, i) => {
+      const id = Number(row.dataset.id);
+      const item = items.find((it) => it.id_producto === id);
+      if (firstRender) {
+        // Entrada escalonada solo la primera vez; en cada actualización se resalta lo que cambió
+        row.classList.add('row-enter');
+        row.style.setProperty('--i', String(i));
+      } else if (item && previousSubtotals.has(id) && previousSubtotals.get(id) !== item.subtotal) {
+        restartAnimation(row.querySelector('.item-total-val'), 'flash');
+        restartAnimation(row.querySelector('.qty-field'), 'flash');
+      }
+    });
+    previousSubtotals.clear();
+    items.forEach((it) => previousSubtotals.set(it.id_producto, it.subtotal));
+    if (items.length > 0) firstRender = false;
+    itemsList?.replaceChildren(...rows);
 
     const empty = items.length === 0;
     if (itemsList) itemsList.style.display = empty ? 'none' : '';
@@ -413,13 +485,30 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   });
 
   // "Eliminar" pasa por el diálogo de confirmación del Layout, que emite app-confirmed
-  itemsList?.addEventListener('app-confirmed', (e: Event) => {
+  // Las filas salen con animación antes de pedir el cambio al servidor
+  const animateOut = (rows: HTMLElement[]): Promise<void> => {
+    if (reduceMotion || rows.length === 0) return Promise.resolve();
+    rows.forEach((row, i) => {
+      row.style.setProperty('--i', String(i));
+      row.style.setProperty('--h', `${row.offsetHeight}px`);
+      row.classList.add('is-leaving');
+    });
+    return new Promise((resolve) => window.setTimeout(resolve, 340 + rows.length * 40));
+  };
+
+  itemsList?.addEventListener('app-confirmed', async (e: Event) => {
     const row = (e.target as HTMLElement | null)?.closest<HTMLElement>('.cart-row');
-    if (row) updateCart({ action: 'remove', productId: Number(row.dataset.id) });
+    if (!row || busy) return;
+    await animateOut([row]);
+    updateCart({ action: 'remove', productId: Number(row.dataset.id) });
   });
 
   // "Vaciar carrito" también pasa por el diálogo de confirmación
-  clearCartBtn?.addEventListener('app-confirmed', () => updateCart({ action: 'clear' }));
+  clearCartBtn?.addEventListener('app-confirmed', async () => {
+    if (busy) return;
+    await animateOut(Array.from(itemsList?.querySelectorAll<HTMLElement>('.cart-row') ?? []));
+    updateCart({ action: 'clear' });
+  });
 
   // Flujo de compra
   checkoutBtn?.addEventListener('click', () => {
@@ -436,48 +525,6 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
 
   .cart-wrapper { min-height: 100vh; display: flex; flex-direction: column; }
   
-  .topbar {
-    align-items: center;
-    background: #f7d21c;
-    display: flex;
-    justify-content: space-between;
-    min-height: 76px;
-    padding: 0 clamp(20px, 4vw, 64px);
-  }
-
-  .brand {
-    align-items: center;
-    color: #171717;
-    display: flex;
-    font-family: Arial, sans-serif;
-    font-size: 25px;
-    font-weight: 900;
-    letter-spacing: -1.5px;
-    text-decoration: none;
-  }
-  .brand span span { font-weight: 400; }
-  .brand-mark {
-    align-items: center;
-    border: 3px solid #171717;
-    border-radius: 50%;
-    display: inline-flex;
-    font-size: 15px;
-    height: 30px;
-    justify-content: center;
-    margin-right: 8px;
-    width: 30px;
-  }
-
-  .return-link {
-    color: #171717;
-    font-family: Arial, sans-serif;
-    font-size: 12px;
-    font-weight: 700;
-    text-decoration: none;
-    text-transform: uppercase;
-  }
-  .return-link:hover { text-decoration: underline; }
-
   .cart-main {
     max-width: 1400px;
     margin: 0 auto;
@@ -487,7 +534,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
 
   .eyebrow {
     color: #d93e2e;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 2px;
@@ -528,7 +575,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   .table-head {
     display: grid;
     grid-template-columns: 2.2fr 1fr 1fr 130px;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 11px;
     font-weight: 800;
     color: #716e67;
@@ -560,7 +607,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   .theme-shoe { background: #e9c8bd; }
 
   .cat-tag {
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 9px;
     font-weight: 700;
     color: #716e67;
@@ -568,8 +615,8 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   }
 
   .product-meta h3 { margin: 2px 0; font-size: 16px; font-weight: 400; }
-  .variant { margin: 0 0 4px; font-family: Arial, sans-serif; font-size: 11px; color: #555; }
-  .unit-price { font-family: Arial, sans-serif; font-size: 12px; font-weight: 700; color: #171717; }
+  .variant { margin: 0 0 4px; font-family: var(--font-ui); font-size: 11px; color: #555; }
+  .unit-price { font-family: var(--font-ui); font-size: 12px; font-weight: 700; color: #171717; }
   
   .btn-remove {
     align-items: center;
@@ -578,7 +625,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     color: #d93e2e;
     cursor: pointer;
     display: inline-flex;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 11px;
     font-weight: 800;
     gap: 6px;
@@ -601,7 +648,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     border: 0;
     color: #716e67;
     cursor: pointer;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 11px;
     font-weight: 800;
     padding: 6px 0;
@@ -619,26 +666,30 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   .btn-qty {
     background: transparent;
     border: 0;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-weight: 800;
     padding: 6px 10px;
     cursor: pointer;
   }
+  .btn-qty { transition: background .15s, transform .15s var(--ease-out); }
   .btn-qty:hover { background: #f7d21c; }
+  .btn-qty:active:not(:disabled) { transform: scale(.85); }
   .qty-field {
     width: 32px;
     border: 0;
     background: transparent;
     text-align: center;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-weight: 700;
     outline: 0;
   }
 
   .text-right { text-align: right; }
-  .item-total-val { font-family: Arial, sans-serif; font-size: 15px; }
+  .item-total-val { font-family: var(--font-ui); font-size: 15px; }
 
   .order-summary {
+    position: sticky;
+    top: 100px;
     background: #fffdf3;
     border: 2px solid #171717;
     box-shadow: 6px 6px 0 #171717;
@@ -657,7 +708,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   .summary-line {
     display: flex;
     justify-content: space-between;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 13px;
   }
   .tax-breakdown {
@@ -670,7 +721,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   .tax-line { color: #57534e; font-size: 12px; }
   .tax-note {
     color: #716e67;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 10px;
     margin: -8px 0 0;
   }
@@ -679,7 +730,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   .shipping-hint {
     background: #fff4d6;
     border-left: 4px solid #f7d21c;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 12px;
     margin: -4px 0 0;
     padding: 8px 10px;
@@ -688,7 +739,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   .shipping-hint.is-free { background: #ecfdf3; border-color: #15803d; color: #15803d; font-weight: 700; }
   .shipping-rule {
     color: #716e67;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 10px;
     margin: -6px 0 0;
   }
@@ -709,7 +760,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     border: 1.5px solid #171717;
     background: #f6f4ed;
     padding: 8px 10px;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 11px;
     outline: 0;
   }
@@ -717,7 +768,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     background: #f7d21c;
     border: 1.5px solid #171717;
     padding: 8px 12px;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 11px;
     font-weight: 800;
     cursor: pointer;
@@ -739,7 +790,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     color: #fffdf3;
     display: inline-flex;
     justify-content: space-between;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 11px;
     font-weight: 800;
     padding: 15px 18px;
@@ -749,8 +800,15 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     cursor: pointer;
     transition: background 0.15s ease;
   }
-  .primary-button:hover { background: #d93e2e; }
-  .primary-button span { font-size: 16px; }
+  .primary-button { isolation: isolate; overflow: hidden; position: relative; }
+  .primary-button::before {
+    background: #d93e2e; content: ''; inset: 0; position: absolute; transform: scaleX(0); transform-origin: right;
+    transition: transform .45s var(--ease-out); z-index: -1;
+  }
+  .primary-button:hover:not(:disabled)::before { transform: scaleX(1); transform-origin: left; }
+  .primary-button:active:not(:disabled) { transform: scale(.98); }
+  .primary-button span { display: inline-block; font-size: 16px; transition: transform .35s var(--ease-out); }
+  .primary-button:hover:not(:disabled) span { transform: translate(3px, -3px); }
   .primary-button.inline { margin-top: 15px; width: fit-content; }
 
   .badges-list {
@@ -758,17 +816,18 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     display: flex;
     flex-direction: column;
     gap: 6px;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 10px;
     color: #716e67;
   }
-  .badges-list p { margin: 0; }
+  .badges-list p { align-items: center; display: flex; gap: 8px; margin: 0; }
+  .badges-list svg { color: #15803d; flex-shrink: 0; }
 
   .cart-notices {
     background: #fff4d6;
     border: 2px solid #171717;
     border-left: 8px solid #d93e2e;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 13px;
     margin: 0 0 28px;
     padding: 14px 18px;
@@ -778,13 +837,28 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   .cart-notices ul { margin: 0; padding-left: 18px; }
   .cart-notices li + li { margin-top: 4px; }
 
-  .loading-state {
-    font-family: Arial, sans-serif;
-    color: #716e67;
-    padding: 30px 0;
-    margin: 0;
-    text-align: center;
+  .loading-state { padding: 8px 0; }
+  .skeleton-row {
+    align-items: center;
+    border-bottom: 1px dashed #d8d3c3;
+    display: grid;
+    gap: 18px;
+    grid-template-columns: 80px 1fr 110px;
+    padding: 24px 0;
   }
+  .skeleton-row:last-child { border-bottom: 0; }
+  .sk {
+    animation: shimmer 1.3s linear infinite;
+    background: linear-gradient(90deg, #ece7da 0%, #f6f2e8 40%, #ece7da 80%);
+    background-size: 200% 100%;
+    display: block;
+  }
+  .sk-box { height: 80px; width: 80px; }
+  .sk-lines { display: flex; flex-direction: column; gap: 10px; }
+  .sk-line { height: 14px; width: 70%; }
+  .sk-line.short { width: 40%; }
+  .sk-pill { height: 30px; }
+  @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
   .btn-qty:disabled { opacity: 0.35; cursor: not-allowed; }
   .btn-qty:disabled:hover { background: transparent; }
@@ -797,12 +871,66 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     align-items: center;
     justify-content: center;
     padding: 40px 0;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     color: #716e67;
+    animation: rise .6s var(--ease-out) both;
+  }
+  .empty-icon {
+    align-items: center;
+    animation: pop-in .6s var(--ease-spring) .1s both;
+    background: #f7d21c;
+    border-radius: 50%;
+    color: #171717;
+    display: flex;
+    height: 68px;
+    justify-content: center;
+    width: 68px;
+  }
+  .empty-state p { font-size: 14px; margin: 16px 0 0; }
+
+  /* ── Animaciones ───────────────────────────────────────── */
+  .enter { animation: rise .7s var(--ease-out) both; animation-delay: var(--d, 0ms); }
+  .row-enter { animation: rise .55s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 70ms + 120ms); }
+  .cart-row.is-leaving {
+    animation: row-out .34s ease-in forwards;
+    animation-delay: calc(var(--i, 0) * 40ms);
+    overflow: hidden;
+  }
+  .flash { animation: flash .7s ease-out; }
+  .total-line.flash strong { animation: total-pop .5s var(--ease-spring); display: inline-block; }
+  .product-box { transition: transform .4s var(--ease-out); }
+  .cart-row:hover .product-box { transform: rotate(-3deg) scale(1.04); }
+  .product-box i { display: block; position: absolute; }
+  .product-box.has-photo { background: #fff; }
+  .product-box.has-photo i { display: none; }
+  .product-photo { height: 100%; inset: 0; object-fit: contain; padding: 6px; position: absolute; width: 100%; }
+  .product-photo[hidden] { display: none; }
+  .theme-padel i { background: #242424; border-radius: 50% 50% 44% 44%; height: 58px; left: 28px; top: 10px; transform: rotate(28deg); width: 28px; }
+  .theme-shoe i { background: #fffdf3; border-bottom: 7px solid #d93e2e; border-radius: 45% 55% 18% 20%; height: 32px; left: 10px; top: 26px; transform: rotate(-12deg); width: 60px; }
+  .ship-progress { background: #ece7da; height: 6px; margin: -6px 0 2px; overflow: hidden; }
+  .ship-progress[hidden] { display: none; }
+  .ship-progress span { background: linear-gradient(90deg, #f7d21c, #e9a90c); display: block; height: 100%; transition: width .8s var(--ease-out), background .4s; width: 0; }
+  .ship-progress.is-complete span { background: #15803d; }
+  .cart-notices:not([hidden]) { animation: rise .45s var(--ease-out) both; }
+
+  @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+  @keyframes pop-in { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
+  @keyframes row-out {
+    0% { opacity: 1; transform: none; height: var(--h); }
+    55% { opacity: 0; transform: translateX(40px); height: var(--h); padding-top: 24px; padding-bottom: 24px; }
+    100% { opacity: 0; transform: translateX(40px); height: 0; padding-top: 0; padding-bottom: 0; border-bottom-width: 0; }
+  }
+  @keyframes flash { 0% { background: #f7d21c; } 100% { background: transparent; } }
+  @keyframes total-pop { 0% { transform: scale(1); } 40% { transform: scale(1.12); color: #d93e2e; } 100% { transform: scale(1); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .enter, .row-enter, .empty-state, .empty-icon, .cart-notices, .flash, .flash strong, .sk { animation: none !important; }
+    .ship-progress span, .primary-button::before, .primary-button span, .product-box { transition: none; }
   }
 
   @media (max-width: 900px) {
     .cart-grid { grid-template-columns: 1fr; }
+    .order-summary { position: static; }
   }
 
   @media (max-width: 600px) {

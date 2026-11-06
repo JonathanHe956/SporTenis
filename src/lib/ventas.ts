@@ -4,8 +4,9 @@ import { Clientes, DetalleVentas, HistorialOrdenes, MetodosPago, MovimientosInve
 import { facturarYConciliarVenta } from './facturacion';
 import { procesarLogisticaStock } from './stockLogistics';
 
-// Regla de envío de la tienda: se cobra COSTO_ENVIO mientras la compra no supere ENVIO_GRATIS_SOBRE
-export const ENVIO_GRATIS_SOBRE = 2000;
+// Regla de envío de la tienda: el envío es gratis a partir de ENVIO_GRATIS_DESDE (inclusive);
+// por debajo de ese monto se cobra COSTO_ENVIO.
+export const ENVIO_GRATIS_DESDE = 1999;
 export const COSTO_ENVIO = 500;
 
 // Solo estas órdenes cuentan como venta e ingreso: ya descontaron stock.
@@ -39,7 +40,7 @@ export interface TotalesVenta {
 const toCents = (value: number): number => Math.round(value * 100);
 
 export const calcularEnvio = (subtotal: number): number =>
-  subtotal <= 0 || subtotal > ENVIO_GRATIS_SOBRE ? 0 : COSTO_ENVIO;
+  subtotal <= 0 || subtotal >= ENVIO_GRATIS_DESDE ? 0 : COSTO_ENVIO;
 
 // Se suma en centavos para no arrastrar errores de punto flotante.
 export const calcularSubtotal = (lineas: Array<{ precio: number; cantidad: number }>): number =>

@@ -5,7 +5,7 @@ vi.mock('../src/db/db', () => ({ db: {} }));
 
 import {
   COSTO_ENVIO,
-  ENVIO_GRATIS_SOBRE,
+  ENVIO_GRATIS_DESDE,
   VentaError,
   calcularEnvio,
   calcularTotales,
@@ -13,15 +13,16 @@ import {
 } from '../src/lib/ventas';
 
 describe('calcularEnvio', () => {
-  it('cobra $500 de envío mientras la compra no supere los $2,000', () => {
+  it('cobra $500 de envío mientras la compra sea menor a $1,999', () => {
     expect(COSTO_ENVIO).toBe(500);
-    expect(ENVIO_GRATIS_SOBRE).toBe(2000);
+    expect(ENVIO_GRATIS_DESDE).toBe(1999);
     expect(calcularEnvio(1)).toBe(COSTO_ENVIO);
-    expect(calcularEnvio(ENVIO_GRATIS_SOBRE)).toBe(COSTO_ENVIO);
+    expect(calcularEnvio(ENVIO_GRATIS_DESDE - 0.01)).toBe(COSTO_ENVIO);
   });
 
-  it('no cobra envío cuando la compra supera los $2,000', () => {
-    expect(calcularEnvio(ENVIO_GRATIS_SOBRE + 0.01)).toBe(0);
+  it('no cobra envío a partir de $1,999 (inclusive)', () => {
+    expect(calcularEnvio(ENVIO_GRATIS_DESDE)).toBe(0);
+    expect(calcularEnvio(2000)).toBe(0);
   });
 
   it('no cobra envío en un pedido vacío', () => {

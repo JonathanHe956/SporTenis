@@ -24,6 +24,8 @@ export interface CartItem {
   cantidad: number;
   stock: number;
   subtotal: number;
+  /** Ruta pública de la foto del modelo (Modelos.imagen_url), si tiene. */
+  imagen?: string | null;
 }
 
 export interface CartSummary extends TotalesVenta {
@@ -70,6 +72,7 @@ export const getCartItems = async (clientId: number): Promise<CartItem[]> => {
       precio: Productos.precio_venta,
       cantidad: DetalleCarritos.cantidad,
       stock: Productos.stock,
+      imagen: Modelos.imagen_url,
     })
     .from(DetalleCarritos)
     .innerJoin(Productos, eq(DetalleCarritos.id_producto, Productos.id))
@@ -89,6 +92,7 @@ export const getCartItems = async (clientId: number): Promise<CartItem[]> => {
       cantidad: row.cantidad,
       stock: row.stock,
       subtotal: calcularTotales([{ precio, cantidad: row.cantidad }], 0).subtotal,
+      imagen: row.imagen ?? null,
     };
   });
 };

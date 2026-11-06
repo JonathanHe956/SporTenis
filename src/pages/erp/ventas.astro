@@ -6,7 +6,7 @@ import {
   MetodosPago, Productos, Modelos, Marcas, Facturas, Pagos,
 } from '../../db/schema';
 import { eq, desc, asc } from 'drizzle-orm';
-import { COSTO_ENVIO, ENVIO_GRATIS_SOBRE, ESTADOS_VENTA_EFECTIVA, actualizarOrden, registrarVenta } from '../../lib/ventas';
+import { COSTO_ENVIO, ENVIO_GRATIS_DESDE, ESTADOS_VENTA_EFECTIVA, actualizarOrden, registrarVenta } from '../../lib/ventas';
 
 const sessionUser = Astro.locals.user;
 if (!sessionUser) return Astro.redirect('/login');
@@ -1188,7 +1188,7 @@ const backHref = '/erp/ventas' + (backParams.toString() ? '?' + backParams.toStr
               <label>Costo de Envío ($ MXN)</label>
               <input type="text" id="inputEnvio" value="0.00" readonly title="Se calcula automáticamente" />
               <small style="color: var(--color-text-muted); font-size: 11px;">
-                Automático: {fmt(COSTO_ENVIO)} si la compra no supera {fmt(ENVIO_GRATIS_SOBRE)}; gratis si la supera.
+                Automático: {fmt(COSTO_ENVIO)} si la compra es menor a {fmt(ENVIO_GRATIS_DESDE)}; gratis a partir de {fmt(ENVIO_GRATIS_DESDE)}.
               </small>
             </div>
 
@@ -1366,7 +1366,7 @@ const backHref = '/erp/ventas' + (backParams.toString() ? '?' + backParams.toStr
   </div>
 </CrmLayout>
 
-<script is:inline define:vars={{ productosCatalog: JSON.parse(productosJSON), ordenEditable, COSTO_ENVIO, ENVIO_GRATIS_SOBRE }}>
+<script is:inline define:vars={{ productosCatalog: JSON.parse(productosJSON), ordenEditable, COSTO_ENVIO, ENVIO_GRATIS_DESDE }}>
   const itemsBody = document.getElementById('itemsBody');
   const btnAddLine = document.getElementById('btnAddLine');
   const inputEnvio = document.getElementById('inputEnvio');
@@ -1495,7 +1495,7 @@ const backHref = '/erp/ventas' + (backParams.toString() ? '?' + backParams.toStr
     });
 
     // Misma regla que calcularEnvio en src/lib/ventas.ts; el servidor la vuelve a aplicar al guardar
-    const envio = subtotal <= 0 || subtotal > ENVIO_GRATIS_SOBRE ? 0 : COSTO_ENVIO;
+    const envio = subtotal <= 0 || subtotal >= ENVIO_GRATIS_DESDE ? 0 : COSTO_ENVIO;
     const total = subtotal + envio;
     if (inputEnvio) inputEnvio.value = envio.toFixed(2);
 

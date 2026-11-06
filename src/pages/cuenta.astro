@@ -1,5 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import AccountHeader from '../components/AccountHeader.astro';
 import { db } from '../db/db';
 import { Usuarios, Clientes } from '../db/schema';
 import { eq } from 'drizzle-orm';
@@ -53,39 +54,16 @@ if (user.length > 0) {
 }
 ---
 
-<Layout>
+<Layout title="Mi cuenta | SporTenis">
   <div class="cuenta-page">
-    <!-- Header -->
-    <header class="topbar">
-      <a class="brand" href="/" aria-label="SporTenis, inicio">
-        <span class="brand-mark">S</span>
-        <span>Spor<span>Tenis</span></span>
-      </a>
-      
-      <div class="store-actions">
-        <a href="/" class="back-link">← Volver a la tienda</a>
-        
-        <div class="user-nav">
-          <a href="/cuenta" class="nav-icon active" title="Mi Cuenta">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          </a>
-          <a href="/monedero" class="nav-icon" title="Mi Monedero">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 9h18M16 15h.01"/><path d="M7 5V3h10v2"/></svg>
-          </a>
-          <a href="/favoritos" class="nav-icon" title="Mis Favoritos">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-          </a>
-          <a href="/carrito" class="nav-icon" title="Mi Carrito">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-          </a>
-        </div>
-      </div>
-    </header>
+    <AccountHeader active="cuenta" />
 
     <main class="cuenta-main">
       <div class="cuenta-card">
         <!-- Panel decorativo izquierdo -->
         <div class="cuenta-card-left">
+          <span class="deco-ring ring-a" aria-hidden="true"></span>
+          <span class="deco-ring ring-b" aria-hidden="true"></span>
           <div class="cuenta-deco">
             <div class="deco-avatar">
               <span class="avatar-initial">{userData.nombre.charAt(0)}{userData.apellidos.charAt(0)}</span>
@@ -96,6 +74,10 @@ if (user.length > 0) {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
               Mis compras
             </a>
+            <div class="deco-links">
+              <a href="/monedero">Mi monedero <span aria-hidden="true">→</span></a>
+              <a href="/favoritos">Mis favoritos <span aria-hidden="true">→</span></a>
+            </div>
           </div>
         </div>
 
@@ -192,81 +174,6 @@ if (user.length > 0) {
 
   .cuenta-page { min-height: 100vh; display: flex; flex-direction: column; }
 
-  .topbar {
-    align-items: center;
-    background: #f7d21c;
-    display: flex;
-    justify-content: space-between;
-    min-height: 76px;
-    padding: 0 clamp(20px, 4vw, 64px);
-  }
-  .brand {
-    align-items: center;
-    color: #171717;
-    display: flex;
-    font-family: Arial, sans-serif;
-    font-size: 25px;
-    font-weight: 900;
-    letter-spacing: -1.5px;
-    text-decoration: none;
-  }
-  .brand span span { font-weight: 400; }
-  .brand-mark {
-    align-items: center;
-    border: 3px solid #171717;
-    border-radius: 50%;
-    display: inline-flex;
-    font-size: 15px;
-    height: 30px;
-    justify-content: center;
-    margin-right: 8px;
-    width: 30px;
-  }
-  .back-link {
-    color: #171717;
-    font-family: Arial, sans-serif;
-    font-size: 12px;
-    font-weight: 700;
-    text-decoration: none;
-    text-transform: uppercase;
-  }
-  .back-link:hover { text-decoration: underline; }
-
-  .store-actions {
-    display: flex;
-    align-items: center;
-    gap: 24px;
-  }
-
-  .user-nav {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    border-left: 1px solid #171717;
-    padding-left: 24px;
-  }
-  
-  .nav-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    color: #171717;
-    border-radius: 50%;
-    transition: background-color 0.2s, transform 0.1s;
-  }
-  .nav-icon:hover {
-    background-color: rgba(23, 23, 23, 0.05);
-  }
-  .nav-icon:active {
-    transform: scale(0.95);
-  }
-  .nav-icon.active {
-    background-color: #171717;
-    color: #f7d21c;
-  }
-
   .cuenta-main {
     flex: 1;
     display: flex;
@@ -309,7 +216,7 @@ if (user.length > 0) {
   }
   .avatar-initial {
     color: #fffdf3;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 40px;
     font-weight: 900;
     letter-spacing: -2px;
@@ -326,7 +233,7 @@ if (user.length > 0) {
   .deco-text strong { font-style: italic; color: #d93e2e; }
   .deco-sub {
     color: rgba(23,23,23,0.75);
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 12px;
     line-height: 1.6;
     margin: 0;
@@ -342,7 +249,7 @@ if (user.length > 0) {
     color: #fff;
     border-radius: 999px;
     font-size: 13px;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-weight: 500;
     text-decoration: none;
     transition: background 0.18s, transform 0.15s;
@@ -361,7 +268,7 @@ if (user.length > 0) {
   }
   .cuenta-sub {
     color: #716e67;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 13px;
     margin: 0 0 28px;
   }
@@ -371,7 +278,7 @@ if (user.length > 0) {
   .field-group { display: flex; flex-direction: column; gap: 5px; }
 
   label {
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: .5px;
@@ -385,7 +292,7 @@ if (user.length > 0) {
     border: 1.5px solid #d8d3c3;
     border-radius: 8px;
     color: #171717;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 13px;
     outline: none;
     padding: 10px 14px;
@@ -405,13 +312,13 @@ if (user.length > 0) {
 
   .field-error {
     color: #e7442e;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 10px;
     min-height: 14px;
   }
   .field-hint {
     color: #716e67;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 10px;
     margin-top: 2px;
   }
@@ -421,7 +328,7 @@ if (user.length > 0) {
     border: 1.5px solid #10b981;
     color: #047857;
     border-radius: 8px;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 12px;
     font-weight: 600;
     padding: 12px;
@@ -444,7 +351,7 @@ if (user.length > 0) {
     color: #fffdf3;
     cursor: pointer;
     display: flex;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 13px;
     font-weight: 800;
     gap: 12px;
@@ -465,7 +372,7 @@ if (user.length > 0) {
     border-radius: 8px;
     color: #716e67;
     cursor: pointer;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 11px;
     font-weight: 700;
     padding: 12px 20px;
@@ -489,7 +396,7 @@ if (user.length > 0) {
   }
   .danger-zone-info h3 {
     color: #e7442e;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 12px;
     font-weight: 800;
     letter-spacing: .5px;
@@ -498,7 +405,7 @@ if (user.length > 0) {
   }
   .danger-zone-info p {
     color: #716e67;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 11px;
     line-height: 1.6;
     margin: 0;
@@ -512,7 +419,7 @@ if (user.length > 0) {
     color: #e7442e;
     cursor: pointer;
     display: inline-flex;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 11px;
     font-weight: 700;
     gap: 6px;
@@ -573,7 +480,7 @@ if (user.length > 0) {
   }
   .modal-desc {
     color: #716e67;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 12px;
     line-height: 1.7;
     margin: 0 0 12px;
@@ -581,7 +488,7 @@ if (user.length > 0) {
   .modal-desc strong { color: #e7442e; }
   .modal-list {
     color: #716e67;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 11px;
     line-height: 1.9;
     list-style: none;
@@ -598,7 +505,7 @@ if (user.length > 0) {
   }
   .modal-confirm-text {
     color: #171717;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 11px;
     font-weight: 700;
     margin: 0 0 8px;
@@ -609,7 +516,7 @@ if (user.length > 0) {
     border: 1.5px solid #d8d3c3;
     border-radius: 8px;
     color: #171717;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 13px;
     outline: none;
     padding: 10px 14px;
@@ -632,7 +539,7 @@ if (user.length > 0) {
     color: #716e67;
     cursor: pointer;
     flex: 1;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 12px;
     font-weight: 700;
     padding: 12px;
@@ -650,7 +557,7 @@ if (user.length > 0) {
     color: #fff;
     cursor: pointer;
     flex: 1;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 12px;
     font-weight: 800;
     padding: 12px;
@@ -669,7 +576,7 @@ if (user.length > 0) {
     align-items: center;
     color: #716e67;
     display: flex;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 12px;
     gap: 10px;
     justify-content: center;
@@ -691,7 +598,7 @@ if (user.length > 0) {
     border: 1px solid #e7442e;
     border-radius: 8px;
     color: #e7442e;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
     font-size: 11px;
     font-weight: 600;
     margin-top: 12px;
@@ -707,6 +614,69 @@ if (user.length > 0) {
     .danger-zone-info p { max-width: 100%; }
     .btn-delete-account { justify-content: center; }
   }
+
+  /* ── Animaciones y detalles ─────────────────────────────── */
+  .cuenta-card { animation: card-in .8s var(--ease-out) both; }
+  .cuenta-card-left { overflow: hidden; position: relative; }
+  .deco-ring { border: 1.5px solid rgba(255,253,243,.7); border-radius: 50%; pointer-events: none; position: absolute; }
+  .ring-a { animation: drift 9s ease-in-out infinite alternate; height: 260px; right: -110px; top: -90px; width: 260px; }
+  .ring-b { animation: drift 11s ease-in-out -3s infinite alternate-reverse; bottom: -70px; height: 180px; left: -60px; width: 180px; }
+
+  .deco-avatar { animation: avatar-in .9s var(--ease-spring) .55s both; }
+  .deco-avatar::after {
+    animation: pulse-ring 2.6s ease-out 1.5s infinite; border: 2px solid #171717; border-radius: 50%; content: ''; inset: -6px; position: absolute;
+  }
+  .deco-text { animation: rise .7s var(--ease-out) .75s both; }
+  .deco-sub { animation: rise .7s var(--ease-out) .85s both; }
+  .deco-compras-link { animation: rise .7s var(--ease-out) .95s backwards; }
+  .deco-links { animation: rise .7s var(--ease-out) 1.05s both; display: flex; flex-direction: column; gap: 6px; margin-top: 18px; }
+  .deco-links a { color: #171717; font-family: var(--font-ui); font-size: 12px; font-weight: 700; text-decoration: none; }
+  .deco-links a span { display: inline-block; transition: transform .3s var(--ease-out); }
+  .deco-links a:hover { text-decoration: underline; }
+  .deco-links a:hover span { transform: translateX(4px); }
+
+  .cuenta-card-right > h1, .cuenta-card-right > .cuenta-sub, form > *, .danger-zone { animation: rise .6s var(--ease-out) both; }
+  .cuenta-card-right > h1 { animation-delay: .25s; }
+  .cuenta-card-right > .cuenta-sub { animation-delay: .32s; }
+  form > :nth-child(1) { animation-delay: .38s; }
+  form > :nth-child(2) { animation-delay: .44s; }
+  form > :nth-child(3) { animation-delay: .5s; }
+  form > :nth-child(4) { animation-delay: .56s; }
+  form > :nth-child(5) { animation-delay: .62s; }
+  .danger-zone { animation-delay: .7s; }
+
+  label { transition: color .2s; }
+  .field-group:focus-within label { color: #d93e2e; }
+  input[type="text"], input[type="tel"], input[type="email"] { transition: border-color .2s, box-shadow .25s, background .2s; }
+  input:focus:not(.readonly-input) { background: #fff; box-shadow: 0 0 0 4px rgba(247,210,28,.35); }
+  input.shake { animation: shake .45s ease; }
+  .field-error:not(:empty) { animation: rise .3s var(--ease-out) both; }
+
+  .success-banner { animation: banner-in .6s var(--ease-spring) both; }
+  .btn-guardar { isolation: isolate; overflow: hidden; position: relative; }
+  .btn-guardar::before {
+    background: #d93e2e; content: ''; inset: 0; position: absolute; transform: scaleX(0); transform-origin: right; transition: transform .45s var(--ease-out); z-index: -1;
+  }
+  .btn-guardar:hover { background: #171717; }
+  .btn-guardar:hover::before { transform: scaleX(1); transform-origin: left; }
+  .btn-guardar.is-saving { cursor: wait; pointer-events: none; }
+  .btn-guardar :global(.btn-spin) {
+    animation: spin .7s linear infinite; border: 2px solid rgba(255,253,243,.35); border-radius: 50%; border-top-color: #f7d21c; display: inline-block; height: 16px; width: 16px;
+  }
+  .btn-delete-account svg { transition: transform .3s var(--ease-out); }
+  .btn-delete-account:hover svg { transform: rotate(-12deg) scale(1.1); }
+
+  @keyframes card-in { from { opacity: 0; transform: translateY(26px) scale(.98); } to { opacity: 1; transform: none; } }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  @keyframes avatar-in { from { opacity: 0; transform: scale(.4) rotate(-20deg); } to { opacity: 1; transform: none; } }
+  @keyframes pulse-ring { 0% { opacity: .5; transform: scale(1); } 80%, 100% { opacity: 0; transform: scale(1.35); } }
+  @keyframes drift { from { transform: translate(0, 0) scale(1); } to { transform: translate(-18px, 14px) scale(1.06); } }
+  @keyframes shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-6px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+  @keyframes banner-in { from { opacity: 0; transform: translateY(-10px) scale(.96); } to { opacity: 1; transform: none; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cuenta-page *, .cuenta-page *::before, .cuenta-page *::after { animation: none !important; transition-duration: .01ms !important; }
+  }
 </style>
 
 <script>
@@ -715,6 +685,12 @@ if (user.length > 0) {
   function setValidity(input: HTMLInputElement, valid: boolean): void {
     input.classList.toggle('valid', valid);
     input.classList.toggle('invalid', !valid);
+    if (!valid && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      // Pequeña sacudida para señalar el campo con error
+      input.classList.remove('shake');
+      void input.offsetWidth;
+      input.classList.add('shake');
+    }
   }
 
   const form = document.getElementById('profileForm') as HTMLFormElement | null;
@@ -745,6 +721,11 @@ if (user.length > 0) {
       e.preventDefault();
     } else {
       document.querySelectorAll('input').forEach(i => i.classList.remove('valid', 'invalid'));
+      const saveBtn = form.querySelector<HTMLButtonElement>('.btn-guardar');
+      if (saveBtn) {
+        saveBtn.classList.add('is-saving');
+        saveBtn.innerHTML = '<span class="btn-spin" aria-hidden="true"></span> Guardando…';
+      }
     }
   });
 

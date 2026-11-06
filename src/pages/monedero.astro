@@ -1,5 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import AccountHeader from '../components/AccountHeader.astro';
 
 if (!Astro.locals.user) {
   return Astro.redirect('/login');
@@ -8,16 +9,7 @@ if (!Astro.locals.user) {
 
 <Layout title="Mi Monedero | SporTenis">
   <div class="wallet-page">
-    <header class="topbar">
-      <a class="brand" href="/" aria-label="SporTenis, inicio">
-        <span class="brand-mark">S</span>
-        <span>Spor<span>Tenis</span></span>
-      </a>
-      <div class="topbar-actions">
-        <a href="/" class="back-link">← Volver a la tienda</a>
-        <a href="/cuenta" class="account-link">Mi cuenta <span aria-hidden="true">↗</span></a>
-      </div>
-    </header>
+    <AccountHeader backHref="/" backLabel="Volver a la tienda" active="monedero" />
 
     <main class="wallet-main">
       <div class="page-heading">
@@ -104,15 +96,7 @@ if (!Astro.locals.user) {
   :global(*) { box-sizing: border-box; }
   :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; }
   .wallet-page { min-height: 100vh; }
-  .topbar { align-items: center; background: #f7d21c; display: flex; justify-content: space-between; min-height: 76px; padding: 0 clamp(20px, 4vw, 64px); }
-  .brand { align-items: center; color: #171717; display: flex; font-family: Arial, sans-serif; font-size: 25px; font-weight: 900; letter-spacing: -1.5px; text-decoration: none; white-space: nowrap; }
-  .brand > span:last-child > span { font-weight: 400; }
-  .brand-mark { align-items: center; border: 3px solid #171717; border-radius: 50%; display: inline-flex; font-size: 15px; height: 30px; justify-content: center; margin-right: 8px; width: 30px; }
-  .topbar-actions { align-items: center; display: flex; gap: 25px; }
-  .back-link, .account-link { color: #171717; font-family: Arial, sans-serif; font-size: 11px; font-weight: 800; text-decoration: none; text-transform: uppercase; }
-  .back-link:hover, .account-link:hover, .continue-link:hover { text-decoration: underline; }
-  .account-link { border-left: 1px solid #17171750; padding-left: 24px; }
-  .account-link span { font-size: 16px; margin-left: 6px; }
+  .continue-link:hover { text-decoration: underline; }
   .wallet-main { margin: 0 auto; max-width: 1120px; padding: 64px 32px 48px; }
   .page-heading { margin-bottom: 32px; }
   .eyebrow { color: #d93e2e; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; letter-spacing: 1.8px; margin: 0 0 12px; text-transform: uppercase; }
@@ -172,12 +156,6 @@ if (!Astro.locals.user) {
     .balance-card { min-height: 270px; }
   }
   @media (max-width: 480px) {
-    .topbar { min-height: 66px; padding: 0 16px; }
-    .brand { font-size: 20px; }
-    .brand-mark { height: 25px; width: 25px; }
-    .topbar-actions { gap: 12px; }
-    .back-link { font-size: 8px; }
-    .account-link { font-size: 8px; padding-left: 12px; }
     .wallet-main { padding: 34px 16px; }
     .balance-card { min-height: 245px; padding: 20px; }
     .movement-card { padding: 21px 18px 17px; }
