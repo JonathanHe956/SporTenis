@@ -1,0 +1,512 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import { db } from '../../../db/db';
+import { Ventas, DetalleVentas, Productos, Modelos, Facturas, MetodosPago, Usuarios } from '../../../db/schema';
+import { findClientId } from '../../../lib/clientes';
+import { desglosarIva, folioFactura } from '../../../lib/facturacion';
+import { eq } from 'drizzle-orm';
+
+// ── Auth ──────────────────────────────────────────────────
+const sessionUser = Astro.locals.user;
+if (!sessionUser) {
+  return Astro.redirect('/login');
+}
+
+// ── Parámetro de ruta ────────────────────────────────────
+const rawId = Astro.params.id;
+const ventaId = rawId ? parseInt(rawId, 10) : NaN;
+if (isNaN(ventaId)) {
+  return Astro.redirect('/cuenta/compras');
+}
+
+// ── Verificar que la venta pertenece al cliente de sesión ─
+const clientId = await findClientId(sessionUser.id);
+if (clientId === null) {
+  return Astro.redirect('/cuenta/compras');
+}
+
+const ventaRows = await db
+  .select({
+    id:             Ventas.id,
+    id_cliente:     Ventas.id_cliente,
+    fecha_venta:    Ventas.fecha_venta,
+    subtotal:       Ventas.subtotal,
+    envio:          Ventas.envio,
+    total:          Ventas.total,
+    cupon:          Ventas.cupon_descuento,
+    estado:         Ventas.estado,
+    fecha_entrega:  Ventas.fecha_entrega,
+    metodo_pago:    MetodosPago.nombre,
+  })
+  .from(Ventas)
+  .leftJoin(MetodosPago, eq(Ventas.id_metodo_pago, MetodosPago.id))
+  .where(eq(Ventas.id, ventaId))
+  .limit(1);
+
+if (ventaRows.length === 0 || ventaRows[0].id_cliente !== clientId) {
+  return Astro.redirect('/cuenta/compras');
+}
+
+const venta = ventaRows[0];
+
+// ── Factura (si existe) ───────────────────────────────────
+const facturaRows = await db
+  .select()
+  .from(Facturas)
+  .where(eq(Facturas.id_venta, ventaId))
+  .limit(1);
+
+const factura = facturaRows[0] ?? null;
+
+// Folio: de Facturas si existe, o autogenerado
+const folio = factura?.folio ?? folioFactura(ventaId);
+
+// IVA: de Facturas si existe, o calculado desde el total de Ventas
+const ivaDesglose = factura
+  ? { subtotal: Number(factura.subtotal), iva: Number(factura.iva), total: Number(factura.total) }
+  : desglosarIva(Number(venta.total));
+
+// ── Detalle de productos ──────────────────────────────────
+const detalles = await db
+  .select({
+    cantidad:        DetalleVentas.cantidad,
+    precio_unitario: DetalleVentas.precio_unitario,
+    subtotal:        DetalleVentas.subtotal,
+    sku:             Productos.sku,
+    talla:           Productos.talla_cm,
+    color:           Productos.color,
+    modelo:          Modelos.nombre,
+    imagen:          Modelos.imagen_url,
+  })
+  .from(DetalleVentas)
+  .leftJoin(Productos, eq(DetalleVentas.id_producto, Productos.id))
+  .leftJoin(Modelos, eq(Productos.id_modelo, Modelos.id))
+  .where(eq(DetalleVentas.id_venta, ventaId));
+
+// ── Nombre del usuario ─────────────────────────────────────
+const userRow = await db
+  .select({ nombre: Usuarios.nombre })
+  .from(Usuarios)
+  .where(eq(Usuarios.id, sessionUser.id))
+  .limit(1);
+const nombreUsuario = userRow[0]?.nombre ?? 'Usuario';
+
+// ── Helpers ───────────────────────────────────────────────
+const estadoConfig: Record<string, { label: string; color: string; bg: string }> = {
+  'Procesando': { label: 'Procesando', color: '#b45309', bg: '#fef3c7' },
+  'Confirmada': { label: 'Confirmada', color: '#1d4ed8', bg: '#dbeafe' },
+  'Entregada':  { label: 'Entregada',  color: '#15803d', bg: '#dcfce7' },
+  'Cancelada':  { label: 'Cancelada',  color: '#b91c1c', bg: '#fee2e2' },
+};
+const est = estadoConfig[venta.estado] ?? { label: venta.estado, color: '#374151', bg: '#f3f4f6' };
+
+function fmt(monto: number | string): string {
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(monto));
+}
+function fmtFecha(fecha: Date | null | undefined): string {
+  if (!fecha) return '—';
+  return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date(fecha));
+}
+---
+
+<Layout>
+  <div class="ticket-page">
+
+    <!-- ══ Topbar ══ -->
+    <header class="topbar no-print">
+      <a class="brand" href="/" aria-label="SporTenis, inicio">
+        <span class="brand-mark">S</span>
+        <span>Spor<span>Tenis</span></span>
+      </a>
+      <div class="store-actions">
+        <a href="/cuenta/compras" class="back-link">← Mis compras</a>
+        <div class="user-nav">
+          <a href="/cuenta"    class="nav-icon" title="Mi Cuenta">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </a>
+          <a href="/monedero"  class="nav-icon" title="Mi Monedero">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 9h18M16 15h.01"/><path d="M7 5V3h10v2"/></svg>
+          </a>
+          <a href="/favoritos" class="nav-icon" title="Mis Favoritos">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+          </a>
+          <a href="/carrito"   class="nav-icon" title="Mi Carrito">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <!-- ══ Contenido principal ══ -->
+    <main class="ticket-main">
+      <div class="ticket-wrapper">
+
+        <!-- Acciones (pantalla) -->
+        <div class="ticket-actions no-print">
+          <a href="/cuenta/compras" class="btn-back">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Volver
+          </a>
+          <button class="btn-print" id="btnImprimir">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Imprimir
+          </button>
+        </div>
+
+        <!-- ══ Ticket ══ -->
+        <div class="ticket">
+
+          <!-- Cabecera del ticket -->
+          <div class="ticket-head">
+            <div class="ticket-brand">
+              <span class="brand-mark-ticket">S</span>
+              <span class="brand-name">Spor<strong>Tenis</strong></span>
+            </div>
+            <div class="ticket-meta">
+              <span class="folio-label">Ticket de compra</span>
+              <span class="folio-value">{folio}</span>
+            </div>
+          </div>
+
+          <!-- Info de la orden -->
+          <div class="ticket-info-grid">
+            <div class="info-item">
+              <span class="info-label">Cliente</span>
+              <span class="info-value">{nombreUsuario}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Fecha de compra</span>
+              <span class="info-value">{fmtFecha(venta.fecha_venta)}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Método de pago</span>
+              <span class="info-value">{venta.metodo_pago ?? '—'}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Estado</span>
+              <span class="badge" style={`color:${est.color}; background:${est.bg};`}>{est.label}</span>
+            </div>
+            {venta.fecha_entrega && (
+              <div class="info-item">
+                <span class="info-label">Fecha de entrega</span>
+                <span class="info-value">{fmtFecha(venta.fecha_entrega)}</span>
+              </div>
+            )}
+            {venta.cupon && (
+              <div class="info-item">
+                <span class="info-label">Cupón aplicado</span>
+                <span class="info-value coupon">{venta.cupon}</span>
+              </div>
+            )}
+          </div>
+
+          <hr class="divider" />
+
+          <!-- Tabla de productos -->
+          <table class="productos-table">
+            <thead>
+              <tr>
+                <th class="col-prod">Producto</th>
+                <th class="col-qty">Cant.</th>
+                <th class="col-unit">P. unitario</th>
+                <th class="col-sub">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detalles.map((d) => (
+                <tr>
+                  <td class="col-prod">
+                    <div class="prod-info">
+                      {d.imagen && (
+                        <img src={d.imagen} alt={d.modelo ?? ''} class="prod-img" />
+                      )}
+                      <div>
+                        <span class="prod-nombre">{d.modelo ?? 'Producto'}</span>
+                        <span class="prod-sku">
+                          {d.sku}
+                          {d.talla && ` · T. ${d.talla}`}
+                          {d.color && ` · ${d.color}`}
+                        </span>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="col-qty center">{d.cantidad}</td>
+                  <td class="col-unit right">{fmt(d.precio_unitario)}</td>
+                  <td class="col-sub right">{fmt(d.subtotal)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <hr class="divider" />
+
+          <!-- Resumen de totales -->
+          <div class="totales">
+            <div class="total-row">
+              <span>Subtotal (sin IVA)</span>
+              <span>{fmt(ivaDesglose.subtotal)}</span>
+            </div>
+            <div class="total-row">
+              <span>IVA (16%)</span>
+              <span>{fmt(ivaDesglose.iva)}</span>
+            </div>
+            <div class="total-row">
+              <span>Envío</span>
+              <span>{Number(venta.envio) === 0 ? 'Gratis' : fmt(venta.envio)}</span>
+            </div>
+            <div class="total-row total-final">
+              <span>Total</span>
+              <span>{fmt(venta.total)}</span>
+            </div>
+          </div>
+
+          <!-- Pie del ticket -->
+          <div class="ticket-footer">
+            <p>¡Gracias por tu compra, {nombreUsuario.split(' ')[0]}!</p>
+            <p class="footer-url">sportenis.com</p>
+          </div>
+
+        </div><!-- /ticket -->
+      </div>
+    </main>
+
+  </div>
+</Layout>
+
+<script>
+  document.getElementById('btnImprimir')?.addEventListener('click', () => {
+    window.print();
+  });
+</script>
+
+<style>
+  /* ── Reset & base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  .ticket-page {
+    min-height: 100vh;
+    background: #faf9f7;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+  }
+
+  /* ── Topbar ── */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 32px;
+    height: 64px;
+    background: #fff;
+    border-bottom: 1px solid #eee;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+    color: #171717;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .brand-mark {
+    width: 32px; height: 32px;
+    background: #d93e2e; color: #fff;
+    border-radius: 8px;
+    display: grid; place-items: center;
+    font-size: 15px; font-weight: 900;
+    flex-shrink: 0;
+  }
+  .brand span span { color: #d93e2e; }
+  .store-actions { display: flex; align-items: center; gap: 24px; }
+  .back-link { font-size: 13px; color: #555; text-decoration: none; transition: color .15s; }
+  .back-link:hover { color: #171717; }
+  .user-nav { display: flex; align-items: center; gap: 4px; }
+  .nav-icon {
+    width: 38px; height: 38px;
+    display: grid; place-items: center;
+    border-radius: 10px; color: #555;
+    text-decoration: none; transition: background .15s, color .15s;
+  }
+  .nav-icon:hover { background: #f3f3f1; color: #171717; }
+
+  /* ── Layout principal ── */
+  .ticket-main { padding: 40px 24px 72px; }
+  .ticket-wrapper { max-width: 680px; margin: 0 auto; }
+
+  /* ── Acciones ── */
+  .ticket-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .btn-back {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 8px 16px;
+    background: #f3f3f1; color: #171717;
+    border-radius: 10px; font-size: 13px; font-weight: 500;
+    text-decoration: none; transition: background .15s;
+  }
+  .btn-back:hover { background: #e5e3e0; }
+  .btn-print {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 10px 20px;
+    background: #171717; color: #fff;
+    border: none; border-radius: 10px;
+    font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: background .15s;
+  }
+  .btn-print:hover { background: #333; }
+
+  /* ══ Ticket ══ */
+  .ticket {
+    background: #fff;
+    border: 1px solid #e8e8e5;
+    border-radius: 20px;
+    padding: 36px 40px;
+    box-shadow: 0 2px 16px rgba(0,0,0,.05);
+  }
+
+  /* Cabecera */
+  .ticket-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 28px;
+  }
+  .ticket-brand {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .brand-mark-ticket {
+    width: 36px; height: 36px;
+    background: #d93e2e; color: #fff;
+    border-radius: 10px; display: grid;
+    place-items: center; font-size: 17px; font-weight: 900;
+  }
+  .brand-name { font-size: 18px; font-weight: 400; color: #171717; }
+  .brand-name strong { font-weight: 700; }
+
+  .ticket-meta { text-align: right; }
+  .folio-label { display: block; font-size: 11px; color: #aaa; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px; }
+  .folio-value {
+    font-family: 'Courier New', monospace;
+    font-size: 15px; font-weight: 700; color: #171717;
+    background: #f3f3f1; padding: 3px 10px; border-radius: 6px;
+  }
+
+  /* Info grid */
+  .ticket-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px 24px;
+    margin-bottom: 24px;
+  }
+  .info-item { display: flex; flex-direction: column; gap: 2px; }
+  .info-label { font-size: 11px; color: #aaa; text-transform: uppercase; letter-spacing: .05em; }
+  .info-value { font-size: 14px; color: #171717; font-weight: 500; }
+  .coupon {
+    font-family: 'Courier New', monospace;
+    font-size: 13px; background: #fef3c7;
+    color: #92400e; padding: 2px 8px; border-radius: 5px;
+    display: inline-block;
+  }
+
+  /* Badge estado */
+  .badge {
+    display: inline-block; padding: 4px 12px;
+    border-radius: 999px; font-size: 12px; font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* Divisor */
+  .divider { border: none; border-top: 1px solid #eee; margin: 20px 0; }
+
+  /* Tabla productos */
+  .productos-table {
+    width: 100%; border-collapse: collapse; font-size: 14px;
+  }
+  .productos-table thead tr { border-bottom: 2px solid #eee; }
+  .productos-table th {
+    padding: 8px 10px; text-align: left;
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .05em; color: #aaa;
+  }
+  .productos-table td { padding: 14px 10px; border-bottom: 1px solid #f3f3f1; vertical-align: middle; }
+  .productos-table tbody tr:last-child td { border-bottom: none; }
+
+  .col-qty, .col-unit, .col-sub { width: 90px; }
+  .center { text-align: center; }
+  .right  { text-align: right; font-weight: 500; }
+
+  .prod-info { display: flex; align-items: center; gap: 12px; }
+  .prod-img  { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; border: 1px solid #eee; flex-shrink: 0; }
+  .prod-nombre { display: block; font-weight: 500; color: #171717; margin-bottom: 2px; }
+  .prod-sku    { display: block; font-size: 12px; color: #888; }
+
+  /* Totales */
+  .totales {
+    display: flex; flex-direction: column;
+    align-items: flex-end; gap: 6px;
+    margin-top: 4px;
+  }
+  .total-row {
+    display: flex; gap: 48px;
+    font-size: 14px; color: #555;
+  }
+  .total-row span:last-child { min-width: 100px; text-align: right; }
+  .total-final {
+    font-size: 17px; font-weight: 700; color: #171717;
+    border-top: 2px solid #171717; padding-top: 10px; margin-top: 6px;
+  }
+
+  /* Pie */
+  .ticket-footer {
+    text-align: center; margin-top: 32px;
+    padding-top: 20px; border-top: 1px dashed #ddd;
+    color: #888; font-size: 13px;
+    line-height: 1.8;
+  }
+  .footer-url { font-size: 11px; color: #bbb; }
+
+  /* ── Responsive ── */
+  @media (max-width: 600px) {
+    .topbar { padding: 0 16px; }
+    .back-link { display: none; }
+    .ticket { padding: 24px 20px; }
+    .ticket-head { flex-direction: column; gap: 12px; }
+    .ticket-meta { text-align: left; }
+    .ticket-info-grid { grid-template-columns: 1fr; gap: 10px; }
+    .col-unit { display: none; }
+    .prod-img { display: none; }
+  }
+
+  /* ══ Estilos de impresión ══ */
+  @media print {
+    .no-print { display: none !important; }
+
+    .ticket-page { background: #fff; }
+    .ticket-main { padding: 0; }
+    .ticket-wrapper { max-width: 100%; }
+
+    .ticket {
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+      padding: 20px;
+    }
+
+    .total-final { color: #000; }
+    .badge { border: 1px solid currentColor; }
+    a { color: inherit; text-decoration: none; }
+
+    @page {
+      margin: 1.5cm;
+      size: A4 portrait;
+    }
+  }
+</style>
+
