@@ -115,8 +115,11 @@ npm run preview
 ├── src/
 │   ├── assets/             Recursos utilizados por la interfaz
 │   ├── components/         Componentes Astro reutilizables
+│   ├── db/                 Conexión a la base de datos y esquema
 │   ├── layouts/            Plantillas generales de página
-│   └── pages/              Rutas de la aplicación
+│   ├── lib/                Lógica de negocio (auth, carrito, ventas, monedero...)
+│   ├── pages/              Rutas de la aplicación
+│   └── middleware.ts       Sesión y permisos por rol en cada petición
 ├── tests/                  Pruebas unitarias (Vitest)
 ├── astro.config.mjs        Configuración de Astro
 ├── package.json            Dependencias y scripts del proyecto
