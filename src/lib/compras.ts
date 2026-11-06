@@ -28,6 +28,7 @@ export interface CompraResumen {
 
 export interface ArticuloCompra {
   id_producto: number;
+  sku: string;
   nombre: string;
   categoria: string | null;
   variante: string;
@@ -135,6 +136,7 @@ export async function getDetalleCompra(clientId: number, ventaId: number): Promi
     db
       .select({
         id_producto: Productos.id,
+        sku: Productos.sku,
         nombre: Modelos.nombre,
         categoria: Categorias.nombre,
         color: Productos.color,
@@ -195,6 +197,7 @@ export async function getDetalleCompra(clientId: number, ventaId: number): Promi
     iva: desglose.iva,
     articulos: articulos.map((a) => ({
       id_producto: a.id_producto,
+      sku: a.sku,
       nombre: a.nombre,
       categoria: a.categoria,
       variante: variante(a.color, a.talla),

@@ -78,7 +78,7 @@ const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency',
     <AccountHeader backHref="/cuenta/compras" backLabel="Mis compras" active="compras" />
 
     <main class="detalle-main">
-      <nav class="breadcrumb enter" aria-label="Ruta de navegación">
+      <nav class="breadcrumb enter no-print" aria-label="Ruta de navegación">
         <a href="/cuenta">Mi cuenta</a><span aria-hidden="true">/</span>
         <a href="/cuenta/compras">Mis compras</a><span aria-hidden="true">/</span>
         <span>{titulo}</span>
@@ -89,8 +89,25 @@ const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency',
           <p class="eyebrow"><span></span> Detalle del pedido</p>
           <h1>{titulo}</h1>
           <p class="head-meta">Realizado el {fmtFecha(compra.fecha)} · {unidades} {unidades === 1 ? 'artículo' : 'artículos'}</p>
+          <p class="head-meta">Cliente: <strong>{sessionUser.nombre}</strong></p>
         </div>
-        <EstadoPedido estado={compra.estado} size="lg" />
+        <div class="head-side">
+          <EstadoPedido estado={compra.estado} size="lg" />
+          <button type="button" class="print-button no-print" id="btnImprimir">
+            <span class="print-icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 9V3h12v6"/>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                <path class="print-paper" d="M6 14h12v7H6z"/>
+              </svg>
+            </span>
+            <span class="print-text">
+              <strong>Imprimir ticket</strong>
+              <small>o guárdalo como PDF</small>
+            </span>
+            <span class="print-arrow" aria-hidden="true">↗</span>
+          </button>
+        </div>
       </section>
 
       <!-- Seguimiento -->
@@ -133,7 +150,7 @@ const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency',
                 <div class="item-info">
                   {a.categoria && <p class="item-cat">{a.categoria}</p>}
                   <h3>{a.nombre}</h3>
-                  <p class="item-variant">{a.variante}</p>
+                  <p class="item-variant">{a.variante} · <span class="item-sku">SKU {a.sku}</span></p>
                   <p class="item-qty">{a.cantidad} × {money(a.precioUnitario)}</p>
                 </div>
                 <strong class="item-total">{money(a.subtotal)}</strong>
@@ -213,7 +230,7 @@ const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency',
         </aside>
       </div>
 
-      <div class="detalle-foot enter" style="--d: 460ms">
+      <div class="detalle-foot enter no-print" style="--d: 460ms">
         <a href="/cuenta/compras" class="back-button"><span aria-hidden="true">←</span> Volver a mis compras</a>
         <p>¿Tienes dudas sobre este pedido? Tienes 30 días para cambios y devoluciones.</p>
       </div>
@@ -359,13 +376,56 @@ const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency',
     .detalle-grid { grid-template-columns: 1fr; }
   }
   @media (max-width: 560px) {
+    .head-side { align-items: stretch; width: 100%; }
+    .print-button { justify-content: flex-start; }
+    .print-arrow { margin-left: auto; }
     .card { padding: 18px; }
     .item { gap: 12px; grid-template-columns: 70px 1fr; }
     .item-thumb { height: 70px; width: 70px; }
     .item-total { grid-column: 2; }
     .step-label { font-size: 11px; }
   }
+  .head-meta + .head-meta { margin-top: 4px; }
+  .head-side { align-items: flex-end; display: flex; flex-direction: column; gap: 16px; }
+
+  /* Botón de impresión con el mismo lenguaje que las tarjetas: borde negro y sombra desplazada */
+  .print-button {
+    align-items: center; background: #fffdf3; border: 2px solid #171717; box-shadow: 4px 4px 0 #171717; color: #171717; cursor: pointer;
+    display: inline-flex; gap: 12px; padding: 8px 16px 8px 8px; text-align: left;
+    transition: transform .25s var(--ease-out), box-shadow .25s var(--ease-out), background .2s;
+  }
+  .print-button:hover { background: #f7d21c; box-shadow: 7px 7px 0 #171717; transform: translate(-3px, -3px); }
+  .print-button:active { box-shadow: 1px 1px 0 #171717; transform: translate(3px, 3px); }
+  .print-icon {
+    align-items: center; background: #f7d21c; border: 2px solid #171717; border-radius: 50%; display: flex; flex-shrink: 0; height: 40px;
+    justify-content: center; transition: background .2s, color .2s; width: 40px;
+  }
+  .print-button:hover .print-icon { background: #171717; color: #f7d21c; }
+  .print-paper { transition: transform .35s var(--ease-out); }
+  .print-button:hover .print-paper { transform: translateY(2px); }
+  .print-text { display: flex; flex-direction: column; gap: 2px; }
+  .print-text strong { font-family: var(--font-ui); font-size: 12px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; }
+  .print-text small { color: #716e67; font-family: var(--font-ui); font-size: 11px; transition: color .2s; }
+  .print-button:hover .print-text small { color: #171717; }
+  .print-arrow { font-family: var(--font-ui); font-size: 16px; margin-left: 4px; transition: transform .3s var(--ease-out); }
+  .print-button:hover .print-arrow { transform: translate(3px, -3px); }
+  .item-sku { color: #716e67; font-family: 'Courier New', monospace; font-size: 11px; }
+
   @media (prefers-reduced-motion: reduce) {
     .enter, .item, .step.done .step-dot, .steps::after { animation: none; }
   }
+
+  /* ── Impresión: ticket limpio, sin header ni navegación ─── */
+  @media print {
+    :global(.account-topbar), :global(.fav-drawer), :global(.app-toast-region), .no-print { display: none !important; }
+    :global(body) { background: #fff; }
+    .detalle-main { max-width: none; padding: 0; }
+    .enter, .item, .step-dot, .steps::after { animation: none !important; opacity: 1 !important; transform: none !important; }
+    .card { box-shadow: none; break-inside: avoid; }
+    .detalle-grid { grid-template-columns: 1fr 300px; }
+  }
 </style>
+
+<script>
+  document.getElementById('btnImprimir')?.addEventListener('click', () => window.print());
+</script>

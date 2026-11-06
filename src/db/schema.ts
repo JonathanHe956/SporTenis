@@ -1,4 +1,5 @@
-import { int, varchar, text, decimal, boolean, datetime, mysqlTable } from 'drizzle-orm/mysql-core';
+import { sql } from 'drizzle-orm';
+import { int, varchar, text, decimal, boolean, datetime, mysqlEnum, mysqlTable } from 'drizzle-orm/mysql-core';
 
 export const Roles = mysqlTable('Roles', {
   id: int('id').autoincrement().primaryKey(),
@@ -92,6 +93,14 @@ export const Monederos = mysqlTable('Monederos', {
   id: int('id').autoincrement().primaryKey(),
   id_cliente: int('id_cliente').references(() => Clientes.id).unique().notNull(),
   saldo: decimal('saldo', { precision: 10, scale: 2 }).default('0.00').notNull(),
+});
+
+export const MovimientosMonedero = mysqlTable('MovimientosMonedero', {
+  id: int('id').autoincrement().primaryKey(),
+  id_monedero: int('id_monedero').references(() => Monederos.id, { onDelete: 'cascade' }).notNull(),
+  tipo: mysqlEnum('tipo', ['Recarga', 'Descuento']).notNull(),
+  monto: decimal('monto', { precision: 10, scale: 2 }).notNull(),
+  fecha: datetime('fecha').default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
 export const Direcciones = mysqlTable('Direcciones', {
