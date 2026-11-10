@@ -2,6 +2,7 @@ import { and, eq, gte, sql } from 'drizzle-orm';
 import { db } from '../db/db';
 import { Clientes, DetalleVentas, HistorialOrdenes, MetodosPago, MovimientosInventario, Productos, Ventas } from '../db/schema';
 import { facturarYConciliarVenta } from './facturacion';
+import { precioAlPublico, promocionesPorProducto, type PromocionPrecio } from './promociones';
 import { procesarLogisticaStock } from './stockLogistics';
 
 // Regla de envío de la tienda: el envío es gratis a partir de ENVIO_GRATIS_DESDE (inclusive);
@@ -27,7 +28,7 @@ export class VentaError extends Error {
 export interface ItemVenta {
   id_producto: number;
   cantidad: number;
-  /** Precio unitario fijado por el personal; si se omite se usa el precio de catálogo. */
+  /** Precio unitario fijado por el personal; si se omite se usa el de catálogo con su promoción vigente. */
   precio?: number;
 }
 
@@ -89,6 +90,11 @@ export interface NuevaVenta {
   /** Si se omite se aplica la regla de envío de la tienda. */
   envio?: number;
   cupon_descuento?: string | null;
+  /** Referencia del pago ya autorizado (tarjeta o pasarela), sin datos sensibles. */
+  referencia_pago?: string | null;
+  /** Dirección de envío elegida y su copia legible (ver formatearDireccion). */
+  id_direccion?: number | null;
+  direccion_envio?: string | null;
   /**
    * 'Confirmada' (por defecto) descuenta el stock al registrar.
    * 'Procesando' deja la orden editable y el stock se descuenta al confirmarla en /erp/ordenes.
@@ -104,6 +110,19 @@ export const registrarHistorialOrden = (
   cambio: { id_venta: number; id_usuario: number | null; estado_anterior: string | null; estado_nuevo: string },
 ) => tx.insert(HistorialOrdenes).values({ ...cambio, fecha: new Date() });
 type LineaVenta = { id_producto: number; cantidad: number; precio: number };
+
+/** Promociones vigentes de los productos de la venta, leídas dentro de su transacción. */
+type ReglasPrecio = Map<number, PromocionPrecio[]>;
+
+const leerReglasPrecio = (tx: Tx, items: ItemVenta[]): Promise<ReglasPrecio> =>
+  promocionesPorProducto(items.map((item) => item.id_producto), tx);
+
+/**
+ * Precio que se cobra por cada artículo: el fijado por el personal o, si no hay, el de catálogo
+ * (impuestos incluidos) menos la mejor promoción vigente; la misma regla que muestran la tienda y el carrito.
+ */
+const precioDeCatalogo = (reglas: ReglasPrecio, item: ItemVenta, precio_venta: string): number =>
+  item.precio ?? precioAlPublico(item.id_producto, precio_venta, reglas.get(item.id_producto)).final;
 
 const validarEncabezado = async (venta: { id_cliente: number; id_metodo_pago: number; envio?: number }) => {
   if (venta.envio !== undefined && (!Number.isFinite(venta.envio) || venta.envio < 0)) {
@@ -121,7 +140,7 @@ const validarEncabezado = async (venta: { id_cliente: number; id_metodo_pago: nu
  * Arma las líneas de una orden en Procesando: rechaza cantidades mayores al stock
  * disponible, pero no lo aparta (el descuento ocurre al confirmar la orden).
  */
-async function lineasConStockDisponible(tx: Tx, items: ItemVenta[]): Promise<LineaVenta[]> {
+async function lineasConStockDisponible(tx: Tx, items: ItemVenta[], reglas: ReglasPrecio): Promise<LineaVenta[]> {
   const solicitado = new Map<number, number>();
   const lineas: LineaVenta[] = [];
 
@@ -148,7 +167,7 @@ async function lineasConStockDisponible(tx: Tx, items: ItemVenta[]): Promise<Lin
     lineas.push({
       id_producto: item.id_producto,
       cantidad: item.cantidad,
-      precio: item.precio ?? Number(producto.precio_venta),
+      precio: precioDeCatalogo(reglas, item, producto.precio_venta),
     });
   }
 
@@ -179,7 +198,8 @@ export async function registrarVenta(venta: NuevaVenta): Promise<TotalesVenta & 
   await validarEncabezado(venta);
 
   const resultado = await db.transaction(async (tx) => {
-    const lineas: LineaVenta[] = confirmada ? [] : await lineasConStockDisponible(tx, items);
+    const reglas = await leerReglasPrecio(tx, items);
+    const lineas: LineaVenta[] = confirmada ? [] : await lineasConStockDisponible(tx, items, reglas);
 
     for (const item of confirmada ? items : []) {
       const producto = await tx
@@ -206,7 +226,7 @@ export async function registrarVenta(venta: NuevaVenta): Promise<TotalesVenta & 
       lineas.push({
         id_producto: item.id_producto,
         cantidad: item.cantidad,
-        precio: item.precio ?? Number(producto[0].precio_venta),
+        precio: precioDeCatalogo(reglas, item, producto[0].precio_venta),
       });
     }
 
@@ -222,6 +242,8 @@ export async function registrarVenta(venta: NuevaVenta): Promise<TotalesVenta & 
       total: totales.total.toFixed(2),
       cupon_descuento: venta.cupon_descuento || null,
       estado,
+      id_direccion: venta.id_direccion ?? null,
+      direccion_envio: venta.direccion_envio ?? null,
     });
 
     const id_venta = Number(resVenta.insertId);
@@ -250,7 +272,12 @@ export async function registrarVenta(venta: NuevaVenta): Promise<TotalesVenta & 
     );
 
     // La factura y el cobro conciliado nacen con la confirmación, sin captura adicional
-    await facturarYConciliarVenta(tx, { id_venta, id_metodo_pago: venta.id_metodo_pago, total: totales.total });
+    await facturarYConciliarVenta(tx, {
+      id_venta,
+      id_metodo_pago: venta.id_metodo_pago,
+      total: totales.total,
+      referencia_pago: venta.referencia_pago,
+    });
 
     return { id_venta, ...totales };
   });
@@ -298,7 +325,7 @@ export async function actualizarOrden(orden: CambiosOrden): Promise<TotalesVenta
       throw new VentaError(`La orden ya está ${actual.estado.toLowerCase()} y no se puede modificar.`, 409);
     }
 
-    const lineas = await lineasConStockDisponible(tx, items);
+    const lineas = await lineasConStockDisponible(tx, items, await leerReglasPrecio(tx, items));
     const totales = calcularTotales(lineas, orden.envio);
 
     await tx

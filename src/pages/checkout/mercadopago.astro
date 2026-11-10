@@ -1,0 +1,78 @@
+---
+// Regreso desde Mercado Pago. Lo que venga en la URL solo sirve para saber qué pago revisar:
+// el estado real se consulta a la API de Mercado Pago antes de registrar la compra.
+import Layout from '../../layouts/Layout.astro';
+import AccountHeader from '../../components/AccountHeader.astro';
+import { findClientId } from '../../lib/clientes';
+import { procesarPagoMercadoPago, revisarPagosPendientes, type ResultadoPago } from '../../lib/mercadoPago';
+
+const params = Astro.url.searchParams;
+const paymentId = params.get('payment_id') ?? params.get('collection_id') ?? '';
+
+let resultado: ResultadoPago;
+if (!paymentId || paymentId === 'null') {
+  // Sin número de pago en la URL: se buscan en Mercado Pago los pagos de los intentos del cliente
+  const clientId = Astro.locals.user ? await findClientId(Astro.locals.user.id) : null;
+  let encontrado: ResultadoPago | null = null;
+  try {
+    encontrado = clientId ? await revisarPagosPendientes(clientId) : null;
+  } catch (error) {
+    console.error('Error al revisar los pagos pendientes de Mercado Pago:', error);
+  }
+  resultado = encontrado ?? { estado: 'fallido', mensaje: 'No encontramos un pago completado. Tu carrito sigue intacto.' };
+} else {
+  try {
+    resultado = await procesarPagoMercadoPago(paymentId);
+  } catch (error) {
+    console.error('Error al revisar el pago de Mercado Pago:', error);
+    resultado = { estado: 'error', mensaje: 'No pudimos confirmar tu pago con Mercado Pago. Si se te cobró, lo verás en "Mis compras" en unos minutos.' };
+  }
+}
+
+if (resultado.estado === 'pagado') return Astro.redirect(`/cuenta/compras/${resultado.id_venta}`);
+
+const titulos: Record<Exclude<ResultadoPago['estado'], 'pagado'>, string> = {
+  pendiente: 'Tu pago está en proceso',
+  fallido: 'El pago no se completó',
+  reembolsado: 'Te devolvimos el pago',
+  error: 'Estamos revisando tu pago',
+  desconocido: 'No encontramos este pago',
+};
+const titulo = titulos[resultado.estado];
+const mensaje = resultado.mensaje;
+const tono = resultado.estado === 'pendiente' ? 'info' : resultado.estado === 'fallido' || resultado.estado === 'desconocido' ? 'error' : 'aviso';
+---
+
+<Layout title={`${titulo} | SporTenis`}>
+  <AccountHeader backHref="/carrito" backLabel="Volver al carrito" active="carrito" />
+  <main class="mp-main">
+    <section class:list={['mp-card', `tono-${tono}`]}>
+      <p class="eyebrow">Mercado Pago</p>
+      <h1>{titulo}</h1>
+      <p class="mensaje">{mensaje}</p>
+      {paymentId && paymentId !== 'null' && <p class="ref">Pago #{paymentId}</p>}
+      <div class="acciones">
+        {resultado.estado === 'pendiente'
+          ? <a class="btn" href="/cuenta/compras">Ver mis compras</a>
+          : <a class="btn" href="/carrito">Volver al carrito</a>}
+        <a class="link" href="/">Seguir comprando</a>
+      </div>
+    </section>
+  </main>
+</Layout>
+
+<style>
+  :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; margin: 0; }
+  .mp-main { display: grid; min-height: 70vh; padding: 48px 16px; place-items: center; }
+  .mp-card { background: #fffdf3; border: 1.5px solid #171717; border-top: 6px solid #009ee3; box-shadow: 6px 6px 0 #171717; max-width: 520px; padding: 32px; width: 100%; }
+  .tono-error { border-top-color: #d93e2e; }
+  .tono-aviso { border-top-color: #f7d21c; }
+  .eyebrow { color: #009ee3; font: 700 11px var(--font-ui); letter-spacing: 2px; margin: 0 0 10px; text-transform: uppercase; }
+  h1 { font-size: clamp(28px, 4vw, 38px); font-weight: 400; letter-spacing: -1px; line-height: 1.05; margin: 0 0 14px; }
+  .mensaje { color: #57534e; font: 15px/1.6 var(--font-ui); margin: 0 0 10px; }
+  .ref { color: #716e67; font: 12px var(--font-ui); margin: 0 0 22px; }
+  .acciones { align-items: center; display: flex; flex-wrap: wrap; gap: 18px; }
+  .btn { background: #171717; color: #fffdf3; font: 700 13px var(--font-ui); padding: 12px 18px; text-decoration: none; }
+  .btn:hover { background: #2b2b2b; }
+  .link { color: #171717; font: 700 13px var(--font-ui); }
+</style>

@@ -6,7 +6,7 @@ import HeaderActions from './HeaderActions.astro';
 interface Props {
   backHref?: string;
   backLabel?: string;
-  active?: 'cuenta' | 'compras' | 'monedero' | 'favoritos' | 'carrito';
+  active?: 'cuenta' | 'compras' | 'direcciones' | 'monedero' | 'favoritos' | 'carrito';
 }
 
 const { backHref = '/', backLabel = 'Volver a la tienda', active } = Astro.props;

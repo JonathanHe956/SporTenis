@@ -4,6 +4,7 @@ import { db } from '../db/db';
 import {
   Categorias,
   DetalleVentas,
+  FacturaImpuestos,
   Facturas,
   HistorialOrdenes,
   MetodosPago,
@@ -12,7 +13,8 @@ import {
   Productos,
   Ventas,
 } from '../db/schema';
-import { desglosarIva } from './facturacion';
+import { esTablaInexistente } from './dbErrores';
+import { NOMBRE_IVA, desglosarImpuestos, impuestosVigentes, type LineaImpuesto } from './impuestos';
 
 export interface CompraResumen {
   id: number;
@@ -49,11 +51,13 @@ export interface CompraDetalle {
   subtotal: number;
   envio: number;
   total: number;
-  /** Desglose de IVA: de la factura si existe; si no, calculado del total. */
-  baseSinIva: number;
-  iva: number;
+  /** Copia de la dirección a la que se envió el pedido; null en pedidos sin dirección registrada. */
+  direccionEnvio: string | null;
+  /** Desglose de impuestos: el de la factura si existe; si no, calculado del total con los impuestos de hoy. */
+  baseSinImpuestos: number;
+  impuestos: LineaImpuesto[];
   articulos: ArticuloCompra[];
-  pago: { estado: string; monto: number; fecha: Date } | null;
+  pago: { estado: string; monto: number; fecha: Date; referencia: string | null } | null;
   factura: { folio: string; uuid: string; estado: string; fechaEmision: Date } | null;
   historial: Array<{ estado: string; fecha: Date }>;
 }
@@ -110,6 +114,27 @@ export async function getComprasCliente(clientId: number): Promise<CompraResumen
  * Detalle completo de un pedido. Devuelve null si no existe o si no pertenece
  * al cliente, para que nadie pueda ver compras ajenas cambiando el id en la URL.
  */
+/**
+ * Impuestos con los que se emitió la factura. Las facturas anteriores a la migración 0012 no
+ * guardaron el detalle: se muestran como IVA con la tasa que resulta de su propio desglose.
+ */
+async function impuestosDeFactura(id_factura: number, subtotal: number, totalImpuestos: number): Promise<LineaImpuesto[]> {
+  try {
+    const rows = await db
+      .select({ nombre: FacturaImpuestos.nombre, porcentaje: FacturaImpuestos.porcentaje, monto: FacturaImpuestos.monto })
+      .from(FacturaImpuestos)
+      .where(eq(FacturaImpuestos.id_factura, id_factura))
+      .orderBy(asc(FacturaImpuestos.id));
+    if (rows.length > 0) {
+      return rows.map((r) => ({ nombre: r.nombre, porcentaje: Number(r.porcentaje), monto: Number(r.monto) }));
+    }
+  } catch (error) {
+    if (!esTablaInexistente(error)) throw error;
+  }
+  const porcentaje = subtotal > 0 ? Math.round((totalImpuestos / subtotal) * 100) : 0;
+  return [{ nombre: NOMBRE_IVA, porcentaje, monto: totalImpuestos }];
+}
+
 export async function getDetalleCompra(clientId: number, ventaId: number): Promise<CompraDetalle | null> {
   if (!Number.isInteger(ventaId) || ventaId <= 0) return null;
 
@@ -124,6 +149,7 @@ export async function getDetalleCompra(clientId: number, ventaId: number): Promi
       envio: Ventas.envio,
       total: Ventas.total,
       metodoPago: MetodosPago.nombre,
+      direccionEnvio: Ventas.direccion_envio,
     })
     .from(Ventas)
     .leftJoin(MetodosPago, eq(Ventas.id_metodo_pago, MetodosPago.id))
@@ -154,7 +180,7 @@ export async function getDetalleCompra(clientId: number, ventaId: number): Promi
       .where(eq(DetalleVentas.id_venta, venta.id))
       .orderBy(asc(DetalleVentas.id)),
     db
-      .select({ estado: Pagos.estado, monto: Pagos.monto, fecha: Pagos.fecha_pago })
+      .select({ estado: Pagos.estado, monto: Pagos.monto, fecha: Pagos.fecha_pago, referencia: Pagos.referencia })
       .from(Pagos)
       .where(eq(Pagos.id_venta, venta.id))
       .limit(1),
@@ -164,6 +190,7 @@ export async function getDetalleCompra(clientId: number, ventaId: number): Promi
         uuid: Facturas.uuid,
         estado: Facturas.estado,
         fechaEmision: Facturas.fecha_emision,
+        id: Facturas.id,
         subtotal: Facturas.subtotal,
         iva: Facturas.iva,
       })
@@ -180,8 +207,8 @@ export async function getDetalleCompra(clientId: number, ventaId: number): Promi
   const total = Number(venta.total);
   const factura = facturas[0];
   const desglose = factura
-    ? { subtotal: Number(factura.subtotal), iva: Number(factura.iva) }
-    : desglosarIva(total);
+    ? { subtotal: Number(factura.subtotal), impuestos: await impuestosDeFactura(factura.id, Number(factura.subtotal), Number(factura.iva)) }
+    : desglosarImpuestos(total, await impuestosVigentes());
 
   return {
     id: venta.id,
@@ -190,11 +217,12 @@ export async function getDetalleCompra(clientId: number, ventaId: number): Promi
     fechaEntrega: venta.fechaEntrega,
     cupon: venta.cupon,
     metodoPago: venta.metodoPago ?? 'No especificado',
+    direccionEnvio: venta.direccionEnvio ?? null,
     subtotal: Number(venta.subtotal),
     envio: Number(venta.envio),
     total,
-    baseSinIva: desglose.subtotal,
-    iva: desglose.iva,
+    baseSinImpuestos: desglose.subtotal,
+    impuestos: desglose.impuestos,
     articulos: articulos.map((a) => ({
       id_producto: a.id_producto,
       sku: a.sku,
@@ -207,7 +235,9 @@ export async function getDetalleCompra(clientId: number, ventaId: number): Promi
       precioUnitario: Number(a.precioUnitario),
       subtotal: Number(a.subtotal),
     })),
-    pago: pagos[0] ? { estado: pagos[0].estado, monto: Number(pagos[0].monto), fecha: pagos[0].fecha } : null,
+    pago: pagos[0]
+      ? { estado: pagos[0].estado, monto: Number(pagos[0].monto), fecha: pagos[0].fecha, referencia: pagos[0].referencia }
+      : null,
     factura: factura
       ? { folio: factura.folio, uuid: factura.uuid, estado: factura.estado, fechaEmision: factura.fechaEmision }
       : null,

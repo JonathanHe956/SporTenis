@@ -287,7 +287,13 @@ const year = new Date().getFullYear();
                 <p>{product.type}</p>
                 <h3>{product.name}</h3>
               </div>
-              <strong>{product.price}<small> MXN</small></strong>
+              <div class="price-block">
+                <strong>
+                  {product.originalPrice && <s class="price-original" aria-label={`Antes ${product.originalPrice}`}>{product.originalPrice}</s>}
+                  {product.price}<small> MXN</small>
+                </strong>
+                {product.taxIncluded && <span class="tax-included">Incluye impuestos {product.taxIncluded}</span>}
+              </div>
             </div>
             <button class="detail-button" type="button" {...productData(product)}>
               <span>Comprar</span>
@@ -352,6 +358,7 @@ const year = new Date().getFullYear();
     <p class="eyebrow" id="dialogType"></p>
     <h2 id="dialogTitle"></h2>
     <strong class="dialog-price" id="dialogPrice"></strong>
+    <p class="dialog-tax" id="dialogTax" hidden></p>
     <p class="dialog-description" id="dialogDescription"></p>
     <label for="productOption">Variante</label>
     <select id="productOption"></select>
@@ -622,6 +629,8 @@ const year = new Date().getFullYear();
   .product-info p { color: #716e67; font-family: var(--font-ui); font-size: 11px; letter-spacing: .5px; margin: 0 0 6px; text-transform: uppercase; }
   .product-info h3 { font-size: 18px; font-weight: 400; line-height: 1.25; margin: 0; }
   .product-info strong { font-family: var(--font-ui); font-size: 15px; white-space: nowrap; }
+  .price-block { align-items: flex-end; display: flex; flex-direction: column; gap: 4px; }
+  .tax-included { color: #716e67; font-family: var(--font-ui); font-size: 10px; white-space: nowrap; }
   .product-info small { color: #716e67; font-size: 10px; font-weight: 600; }
 
   .detail-button {
@@ -712,6 +721,8 @@ const year = new Date().getFullYear();
   .dialog-content .eyebrow { color: #d93e2e; margin: 0; }
   .dialog-content h2 { font-size: clamp(28px, 3vw, 36px); font-weight: 400; letter-spacing: -1.2px; line-height: 1.1; margin: 0; }
   .dialog-price { font-family: var(--font-ui); font-size: 20px; }
+  .dialog-tax { color: #716e67; font-family: var(--font-ui); font-size: 11px; margin: 6px 0 0; }
+  .price-original, .dialog-price :global(.price-original) { color: #716e67; font-size: .75em; font-weight: 400; margin-right: 6px; }
   .dialog-description { color: #716e67; font-family: var(--font-ui); font-size: 14px; line-height: 1.6; margin: 4px 0 10px; }
   .dialog-content label { font-family: var(--font-ui); font-size: 11px; font-weight: 800; letter-spacing: .6px; margin-top: 4px; text-transform: uppercase; }
   .dialog-content select { background: #f6f4ed; border: 1.5px solid #d8d3c3; color: #171717; font-family: var(--font-ui); font-size: 13px; padding: 12px; transition: border-color .2s; }
@@ -899,6 +910,7 @@ const year = new Date().getFullYear();
   const dialogType = document.getElementById('dialogType') as HTMLElement | null;
   const dialogTitle = document.getElementById('dialogTitle') as HTMLElement | null;
   const dialogPrice = document.getElementById('dialogPrice') as HTMLElement | null;
+  const dialogTax = document.getElementById('dialogTax') as HTMLElement | null;
   const dialogDescription = document.getElementById('dialogDescription') as HTMLElement | null;
   const productOption = document.getElementById('productOption') as HTMLSelectElement | null;
   const dialogVisual = document.getElementById('dialogVisual') as HTMLElement | null;
@@ -927,7 +939,22 @@ const year = new Date().getFullYear();
 
     if (dialogType) dialogType.textContent = button.dataset.type || '';
     if (dialogTitle) dialogTitle.textContent = selectedProduct;
-    if (dialogPrice) dialogPrice.textContent = button.dataset.price ? `${button.dataset.price} MXN` : '';
+    if (dialogPrice) {
+      dialogPrice.replaceChildren();
+      if (button.dataset.originalPrice) {
+        const original = document.createElement('s');
+        original.className = 'price-original';
+        original.textContent = button.dataset.originalPrice;
+        dialogPrice.append(original);
+      }
+      dialogPrice.append(button.dataset.price ? `${button.dataset.price} MXN` : '');
+    }
+    // El precio ya incluye los impuestos: solo se informa cuánto son, no se suman
+    if (dialogTax) {
+      const detalle = (button.dataset.taxDetail || '').split('|').filter(Boolean);
+      dialogTax.textContent = detalle.length ? `Precio final con impuestos incluidos · ${detalle.join(' · ')}` : '';
+      dialogTax.hidden = detalle.length === 0;
+    }
     if (dialogDescription) {
       dialogDescription.textContent = button.dataset.description || '';
       dialogDescription.hidden = !button.dataset.description;

@@ -1,0 +1,282 @@
+---
+// Mis direcciones: el cliente guarda varias direcciones de envío y elige cuál es la principal.
+// En el carrito se elige una de estas antes de pagar.
+import Layout from '../../layouts/Layout.astro';
+import AccountHeader from '../../components/AccountHeader.astro';
+import { findClientId } from '../../lib/clientes';
+import { ESTADOS_MX, MAX_DIRECCIONES, listarDirecciones, type Direccion } from '../../lib/direcciones';
+
+const sessionUser = Astro.locals.user;
+if (!sessionUser) return Astro.redirect('/login');
+
+const clientId = await findClientId(sessionUser.id);
+const direcciones: Direccion[] = clientId !== null ? await listarDirecciones(clientId) : [];
+---
+
+<Layout title="Mis direcciones | SporTenis">
+  <div class="dir-page">
+    <AccountHeader backHref="/cuenta" backLabel="Volver a mi cuenta" active="direcciones" />
+
+    <main class="dir-main">
+      <section class="page-head">
+        <div>
+          <nav class="breadcrumb" aria-label="Ruta de navegación">
+            <a href="/cuenta">Mi cuenta</a><span aria-hidden="true">/</span><span>Mis direcciones</span>
+          </nav>
+          <p class="eyebrow"><span></span> Envíos</p>
+          <h1>Mis <em>direcciones</em></h1>
+          <p class="head-sub">Guarda hasta {MAX_DIRECCIONES} direcciones. La principal se elige sola al pagar, y puedes cambiarla en cada compra.</p>
+        </div>
+        <button type="button" class="primary-btn" id="nuevaDireccion">+ Agregar dirección</button>
+      </section>
+
+      <div class="dir-layout">
+        <section aria-labelledby="listaTitulo">
+          <h2 class="sr-only" id="listaTitulo">Direcciones guardadas</h2>
+          <p class="empty" id="sinDirecciones" hidden={direcciones.length > 0}>Aún no tienes direcciones guardadas. Agrega una para poder pagar tus compras.</p>
+          <ul class="dir-list" id="listaDirecciones">
+            {direcciones.map((d) => (
+              <li class:list={['dir-card', { principal: d.principal }]} data-id={d.id}>
+                <div class="dir-card-head">
+                  <strong>{d.alias}</strong>
+                  {d.principal && <span class="badge">Principal</span>}
+                </div>
+                <address>
+                  <span>{d.destinatario} · {d.telefono}</span>
+                  <span>{d.calle}, Col. {d.colonia}</span>
+                  <span>{d.ciudad}, {d.estado}, C.P. {d.cp}</span>
+                  {d.referencias && <span class="muted">Referencias: {d.referencias}</span>}
+                </address>
+                <div class="dir-actions">
+                  <button type="button" class="link-btn" data-editar={JSON.stringify(d)}>Editar</button>
+                  {!d.principal && <button type="button" class="link-btn" data-principal={d.id}>Hacer principal</button>}
+                  <button
+                    type="button"
+                    class="link-btn danger"
+                    data-eliminar={d.id}
+                  >Eliminar</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <form class="dir-form" id="formDireccion" novalidate hidden>
+          <div><h2 id="formTitulo">Nueva dirección</h2><p class="req-nota">Los campos con <span class="req">*</span> son obligatorios.</p></div>
+          <div class="form-grid">
+            <label><span>Quién recibe <span class="req" aria-hidden="true">*</span></span><input name="destinatario" maxlength="255" autocomplete="name" required /></label>
+            <label><span>Teléfono (10 dígitos) <span class="req" aria-hidden="true">*</span></span><input name="telefono" inputmode="tel" autocomplete="tel-national" maxlength="14" required /></label>
+            <label><span>Código postal <span class="req" aria-hidden="true">*</span></span><input name="cp" inputmode="numeric" autocomplete="postal-code" maxlength="5" placeholder="Ej. 20298" required /></label>
+            <label><span>Estado <span class="req" aria-hidden="true">*</span></span>
+              <select name="estado" autocomplete="address-level1" required>
+                <option value="">Elige…</option>
+                {ESTADOS_MX.map((estado) => <option value={estado}>{estado}</option>)}
+              </select>
+            </label>
+            <p class="geo-aviso span-2" data-geo-aviso hidden></p>
+            <label class="span-2"><span>Municipio o alcaldía <span class="req" aria-hidden="true">*</span></span>
+              <select name="ciudad" autocomplete="address-level2" required disabled><option value="">Primero elige el estado</option></select>
+            </label>
+            <label class="span-2"><span>Colonia <span class="req" aria-hidden="true">*</span></span>
+              <select name="colonia" autocomplete="address-level3" required disabled><option value="">Primero escribe tu código postal</option></select>
+            </label>
+            <label class="span-2"><span>Calle y número <span class="req" aria-hidden="true">*</span></span><input name="calle" maxlength="255" autocomplete="address-line1" placeholder="Av. Reforma 123, int. 4" required /></label>
+            <label class="span-2"><span>Nombre de la dirección <span class="req" aria-hidden="true">*</span></span><input name="alias" maxlength="100" placeholder="Casa, Oficina…" required /></label>
+            <label class="span-2"><span>Referencias <span class="muted">(opcional)</span></span><input name="referencias" maxlength="255" placeholder="Entre calles, color de la casa…" /></label>
+            <label class="check span-2"><input type="checkbox" name="principal" /> Usar como dirección principal</label>
+          </div>
+          <p class="form-error" id="errorDireccion" role="alert" hidden></p>
+          <div class="form-actions">
+            <button type="button" class="link-btn" id="cancelarDireccion">Cancelar</button>
+            <button type="submit" class="primary-btn">Guardar</button>
+          </div>
+        </form>
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<script>
+  import { conectarSelectorDireccion } from '../../scripts/selectorDireccion';
+
+  const form = document.getElementById('formDireccion') as HTMLFormElement | null;
+  // Estado → municipios y código postal → colonias, con el catálogo de Correos de México
+  const selectorGeo = form ? conectarSelectorDireccion(form) : null;
+  const titulo = document.getElementById('formTitulo');
+  const errorBox = document.getElementById('errorDireccion');
+  let editandoId: number | null = null;
+
+  const toast = (mensaje: string, kind: 'success' | 'error' = 'success') => {
+    const region = document.getElementById('appToastRegion');
+    if (!region) { if (kind === 'error') console.error(mensaje); return; }
+    const el = document.createElement('div');
+    el.className = 'app-toast';
+    el.dataset.kind = kind;
+    el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+    el.textContent = mensaje;
+    region.appendChild(el);
+    window.setTimeout(() => el.remove(), 4000);
+  };
+
+  const enviar = async (url: string, method: string, body?: unknown) => {
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.ok === false) throw new Error(data.error || 'No se pudo guardar el cambio.');
+    return data;
+  };
+
+  // Tras cada cambio se recarga para mostrar la lista actualizada (con la principal primero)
+  const recargar = () => window.location.reload();
+
+  const abrirFormulario = (datos?: Record<string, unknown>) => {
+    if (!form) return;
+    form.reset();
+    if (errorBox) errorBox.hidden = true;
+    editandoId = datos ? Number(datos.id) : null;
+    if (titulo) titulo.textContent = datos ? 'Editar dirección' : 'Nueva dirección';
+    selectorGeo?.limpiar();
+    if (datos) {
+      for (const campo of ['alias', 'destinatario', 'telefono', 'calle', 'referencias']) {
+        const input = form.elements.namedItem(campo) as HTMLInputElement | null;
+        if (input) input.value = String(datos[campo] ?? '');
+      }
+      (form.elements.namedItem('principal') as HTMLInputElement).checked = Boolean(datos.principal);
+      // Estado, municipio, código postal y colonia se cargan del catálogo en orden
+      void selectorGeo?.precargar({
+        estado: String(datos.estado ?? ''),
+        ciudad: String(datos.ciudad ?? ''),
+        cp: String(datos.cp ?? ''),
+        colonia: String(datos.colonia ?? ''),
+      });
+    }
+    form.hidden = false;
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    (form.elements.namedItem('alias') as HTMLInputElement).focus();
+  };
+
+  document.getElementById('nuevaDireccion')?.addEventListener('click', () => abrirFormulario());
+  document.getElementById('cancelarDireccion')?.addEventListener('click', () => { if (form) form.hidden = true; });
+  document.querySelectorAll<HTMLButtonElement>('[data-editar]').forEach((btn) =>
+    btn.addEventListener('click', () => abrirFormulario(JSON.parse(btn.dataset.editar || '{}'))));
+
+  // Abre el formulario directo si se llega desde el carrito sin direcciones (/cuenta/direcciones?nueva=1)
+  if (new URLSearchParams(window.location.search).get('nueva') === '1') abrirFormulario();
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!form.reportValidity()) return;
+    const datos = Object.fromEntries(new FormData(form).entries());
+    const body = { ...datos, principal: datos.principal === 'on' };
+    const guardar = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (guardar) guardar.disabled = true;
+    try {
+      if (editandoId) await enviar(`/api/direcciones/${editandoId}`, 'PUT', body);
+      else await enviar('/api/direcciones', 'POST', body);
+      recargar();
+    } catch (error) {
+      if (errorBox) {
+        errorBox.textContent = error instanceof Error ? error.message : 'No se pudo guardar la dirección.';
+        errorBox.hidden = false;
+      }
+      if (guardar) guardar.disabled = false;
+    }
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-principal]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await enviar(`/api/direcciones/${btn.dataset.principal}`, 'PUT', { principal: true });
+        recargar();
+      } catch (error) {
+        toast(error instanceof Error ? error.message : 'No se pudo cambiar la principal.', 'error');
+        btn.disabled = false;
+      }
+    }));
+
+  // Se pide confirmación en dos clics sobre el mismo botón para no borrar por accidente
+  document.querySelectorAll<HTMLButtonElement>('[data-eliminar]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      if (btn.dataset.confirmar !== '1') {
+        btn.dataset.confirmar = '1';
+        btn.textContent = '¿Seguro? Eliminar';
+        window.setTimeout(() => { btn.dataset.confirmar = ''; btn.textContent = 'Eliminar'; }, 4000);
+        return;
+      }
+      btn.disabled = true;
+      try {
+        await enviar(`/api/direcciones/${btn.dataset.eliminar}`, 'DELETE');
+        recargar();
+      } catch (error) {
+        toast(error instanceof Error ? error.message : 'No se pudo eliminar la dirección.', 'error');
+        btn.disabled = false;
+      }
+    }));
+</script>
+
+<style>
+  :global(*) { box-sizing: border-box; }
+  :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; margin: 0; -webkit-font-smoothing: antialiased; }
+
+  .dir-page { min-height: 100vh; }
+  .dir-main { margin: 0 auto; max-width: 1120px; padding: clamp(28px, 4vw, 48px) clamp(16px, 4vw, 48px) 80px; }
+
+  .page-head { align-items: flex-end; display: flex; flex-wrap: wrap; gap: 24px; justify-content: space-between; margin-bottom: 30px; }
+  .breadcrumb { align-items: center; display: flex; font-family: var(--font-ui); font-size: 12px; gap: 8px; margin-bottom: 18px; }
+  .breadcrumb a { color: #716e67; text-decoration: none; }
+  .breadcrumb a:hover { color: #171717; text-decoration: underline; }
+  .breadcrumb span:last-child { font-weight: 700; }
+  .eyebrow { color: #d93e2e; font-family: var(--font-ui); font-size: 11px; font-weight: 700; letter-spacing: 2px; margin: 0 0 8px; text-transform: uppercase; }
+  .eyebrow span { background: #f7d21c; display: inline-block; height: 7px; margin-right: 8px; width: 7px; }
+  h1 { font-size: clamp(40px, 5.5vw, 64px); font-weight: 400; letter-spacing: -2.5px; line-height: .95; margin: 0 0 14px; }
+  .head-sub { color: #57534e; font-family: var(--font-ui); font-size: 14px; line-height: 1.6; margin: 0; max-width: 480px; }
+
+  .primary-btn { background: #171717; border: 0; color: #fffdf3; cursor: pointer; font: 700 13px var(--font-ui); min-height: 44px; padding: 0 18px; }
+  .primary-btn:disabled { opacity: .6; cursor: wait; }
+  .link-btn { background: none; border: 0; color: #171717; cursor: pointer; font: 700 12px var(--font-ui); padding: 4px 0; text-decoration: underline; }
+  .link-btn.danger { color: #d93e2e; }
+  .link-btn:disabled { opacity: .5; cursor: wait; }
+
+  .dir-layout { align-items: start; display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); }
+  .dir-list { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); list-style: none; margin: 0; padding: 0; }
+  .dir-card { background: #fffdf3; border: 1.5px solid #d8d3c3; display: flex; flex-direction: column; gap: 10px; padding: 16px; }
+  .dir-card.principal { border-color: #171717; box-shadow: inset 4px 0 0 #f7d21c; }
+  .dir-card-head { align-items: center; display: flex; gap: 8px; }
+  .dir-card-head strong { font-size: 18px; font-weight: 400; }
+  .badge { background: #171717; color: #fffdf3; font: 700 9px var(--font-ui); letter-spacing: .5px; padding: 3px 7px; text-transform: uppercase; }
+  address { display: flex; flex-direction: column; font-family: var(--font-ui); font-size: 13px; font-style: normal; gap: 3px; line-height: 1.4; }
+  .muted { color: #716e67; }
+  .dir-actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: auto; }
+  .empty { background: #fffdf3; border: 1.5px dashed #d8d3c3; color: #57534e; font-family: var(--font-ui); font-size: 14px; margin: 0; padding: 28px; text-align: center; }
+  .empty[hidden] { display: none; }
+
+  .dir-form { background: #fffdf3; border: 1.5px solid #171717; display: grid; gap: 14px; padding: 20px; position: sticky; top: 20px; }
+  .dir-form[hidden] { display: none; }
+  .dir-form h2 { font-size: 22px; font-weight: 400; margin: 0; }
+  .form-grid { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+  .form-grid label { display: grid; font: 700 11px var(--font-ui); gap: 5px; }
+  .form-grid .span-2 { grid-column: span 2; }
+  .form-grid input:not([type="checkbox"]), .form-grid select {
+    background: #fff; border: 1.5px solid #d8d3c3; font: 400 14px var(--font-ui); min-height: 40px; padding: 8px 10px; width: 100%;
+  }
+  .form-grid input:focus, .form-grid select:focus { border-color: #171717; outline: none; }
+  .form-grid select:disabled { color: #a8a29e; cursor: not-allowed; }
+  .req { color: #d93e2e; font-weight: 700; }
+  .req-nota { color: #716e67; font: 12px var(--font-ui); margin: 4px 0 0; }
+  .form-grid :is(input, select):user-invalid { border-color: #d93e2e; }
+  .geo-aviso { background: #f0ece0; color: #57534e; font: 12px var(--font-ui); margin: -4px 0 0; padding: 6px 10px; }
+  .geo-aviso[hidden] { display: none; }
+  .geo-aviso[data-tipo="error"] { background: #fff1ef; color: #9f2a1e; }
+  .form-grid .check { align-items: center; display: flex; font-weight: 400; gap: 8px; }
+  .form-error { background: #fff1ef; border-left: 3px solid #d93e2e; color: #9f2a1e; font: 12px var(--font-ui); margin: 0; padding: 8px 10px; }
+  .form-error[hidden] { display: none; }
+  .form-actions { align-items: center; display: flex; gap: 16px; justify-content: flex-end; }
+  .sr-only { border: 0; clip: rect(0 0 0 0); height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; white-space: nowrap; width: 1px; }
+
+  @media (max-width: 860px) { .dir-layout { grid-template-columns: 1fr; } .dir-form { position: static; } }
+  @media (max-width: 480px) { .form-grid { grid-template-columns: 1fr; } .form-grid .span-2 { grid-column: auto; } }
+</style>

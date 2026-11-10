@@ -7,6 +7,9 @@ type Executor = Pick<typeof db, 'select'>;
 /** IVA de México; se usa mientras la tabla Impuestos no exista. */
 export const IVA_POR_DEFECTO = 0.16;
 
+/** Nombre del impuesto de respaldo y de las facturas antiguas sin detalle por impuesto. */
+export const NOMBRE_IVA = 'IVA';
+
 export const ESTADOS_IMPUESTO = ['Activo', 'Inactivo'] as const;
 export type EstadoImpuesto = (typeof ESTADOS_IMPUESTO)[number];
 
@@ -96,8 +99,12 @@ export async function crearImpuesto(datos: DatosImpuesto): Promise<number> {
 }
 
 export async function actualizarImpuesto(id: number, datos: Partial<DatosImpuesto>): Promise<void> {
-  const actual = await db.select({ id: Impuestos.id }).from(Impuestos).where(eq(Impuestos.id, id));
+  const actual = await db.select({ id: Impuestos.id, nombre: Impuestos.nombre }).from(Impuestos).where(eq(Impuestos.id, id));
   if (!actual[0]) throw new ImpuestoError('Impuesto no encontrado.', 404);
+  if (datos.nombre !== undefined && datos.nombre !== actual[0].nombre) {
+    const repetido = await db.select({ id: Impuestos.id }).from(Impuestos).where(eq(Impuestos.nombre, datos.nombre));
+    if (repetido[0]) throw new ImpuestoError(`Ya existe un impuesto llamado ${datos.nombre}.`, 409);
+  }
 
   if (Object.keys(datos).length === 0) return;
   await db
@@ -106,24 +113,82 @@ export async function actualizarImpuesto(id: number, datos: Partial<DatosImpuest
     .where(eq(Impuestos.id, id));
 }
 
-/** Tasa que corresponde al registro del IVA: 0 si está inactivo, la de siempre si no existe. */
-export const tasaDesdeRegistro = (registro?: { porcentaje: number; estado: string }): number => {
-  if (!registro) return IVA_POR_DEFECTO;
-  return registro.estado === 'Activo' ? porcentajeATasa(registro.porcentaje) : 0;
-};
+// ── Impuestos incluidos en el precio ──────────────────────────────────
+// El precio del catálogo (Productos.precio_venta) es el precio final al público, con los
+// impuestos incluidos: es lo que se cobra. Los impuestos activos solo se desglosan dentro
+// de ese precio (tienda, carrito, ticket y factura); cambiarlos no cambia el precio.
+
+export interface ImpuestoAplicado {
+  nombre: string;
+  porcentaje: number;
+  tasa: number;
+}
+
+export interface LineaImpuesto {
+  nombre: string;
+  porcentaje: number;
+  monto: number;
+}
+
+/** Lo que se desglosa mientras no haya impuestos registrados (o falte la migración 0010): IVA al 16%. */
+export const IMPUESTOS_POR_DEFECTO: readonly ImpuestoAplicado[] = [
+  { nombre: NOMBRE_IVA, porcentaje: IVA_POR_DEFECTO * 100, tasa: IVA_POR_DEFECTO },
+];
 
 /**
- * Tasa de IVA vigente para el checkout y la factura. Si la migración 0010 aún no se
- * aplicó, se usa la tasa de siempre (16%) para no frenar las ventas.
+ * Impuestos activos a partir de los registros guardados. Sin ningún registro se usa el IVA
+ * de respaldo; con registros pero todos inactivos no se desglosa ningún impuesto.
  */
-export async function tasaIvaVigente(executor: Executor = db): Promise<number> {
+export const impuestosDesdeRegistros = (
+  registros: ReadonlyArray<{ nombre: string; porcentaje: number | string; estado: string }>,
+): ImpuestoAplicado[] => {
+  if (registros.length === 0) return [...IMPUESTOS_POR_DEFECTO];
+  return registros
+    .filter((r) => r.estado === 'Activo')
+    .map((r) => ({ nombre: r.nombre, porcentaje: Number(r.porcentaje), tasa: porcentajeATasa(Number(r.porcentaje)) }));
+};
+
+/** Impuestos incluidos hoy en los precios. Si la tabla aún no existe se usa el IVA de siempre. */
+export async function impuestosVigentes(executor: Executor = db): Promise<ImpuestoAplicado[]> {
   try {
     const rows = await executor
-      .select({ porcentaje: Impuestos.porcentaje, estado: Impuestos.estado })
+      .select({ nombre: Impuestos.nombre, porcentaje: Impuestos.porcentaje, estado: Impuestos.estado })
       .from(Impuestos)
-      .where(eq(Impuestos.nombre, 'IVA'));
-    return tasaDesdeRegistro(rows[0] && { porcentaje: Number(rows[0].porcentaje), estado: rows[0].estado });
+      .orderBy(asc(Impuestos.id));
+    return impuestosDesdeRegistros(rows);
   } catch {
-    return IVA_POR_DEFECTO;
+    return [...IMPUESTOS_POR_DEFECTO];
   }
 }
+
+/** Suma de las tasas activas (IVA 16% + otro 8% = 0.24). */
+export const tasaTotal = (impuestos: readonly ImpuestoAplicado[]): number =>
+  Math.round(impuestos.reduce((total, imp) => total + imp.tasa, 0) * 1_000_000) / 1_000_000;
+
+/**
+ * Separa un precio o total (impuestos incluidos) en su base y el monto de cada impuesto, sin perder centavos:
+ * el último impuesto con tasa absorbe el redondeo para que base + impuestos = total exacto.
+ */
+export const desglosarImpuestos = (
+  total: number,
+  impuestos: readonly ImpuestoAplicado[],
+): { subtotal: number; impuestos: LineaImpuesto[]; total_impuestos: number; total: number } => {
+  const totalCents = Math.round(total * 100);
+  const baseCents = Math.round(totalCents / (1 + tasaTotal(impuestos)));
+  let restante = totalCents - baseCents;
+  // El redondeo va al último impuesto que sí cobra algo (uno al 0% siempre queda en $0)
+  const ultimo = impuestos.findLastIndex((imp) => imp.tasa > 0);
+
+  const lineas = impuestos.map((imp, i) => {
+    const cents = i === ultimo ? restante : imp.tasa > 0 ? Math.min(restante, Math.round(baseCents * imp.tasa)) : 0;
+    restante -= cents;
+    return { nombre: imp.nombre, porcentaje: imp.porcentaje, monto: cents / 100 };
+  });
+
+  return {
+    subtotal: baseCents / 100,
+    impuestos: lineas,
+    total_impuestos: (totalCents - baseCents) / 100,
+    total: totalCents / 100,
+  };
+};

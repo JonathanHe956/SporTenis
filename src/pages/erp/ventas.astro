@@ -7,6 +7,7 @@ import {
 } from '../../db/schema';
 import { eq, desc, asc } from 'drizzle-orm';
 import { COSTO_ENVIO, ENVIO_GRATIS_DESDE, ESTADOS_VENTA_EFECTIVA, actualizarOrden, registrarVenta } from '../../lib/ventas';
+import { preciosVigentes } from '../../lib/promociones';
 
 const sessionUser = Astro.locals.user;
 if (!sessionUser) return Astro.redirect('/login');
@@ -261,12 +262,13 @@ if (detalleId) {
   }
 }
 
-// Lista limpia de productos
+// Lista limpia de productos; el precio sugerido ya trae la promoción vigente
+const preciosHoy = await preciosVigentes(productosList.map(p => ({ id: p.id, precio_venta: p.precio_venta })));
 const productosJSON = JSON.stringify(
   productosList.map(p => ({
     id: p.id,
     label: `${p.marca || ''} ${p.modelo || 'Producto'} (SKU: ${p.sku}) | Talla: ${p.talla_cm || 'N/A'} | ${p.color || ''}`,
-    precio: Number(p.precio_venta) || 0,
+    precio: preciosHoy.get(p.id)?.final ?? 0,
     stock: p.stock || 0,
   }))
 );
@@ -1280,7 +1282,7 @@ const backHref = '/erp/ventas' + (backParams.toString() ? '?' + backParams.toStr
               )}
               {detalleFactura && (
                 <>
-                  <p><strong>Factura:</strong> {detalleFactura.folio} ({detalleFactura.estado}) &bull; IVA {fmt(Number(detalleFactura.iva))}</p>
+                  <p><strong>Factura:</strong> {detalleFactura.folio} ({detalleFactura.estado}) &bull; Impuestos {fmt(Number(detalleFactura.iva))}</p>
                   <p><strong>Folio fiscal interno:</strong> <code>{detalleFactura.uuid}</code></p>
                   <p><strong>Cobro:</strong> {detalleFactura.pago || 'Sin registrar'}</p>
                 </>

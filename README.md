@@ -51,9 +51,46 @@ mysql -u root -p sportenis_db < db/migrations/0007_presupuestos_cxc_cxp.sql
 mysql -u root -p sportenis_db < db/migrations/0008_monedero.sql
 mysql -u root -p sportenis_db < db/migrations/0009_movimientos_monedero.sql
 mysql -u root -p sportenis_db < db/migrations/0010_impuestos.sql
+mysql -u root -p sportenis_db < db/migrations/0011_promociones.sql
+mysql -u root -p sportenis_db < db/migrations/0012_factura_impuestos.sql
+mysql -u root -p sportenis_db < db/migrations/0013_pago_monedero.sql
+mysql -u root -p sportenis_db < db/migrations/0014_formas_pago.sql
+mysql -u root -p sportenis_db < db/migrations/0015_direcciones_envio.sql
+mysql -u root -p sportenis_db < db/migrations/0016_codigos_postales.sql
+mysql -u root -p sportenis_db < db/migrations/0017_mercado_pago.sql
 ```
 
-Ejecuta solo las migraciones que aún no hayas aplicado, en orden. La `0009` es necesaria para que funcionen las recargas y el historial del monedero, y la `0010` crea la tabla de impuestos con el IVA al 16%.
+Ejecuta solo las migraciones que aún no hayas aplicado, en orden. La `0009` es necesaria para que funcionen las recargas y el historial del monedero, la `0010` crea la tabla de impuestos con el IVA al 16% y la `0011` las tablas de promociones (ambas se administran en `/scm/precios`). La `0012` guarda el desglose de impuestos de cada factura. El precio de cada producto ya incluye los impuestos: cambiar el IVA o agregar un impuesto solo cambia el desglose, no lo que se cobra. La `0013` agrega el método de pago Monedero: las compras de la tienda se pagan con el saldo del monedero (se bloquean si no alcanza) y se reembolsan al cancelarlas. La `0014` agrega tarjeta de crédito, tarjeta de débito y Mercado Pago como formas de pago en el carrito. Son **simulados**: no se cobra nada y de la tarjeta solo se guardan la marca y los últimos 4 dígitos. Tarjetas de prueba: `4242 4242 4242 4242` se aprueba, `4000 0000 0000 0002` se rechaza y `4000 0000 0000 9995` no tiene fondos (cualquier vencimiento futuro y CVV de 3 dígitos). La `0015` agrega las direcciones de envío: el cliente guarda varias en `/cuenta/direcciones` (una es la principal), elige una en el carrito antes de pagar y cada pedido guarda una copia de la dirección a la que se envió. La `0016` crea la tabla del catálogo de códigos postales y la `0017` la de los pagos con Mercado Pago.
+
+### Catálogo de códigos postales
+
+Los formularios de dirección eligen municipio y colonia del Catálogo Nacional de Códigos Postales de Correos de México (SEPOMEX). Después de aplicar la `0016`, cárgalo una vez (descarga ~2 MB y tarda unos segundos):
+
+```bash
+node db/importar-codigos-postales.mjs
+```
+
+El catálogo no está en el repositorio porque su licencia permite el uso particular pero no distribuirlo a terceros; el script lo descarga de la fuente oficial. Vuelve a correrlo cuando quieras actualizarlo.
+
+### Mercado Pago (Checkout Pro)
+
+El pago con Mercado Pago usa la pasarela oficial y el SDK `mercadopago`. Agrega a tu `.env` las credenciales de tu aplicación en [Mercado Pago Developers](https://www.mercadopago.com.mx/developers/panel/app) (usa las **de prueba** para desarrollar):
+
+```bash
+MP_ACCESS_TOKEN=TEST-...        # obligatorio; sin él la opción aparece como "No disponible"
+MP_WEBHOOK_SECRET=...           # opcional: valida la firma de los avisos (webhooks)
+SITE_URL=http://localhost:4321  # URL pública de la tienda (https en producción)
+```
+
+Para probarlo en local con regreso automático, abre un túnel público (Cloudflare, gratis y sin cuenta) en otra terminal mientras corre `npm run dev`:
+
+```bash
+npm run tunel
+```
+
+Muestra una URL `https://…trycloudflare.com`: entra a la tienda con esa URL (e inicia sesión ahí). Mercado Pago descarta las URLs de regreso de `localhost`, así que sin túnel hay que volver a la tienda a mano; aun así la compra se registra al abrir el carrito o "Mis compras". Requiere `cloudflared` (`winget install --id Cloudflare.cloudflared`).
+
+El cliente paga en la página de Mercado Pago y regresa a `/checkout/mercadopago`; la compra se registra solo después de consultar el pago a la API de Mercado Pago. Con `SITE_URL` en https, Mercado Pago regresa solo al cliente y avisa por webhook a `/api/webhooks/mercadopago`. Si un pago aprobado no se puede registrar (por ejemplo, se agotó el stock), se reembolsa automáticamente.
 
 ### Usuarios de prueba
 

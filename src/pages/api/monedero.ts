@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { findClientId, getOrCreateClientId } from '../../lib/clientes';
-import { consultarMovimientos, consultarSaldo, descontar, MonederoError, recargar } from '../../lib/monedero';
+import { consultarMovimientos, consultarSaldo, MonederoError, recargar } from '../../lib/monedero';
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), {
@@ -37,8 +37,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return json({ error: 'Cuerpo de solicitud inválido.' }, 400);
   }
 
+  // El cliente solo puede recargar; el saldo se descuenta al pagar una compra, no a mano
   const { action, monto } = body as { action?: unknown; monto?: unknown };
-  if (action !== 'recargar' && action !== 'descontar') {
+  if (action !== 'recargar') {
     return json({ error: 'Acción no válida.' }, 400);
   }
   if (typeof monto !== 'number') {
@@ -49,11 +50,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const clientId = await getOrCreateClientId(user.id);
     if (!clientId) return json({ error: 'No se pudo determinar el cliente.' }, 400);
 
-    if (action === 'recargar') {
-      await recargar(clientId, monto);
-    } else {
-      await descontar(clientId, monto);
-    }
+    await recargar(clientId, monto);
 
     return json({ success: true, saldo: await consultarSaldo(clientId) });
   } catch (error: unknown) {

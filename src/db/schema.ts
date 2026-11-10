@@ -57,6 +57,7 @@ export const Productos = mysqlTable('Productos', {
   sku: varchar('sku', { length: 100 }).unique().notNull(),
   talla_cm: varchar('talla_cm', { length: 50 }),
   color: varchar('color', { length: 50 }),
+  // Precio final al público, con impuestos incluidos: la factura solo los desglosa
   precio_venta: decimal('precio_venta', { precision: 10, scale: 2 }).notNull(),
   costo: decimal('costo', { precision: 10, scale: 2 }).notNull(),
   stock: int('stock').notNull(),
@@ -116,9 +117,12 @@ export const Monederos = mysqlTable('Monederos', {
 export const MovimientosMonedero = mysqlTable('MovimientosMonedero', {
   id: int('id').autoincrement().primaryKey(),
   id_monedero: int('id_monedero').references(() => Monederos.id, { onDelete: 'cascade' }).notNull(),
-  tipo: mysqlEnum('tipo', ['Recarga', 'Descuento']).notNull(),
+  // Descuento = pago de una compra; Reembolso = devolución al cancelar esa compra
+  tipo: mysqlEnum('tipo', ['Recarga', 'Descuento', 'Reembolso']).notNull(),
   monto: decimal('monto', { precision: 10, scale: 2 }).notNull(),
   fecha: datetime('fecha').default(sql`CURRENT_TIMESTAMP`).notNull(),
+  // Compra pagada (o reembolsada) con este movimiento; null en las recargas
+  id_venta: int('id_venta').references(() => Ventas.id),
 });
 
 export const Direcciones = mysqlTable('Direcciones', {
@@ -131,6 +135,21 @@ export const Direcciones = mysqlTable('Direcciones', {
   estado_provincia: varchar('estado_provincia', { length: 255 }).notNull(),
   cp: varchar('cp', { length: 20 }).notNull(),
   es_principal: boolean('es_principal').notNull(),
+  // Quién recibe, teléfono de contacto y referencias para el repartidor (migración 0015)
+  destinatario: varchar('destinatario', { length: 255 }),
+  telefono: varchar('telefono', { length: 20 }),
+  referencias: varchar('referencias', { length: 255 }),
+});
+
+// Catálogo Nacional de Códigos Postales (SEPOMEX); se llena con db/importar-codigos-postales.mjs
+export const CodigosPostales = mysqlTable('CodigosPostales', {
+  id: int('id').autoincrement().primaryKey(),
+  cp: varchar('cp', { length: 5 }).notNull(),
+  colonia: varchar('colonia', { length: 255 }).notNull(),
+  tipo_asentamiento: varchar('tipo_asentamiento', { length: 100 }).notNull(),
+  municipio: varchar('municipio', { length: 255 }).notNull(),
+  estado: varchar('estado', { length: 100 }).notNull(),
+  ciudad: varchar('ciudad', { length: 255 }),
 });
 
 export const PreferenciasCliente = mysqlTable('PreferenciasCliente', {
@@ -200,6 +219,9 @@ export const Ventas = mysqlTable('Ventas', {
   // Etapa 3 (ERP): estado de la orden y fecha en que se entregó
   estado: varchar('estado', { length: 50 }).default('Confirmada').notNull(),
   fecha_entrega: datetime('fecha_entrega'),
+  // Dirección de envío elegida y su copia: el pedido conserva la dirección aunque luego se edite o se borre
+  id_direccion: int('id_direccion').references(() => Direcciones.id, { onDelete: 'set null' }),
+  direccion_envio: text('direccion_envio'),
 });
 
 export const DetalleVentas = mysqlTable('DetalleVentas', {
@@ -347,6 +369,27 @@ export const Pagos = mysqlTable('Pagos', {
   estado: varchar('estado', { length: 50 }).notNull(),
   fecha_pago: datetime('fecha_pago').notNull(),
   fecha_conciliacion: datetime('fecha_conciliacion'),
+  // Cómo se pagó, sin datos sensibles: "Visa •••• 4242", "Mercado Pago #A1B2C3"
+  referencia: varchar('referencia', { length: 100 }),
+});
+
+// Intentos de pago con Mercado Pago (Checkout Pro): copia del carrito mientras el cliente paga allá
+export const CheckoutsMercadoPago = mysqlTable('CheckoutsMercadoPago', {
+  id: int('id').autoincrement().primaryKey(),
+  id_cliente: int('id_cliente').references(() => Clientes.id).notNull(),
+  id_usuario: int('id_usuario'),
+  id_direccion: int('id_direccion'),
+  direccion_envio: text('direccion_envio').notNull(),
+  articulos: text('articulos').notNull(),
+  envio: decimal('envio', { precision: 10, scale: 2 }).notNull(),
+  total: decimal('total', { precision: 10, scale: 2 }).notNull(),
+  preference_id: varchar('preference_id', { length: 100 }),
+  payment_id: varchar('payment_id', { length: 50 }),
+  estado: varchar('estado', { length: 20 }).default('pendiente').notNull(),
+  mensaje: varchar('mensaje', { length: 255 }),
+  id_venta: int('id_venta').references(() => Ventas.id),
+  fecha_creacion: datetime('fecha_creacion').notNull(),
+  fecha_actualizacion: datetime('fecha_actualizacion').notNull(),
 });
 
 // Etapa 4 (ERP): reportes semanales que el sistema genera por calendario
@@ -408,4 +451,13 @@ export const Impuestos = mysqlTable('Impuestos', {
   nombre: varchar('nombre', { length: 100 }).unique().notNull(),
   porcentaje: decimal('porcentaje', { precision: 5, scale: 2 }).notNull(),
   estado: varchar('estado', { length: 20 }).default('Activo').notNull(),
+});
+
+// Impuestos con los que se emitió cada factura: el historial no cambia si después se edita la tabla Impuestos
+export const FacturaImpuestos = mysqlTable('FacturaImpuestos', {
+  id: int('id').autoincrement().primaryKey(),
+  id_factura: int('id_factura').references(() => Facturas.id, { onDelete: 'cascade' }).notNull(),
+  nombre: varchar('nombre', { length: 100 }).notNull(),
+  porcentaje: decimal('porcentaje', { precision: 5, scale: 2 }).notNull(),
+  monto: decimal('monto', { precision: 10, scale: 2 }).notNull(),
 });

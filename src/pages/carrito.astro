@@ -4,6 +4,11 @@
 import Layout from '../layouts/Layout.astro';
 import AccountHeader from '../components/AccountHeader.astro';
 import { COSTO_ENVIO, ENVIO_GRATIS_DESDE } from '../lib/ventas';
+import { ESTADOS_MX } from '../lib/direcciones';
+import { mercadoPagoConfigurado } from '../lib/mercadoPago';
+
+// Mercado Pago (Checkout Pro oficial) solo se ofrece si la tienda tiene su access token configurado
+const mercadoPagoDisponible = mercadoPagoConfigurado();
 
 const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
 ---
@@ -96,24 +101,163 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
 
           <div class="tax-breakdown" aria-label="Desglose de impuestos">
             <div class="summary-line tax-line">
-              <span>Importe sin IVA</span>
+              <span>Importe sin impuestos</span>
               <span id="baseDisplay">$0 MXN</span>
             </div>
-            <div class="summary-line tax-line">
-              <span>IVA (<span id="ivaRateDisplay">16</span>%)</span>
-              <span id="ivaDisplay">$0 MXN</span>
-            </div>
+            <!-- Una línea por cada impuesto activo (IVA y los que se configuren en /scm/precios) -->
+            <div id="taxLines"></div>
           </div>
 
           <div class="summary-line total-line">
             <span>Total estimado</span>
             <strong id="totalDisplay">$0 MXN</strong>
           </div>
-          <p class="tax-note">Precios en pesos mexicanos con IVA incluido. El desglose incluye el envío.</p>
+          <p class="tax-note">Precios en pesos mexicanos con impuestos incluidos. El desglose incluye el envío.</p>
+
+          <!-- Indicador del checkout: primero la dirección, después el pago -->
+          <ol class="checkout-steps" id="checkoutSteps" aria-label="Pasos para pagar" hidden>
+            <li class="cs-step" data-step="envio"><span class="cs-dot" aria-hidden="true"><span class="cs-num">1</span><span class="cs-done">✓</span></span> Envío</li>
+            <li class="cs-line" aria-hidden="true"></li>
+            <li class="cs-step" data-step="pago"><span class="cs-dot" aria-hidden="true"><span class="cs-num">2</span><span class="cs-done">✓</span></span> Pago</li>
+          </ol>
+
+          <!-- Paso 1: dirección de envío (obligatoria antes de pagar) -->
+          <section class="checkout-step" id="stepEnvio" aria-labelledby="stepEnvioTitle" hidden>
+            <div class="step-head">
+              <h3 class="step-title" id="stepEnvioTitle">¿A dónde lo enviamos?</h3>
+              <a class="step-link" href="/cuenta/direcciones">Administrar</a>
+            </div>
+            <div class="address-list" id="addressList" role="radiogroup" aria-labelledby="stepEnvioTitle"></div>
+            <button type="button" class="address-add" id="addAddressBtn">
+              <span class="address-add-icon" aria-hidden="true">+</span> Agregar nueva dirección
+            </button>
+
+            <form class="address-form" id="addressForm" novalidate hidden>
+              <div class="address-form-head">
+                <strong>Nueva dirección <span class="req-nota">Campos con <span class="req">*</span> obligatorios</span></strong>
+                <button type="button" class="address-form-close" id="cancelAddressBtn" aria-label="Cancelar nueva dirección">×</button>
+              </div>
+              <div class="form-grid">
+                <label class="card-field"><span>Quién recibe <span class="req" aria-hidden="true">*</span></span>
+                  <input name="destinatario" maxlength="255" autocomplete="name" required />
+                </label>
+                <label class="card-field"><span>Teléfono <span class="req" aria-hidden="true">*</span></span>
+                  <input name="telefono" inputmode="tel" autocomplete="tel-national" maxlength="14" placeholder="10 dígitos" required />
+                </label>
+                <label class="card-field"><span>Código postal <span class="req" aria-hidden="true">*</span></span>
+                  <input name="cp" inputmode="numeric" autocomplete="postal-code" maxlength="5" placeholder="Ej. 20298" required />
+                </label>
+                <label class="card-field"><span>Estado <span class="req" aria-hidden="true">*</span></span>
+                  <select name="estado" autocomplete="address-level1" required>
+                    <option value="">Elige…</option>
+                    {ESTADOS_MX.map((estado) => <option value={estado}>{estado}</option>)}
+                  </select>
+                </label>
+                <p class="geo-aviso span-2" data-geo-aviso hidden></p>
+                <label class="card-field span-2"><span>Municipio o alcaldía <span class="req" aria-hidden="true">*</span></span>
+                  <select name="ciudad" autocomplete="address-level2" required disabled>
+                    <option value="">Primero elige el estado</option>
+                  </select>
+                </label>
+                <label class="card-field span-2"><span>Colonia <span class="req" aria-hidden="true">*</span></span>
+                  <select name="colonia" autocomplete="address-level3" required disabled>
+                    <option value="">Primero escribe tu código postal</option>
+                  </select>
+                </label>
+                <label class="card-field span-2"><span>Calle y número <span class="req" aria-hidden="true">*</span></span>
+                  <input name="calle" maxlength="255" autocomplete="address-line1" placeholder="Av. Reforma 123, int. 4" required />
+                </label>
+                <label class="card-field span-2"><span>Nombre de la dirección <span class="req" aria-hidden="true">*</span></span>
+                  <input name="alias" maxlength="100" placeholder="Casa, Oficina…" required />
+                </label>
+                <label class="card-field span-2"><span>Referencias <span class="optional">(opcional)</span></span>
+                  <input name="referencias" maxlength="255" placeholder="Entre calles, color de la casa…" />
+                </label>
+                <label class="check-field span-2">
+                  <input type="checkbox" name="principal" /> Usar como dirección principal
+                </label>
+              </div>
+              <p class="card-error" id="addressError" role="alert" hidden></p>
+              <button type="submit" class="save-address">Guardar y usar esta dirección</button>
+            </form>
+
+            <button type="button" class="primary-button continue-btn" id="continuePayBtn" disabled>
+              Continuar al pago <span aria-hidden="true">→</span>
+            </button>
+          </section>
+
+          <!-- Paso 2: forma de pago. Las tarjetas son simuladas; Mercado Pago es la pasarela oficial (Checkout Pro) -->
+          <section class="checkout-step" id="stepPago" aria-labelledby="stepPagoTitle" hidden>
+          <div class="ship-summary">
+            <span class="ship-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.1-7-11.5A7 7 0 0 1 19 9.5C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg></span>
+            <div class="ship-body">
+              <span class="ship-label">Enviar a</span>
+              <strong id="shipSummaryAlias"></strong>
+              <span id="shipSummaryWho"></span>
+              <span id="shipSummaryText"></span>
+            </div>
+            <button type="button" class="ship-change" id="changeAddressBtn">Cambiar</button>
+          </div>
+          <h3 class="step-title" id="stepPagoTitle">¿Cómo quieres pagar?</h3>
+          <fieldset class="pay-options" id="payOptions">
+            <legend class="sr-only">Forma de pago</legend>
+            <label class="pay-option">
+              <input type="radio" name="formaPago" value="monedero" checked />
+              <span class="pay-option-body">
+                <strong>Monedero</strong>
+                <small>Saldo: <span id="walletBalanceDisplay">—</span></small>
+              </span>
+            </label>
+            <label class="pay-option">
+              <input type="radio" name="formaPago" value="tarjeta_credito" />
+              <span class="pay-option-body"><strong>Tarjeta de crédito</strong><small>Visa, Mastercard o American Express</small></span>
+            </label>
+            <label class="pay-option">
+              <input type="radio" name="formaPago" value="tarjeta_debito" />
+              <span class="pay-option-body"><strong>Tarjeta de débito</strong><small>Visa o Mastercard</small></span>
+            </label>
+            <label class:list={['pay-option', { 'is-disabled': !mercadoPagoDisponible }]}>
+              <input type="radio" name="formaPago" value="mercado_pago" disabled={!mercadoPagoDisponible} />
+              <span class="pay-option-body">
+                <strong>Mercado Pago</strong>
+                <small>{mercadoPagoDisponible ? 'Tarjeta, saldo de Mercado Pago, OXXO y más' : 'No disponible por ahora'}</small>
+              </span>
+            </label>
+          </fieldset>
+
+          <p class="wallet-warning" id="walletWarning" hidden>
+            <span id="walletWarningText"></span>
+            <a href="/monedero">Recargar monedero ↗</a>
+          </p>
+
+          <div class="card-form" id="cardForm" hidden>
+            <label class="card-field card-number">Número de tarjeta
+              <span class="card-number-wrap">
+                <input id="cardNumber" inputmode="numeric" autocomplete="cc-number" maxlength="19" placeholder="1234 5678 9012 3456" />
+                <span class="card-brand" id="cardBrand"></span>
+              </span>
+            </label>
+            <label class="card-field">Titular
+              <input id="cardName" autocomplete="cc-name" placeholder="Como aparece en la tarjeta" />
+            </label>
+            <div class="card-row">
+              <label class="card-field">Vencimiento
+                <input id="cardExpiry" inputmode="numeric" autocomplete="cc-exp" maxlength="5" placeholder="MM/AA" />
+              </label>
+              <label class="card-field">CVV
+                <input id="cardCvv" inputmode="numeric" autocomplete="cc-csc" maxlength="4" placeholder="123" />
+              </label>
+            </div>
+            <p class="card-error" id="cardError" role="alert" hidden></p>
+            <p class="card-note">Pago simulado: no se cobra nada y solo se guardan la marca y los últimos 4 dígitos. Prueba con 4242 4242 4242 4242; la 4000 0000 0000 0002 se rechaza.</p>
+          </div>
+
+          <p class="card-note" id="mpNote" hidden>Te llevaremos a la página segura de Mercado Pago para pagar. Al terminar regresarás aquí y verás tu compra.</p>
 
           <button type="button" class="primary-button checkout-btn" disabled>
-            Proceder al Checkout <span>↗</span>
+            <span id="checkoutLabel">Pagar con monedero</span> <span aria-hidden="true">↗</span>
           </button>
+          </section>
 
           <div class="badges-list">
             <p>
@@ -130,6 +274,29 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     </main>
   </div>
 
+
+  <!-- Molde de cada dirección en el paso 1; el ícono se elige por el nombre (casa, oficina u otra) -->
+  <template id="addressCardTemplate">
+    <label class="address-card">
+      <input type="radio" name="direccionEnvio" class="address-radio" />
+      <span class="address-icon" aria-hidden="true">
+        <svg class="ico ico-casa" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/></svg>
+        <svg class="ico ico-oficina" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 7h1M14 7h1M9 11h1M14 11h1M9 15h1M14 15h1"/><path d="M10 21v-3h4v3"/></svg>
+        <svg class="ico ico-otro" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.1-7-11.5A7 7 0 0 1 19 9.5C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+      </span>
+      <span class="address-body">
+        <span class="address-title"><strong class="address-alias"></strong><span class="address-badge" hidden>Principal</span></span>
+        <span class="address-who"></span>
+        <span class="address-line"></span>
+        <span class="address-line address-city"></span>
+        <span class="address-ref" hidden></span>
+      </span>
+      <span class="address-check" aria-hidden="true">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </span>
+    </label>
+  </template>
+
   <template id="cartRowTemplate">
     <article class="cart-row">
       <div class="product-cell">
@@ -139,6 +306,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
           <h3 class="item-name"></h3>
           <p class="variant"></p>
           <span class="unit-price"></span>
+          <s class="unit-original" hidden></s>
         </div>
       </div>
 
@@ -165,6 +333,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
 </Layout>
 
 <script>
+  import { conectarSelectorDireccion } from '../scripts/selectorDireccion';
   // Forma de lo que devuelve /api/carrito (ver src/lib/cart.ts)
   interface CartItem {
     id_producto: number;
@@ -172,6 +341,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     categoria: string | null;
     variante: string;
     precio: number;
+    precio_original?: number | null;
     cantidad: number;
     stock: number;
     subtotal: number;
@@ -183,9 +353,9 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     envio: number;
     total: number;
     unidades: number;
-    base_sin_iva: number;
-    iva: number;
-    tasa_iva: number;
+    base_sin_impuestos: number;
+    impuestos: Array<{ nombre: string; porcentaje: number; monto: number }>;
+    total_impuestos: number;
   }
 
   interface CartResponse {
@@ -194,6 +364,10 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     resumen?: CartSummary;
     avisos?: string[];
     error?: string;
+    /** Saldo del monedero; null si no se pudo leer (el servidor valida el cobro de todos modos). */
+    saldo_monedero?: number | null;
+    /** Compra de Mercado Pago que se acaba de confirmar al volver a la tienda. */
+    compra_confirmada?: number | null;
   }
 
   type CartAction =
@@ -236,10 +410,72 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   const envioGratisDesde = Number(document.querySelector<HTMLElement>('.order-summary')?.dataset.envioGratisDesde || 0);
   const totalDisplay = $('totalDisplay');
   const baseDisplay = $('baseDisplay');
-  const ivaDisplay = $('ivaDisplay');
-  const ivaRateDisplay = $('ivaRateDisplay');
+  const taxLines = $('taxLines');
   const totalItemsCount = $('totalItemsCount');
   const checkoutBtn = document.querySelector<HTMLButtonElement>('.checkout-btn');
+  const checkoutLabel = $('checkoutLabel');
+  const payOptions = $('payOptions');
+  const walletBalanceDisplay = $('walletBalanceDisplay');
+  const walletWarning = $('walletWarning');
+  const walletWarningText = $('walletWarningText');
+  const cardForm = $('cardForm');
+  const cardNumber = $<HTMLInputElement>('cardNumber');
+  const cardName = $<HTMLInputElement>('cardName');
+  const cardExpiry = $<HTMLInputElement>('cardExpiry');
+  const cardCvv = $<HTMLInputElement>('cardCvv');
+  const cardBrand = $('cardBrand');
+  const cardError = $('cardError');
+  const mpNote = $('mpNote');
+  const stepEnvio = $('stepEnvio');
+  const stepPago = $('stepPago');
+  const addressList = $('addressList');
+  const addAddressBtn = $<HTMLButtonElement>('addAddressBtn');
+  const addressForm = $<HTMLFormElement>('addressForm');
+  const addressError = $('addressError');
+  const continuePayBtn = $<HTMLButtonElement>('continuePayBtn');
+  const shipSummaryAlias = $('shipSummaryAlias');
+  const shipSummaryWho = $('shipSummaryWho');
+  const shipSummaryText = $('shipSummaryText');
+  const checkoutSteps = $('checkoutSteps');
+  const addressCardTemplate = $<HTMLTemplateElement>('addressCardTemplate');
+  // Estado → municipios y código postal → colonias, con el catálogo de Correos de México
+  const selectorGeo = addressForm ? conectarSelectorDireccion(addressForm) : null;
+
+  interface Direccion {
+    id: number;
+    alias: string;
+    destinatario: string;
+    telefono: string;
+    calle: string;
+    colonia: string;
+    ciudad: string;
+    estado: string;
+    cp: string;
+    referencias: string | null;
+    principal: boolean;
+  }
+  let direcciones: Direccion[] = [];
+  let direccionesCargadas = false;
+  let direccionElegida: number | null = null;
+  // Paso del checkout: primero la dirección, después el pago
+  let paso: 'envio' | 'pago' = 'envio';
+
+  let saldoMonedero: number | null = null;
+  let paying = false;
+  // Último total y si hay artículos: deciden si se puede pagar con la forma elegida
+  let ultimoTotal = 0;
+  let hayArticulos = false;
+
+  type FormaPago = 'monedero' | 'tarjeta_credito' | 'tarjeta_debito' | 'mercado_pago';
+  const etiquetasPago: Record<FormaPago, string> = {
+    monedero: 'Pagar con monedero',
+    tarjeta_credito: 'Pagar con tarjeta de crédito',
+    tarjeta_debito: 'Pagar con tarjeta de débito',
+    mercado_pago: 'Continuar a Mercado Pago',
+  };
+  const formaElegida = (): FormaPago =>
+    (document.querySelector<HTMLInputElement>('input[name="formaPago"]:checked')?.value as FormaPago) || 'monedero';
+  const esTarjeta = (forma: FormaPago) => forma === 'tarjeta_credito' || forma === 'tarjeta_debito';
 
   const money = (value: number): string =>
     `$${value.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -276,12 +512,20 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   }
 
   function renderSummary(resumen: CartSummary | undefined, hasItems: boolean): void {
-    const r = resumen ?? { subtotal: 0, envio: 0, total: 0, unidades: 0, base_sin_iva: 0, iva: 0, tasa_iva: 0.16 };
-    // El desglose de IVA viene del servidor (desglosarIva, la misma función que usa la factura)
+    const r = resumen ?? { subtotal: 0, envio: 0, total: 0, unidades: 0, base_sin_impuestos: 0, impuestos: [], total_impuestos: 0 };
+    // El desglose viene del servidor (desglosarImpuestos, la misma función que usa la factura)
     const money2 = (n: number) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN`;
-    if (baseDisplay) baseDisplay.textContent = money2(r.base_sin_iva);
-    if (ivaDisplay) ivaDisplay.textContent = money2(r.iva);
-    if (ivaRateDisplay) ivaRateDisplay.textContent = String(Math.round(r.tasa_iva * 100));
+    if (baseDisplay) baseDisplay.textContent = money2(r.base_sin_impuestos);
+    taxLines?.replaceChildren(...r.impuestos.map((imp) => {
+      const line = document.createElement('div');
+      line.className = 'summary-line tax-line';
+      const label = document.createElement('span');
+      label.textContent = `${imp.nombre} (${imp.porcentaje.toLocaleString('es-MX', { maximumFractionDigits: 2 })}%)`;
+      const amount = document.createElement('span');
+      amount.textContent = money2(imp.monto);
+      line.append(label, amount);
+      return line;
+    }));
     if (subtotalDisplay) subtotalDisplay.textContent = `${money(r.subtotal)} MXN`;
     // El costo de envío lo calcula el servidor con la misma regla que las ventas del ERP (calcularEnvio)
     const cobraEnvio = r.envio > 0;
@@ -313,8 +557,179 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
         badge.dataset.count = String(r.unidades);
       });
     }
-    if (checkoutBtn) checkoutBtn.disabled = !hasItems;
+    ultimoTotal = r.total;
+    hayArticulos = hasItems;
+    if (walletBalanceDisplay) {
+      walletBalanceDisplay.textContent = saldoMonedero === null ? 'No disponible' : money2(saldoMonedero);
+    }
+    actualizarFormaPago();
   }
+
+  /** Muestra lo que pide la forma de pago elegida y bloquea el pago con monedero si el saldo no alcanza. */
+  function actualizarFormaPago(): void {
+    const forma = formaElegida();
+    const money2 = (n: number) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN`;
+    const faltante = forma !== 'monedero' || saldoMonedero === null
+      ? 0
+      : Math.max(0, Math.round((ultimoTotal - saldoMonedero) * 100) / 100);
+
+    if (checkoutSteps) {
+      checkoutSteps.hidden = !hayArticulos;
+      checkoutSteps.querySelectorAll<HTMLElement>('.cs-step').forEach((step) => {
+        const estado = step.dataset.step === paso ? 'actual' : step.dataset.step === 'envio' ? 'hecho' : 'pendiente';
+        step.dataset.estado = estado;
+        if (estado === 'actual') step.setAttribute('aria-current', 'step');
+        else step.removeAttribute('aria-current');
+      });
+    }
+    if (stepEnvio) stepEnvio.hidden = !hayArticulos || paso !== 'envio';
+    if (stepPago) stepPago.hidden = !hayArticulos || paso !== 'pago';
+    if (continuePayBtn) continuePayBtn.disabled = direccionElegida === null;
+    if (walletWarning) walletWarning.hidden = !hayArticulos || faltante === 0;
+    if (walletWarningText) walletWarningText.textContent = `Tu saldo no alcanza: te faltan ${money2(faltante)}. Recarga o elige otra forma de pago.`;
+    if (cardForm) cardForm.hidden = !hayArticulos || !esTarjeta(forma);
+    if (mpNote) mpNote.hidden = !hayArticulos || forma !== 'mercado_pago';
+    if (checkoutLabel && !paying) checkoutLabel.textContent = etiquetasPago[forma];
+    if (checkoutBtn) checkoutBtn.disabled = !hayArticulos || faltante > 0 || paying || direccionElegida === null;
+  }
+
+  // ── Paso 1: dirección de envío ─────────────────────────────────────
+  const lineaCalle = (d: Direccion) => `${d.calle}, Col. ${d.colonia}`;
+  const lineaCiudad = (d: Direccion) => `${d.ciudad}, ${d.estado} · C.P.\u00a0${d.cp}`;
+  const lineaDireccion = (d: Direccion) => `${lineaCalle(d)}, ${lineaCiudad(d)}`;
+  const telefonoLegible = (tel: string) => tel.replace(/^(\d{2})(\d{4})(\d{4})$/, '$1 $2 $3');
+  // El ícono sale del nombre que el cliente le puso a la dirección
+  const tipoDireccion = (alias: string): 'casa' | 'oficina' | 'otro' =>
+    /casa|hogar|depa/i.test(alias) ? 'casa' : /oficina|trabajo|negocio|empresa/i.test(alias) ? 'oficina' : 'otro';
+
+  function tarjetaDireccion(d: Direccion): HTMLElement | null {
+    const fragment = addressCardTemplate?.content.cloneNode(true) as DocumentFragment | undefined;
+    const card = fragment?.querySelector<HTMLElement>('.address-card');
+    if (!card) return null;
+    card.dataset.tipo = tipoDireccion(d.alias);
+
+    const radio = card.querySelector<HTMLInputElement>('.address-radio');
+    if (radio) {
+      radio.value = String(d.id);
+      radio.checked = d.id === direccionElegida;
+      radio.setAttribute('aria-label', `${d.alias}: ${lineaDireccion(d)}`);
+      radio.addEventListener('change', () => { direccionElegida = d.id; actualizarFormaPago(); });
+    }
+    setText(card, '.address-alias', d.alias);
+    setText(card, '.address-who', `${d.destinatario} · ${telefonoLegible(d.telefono)}`);
+    setText(card, '.address-line', lineaCalle(d));
+    setText(card, '.address-city', lineaCiudad(d));
+    const badge = card.querySelector<HTMLElement>('.address-badge');
+    if (badge) badge.hidden = !d.principal;
+    const ref = card.querySelector<HTMLElement>('.address-ref');
+    if (ref && d.referencias) {
+      ref.textContent = d.referencias;
+      ref.hidden = false;
+    }
+    return card;
+  }
+
+  function renderDirecciones(): void {
+    if (!addressList) return;
+    addressList.replaceChildren(...direcciones.map(tarjetaDireccion).filter((c): c is HTMLElement => c !== null));
+    // Sin direcciones se abre directamente el formulario
+    const sinDirecciones = direcciones.length === 0;
+    if (addressForm && sinDirecciones) addressForm.hidden = false;
+    if (addAddressBtn) addAddressBtn.hidden = sinDirecciones || !(addressForm?.hidden ?? true);
+    addressList.hidden = sinDirecciones;
+    // Sin direcciones el formulario no se puede cerrar: hace falta una para pagar
+    const cerrar = $('cancelAddressBtn');
+    if (cerrar) cerrar.hidden = sinDirecciones;
+    actualizarVistaFormulario();
+  }
+
+  /** Con el formulario abierto se oculta "Continuar al pago": primero se guarda o se cancela. */
+  function actualizarVistaFormulario(): void {
+    const abierto = !(addressForm?.hidden ?? true);
+    if (continuePayBtn) continuePayBtn.hidden = abierto;
+    if (addAddressBtn && direcciones.length > 0) addAddressBtn.hidden = abierto;
+  }
+
+  async function cargarDirecciones(): Promise<void> {
+    try {
+      const res = await fetch('/api/direcciones', { headers: { Accept: 'application/json' } });
+      const data = (await res.json()) as { ok?: boolean; direcciones?: Direccion[] };
+      if (!res.ok || !data.ok) return;
+      direcciones = data.direcciones ?? [];
+      // Se preselecciona la principal (la API la manda primero)
+      if (direccionElegida === null || !direcciones.some((d) => d.id === direccionElegida)) {
+        direccionElegida = direcciones[0]?.id ?? null;
+      }
+      direccionesCargadas = true;
+      renderDirecciones();
+      actualizarFormaPago();
+    } catch {
+      showToast('No pudimos cargar tus direcciones. Recarga la página.', 'error');
+    }
+  }
+
+  addAddressBtn?.addEventListener('click', () => {
+    if (!addressForm) return;
+    addressForm.hidden = false;
+    actualizarVistaFormulario();
+    addressForm.querySelector<HTMLInputElement>('input[name="alias"]')?.focus();
+  });
+  $('cancelAddressBtn')?.addEventListener('click', () => {
+    if (!addressForm) return;
+    addressForm.reset();
+    selectorGeo?.limpiar();
+    if (addressError) addressError.hidden = true;
+    // Sin direcciones guardadas el formulario se queda abierto: es obligatorio para pagar
+    if (direcciones.length > 0) addressForm.hidden = true;
+    renderDirecciones();
+  });
+  addressForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!addressForm.reportValidity()) return;
+    const datos = Object.fromEntries(new FormData(addressForm).entries());
+    const guardar = addressForm.querySelector<HTMLButtonElement>('.save-address');
+    if (guardar) guardar.disabled = true;
+    if (addressError) addressError.hidden = true;
+    try {
+      const res = await fetch('/api/direcciones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ ...datos, principal: datos.principal === 'on' }),
+      });
+      const data = (await res.json()) as { ok?: boolean; id?: number; direcciones?: Direccion[]; error?: string };
+      if (!res.ok || !data.ok || !data.id) throw new Error(data.error || 'No se pudo guardar la dirección.');
+      direcciones = data.direcciones ?? [];
+      direccionElegida = data.id;
+      addressForm.reset();
+      selectorGeo?.limpiar();
+      addressForm.hidden = true;
+      renderDirecciones();
+      actualizarFormaPago();
+      showToast('Dirección guardada.');
+    } catch (error) {
+      if (addressError) {
+        addressError.textContent = error instanceof Error ? error.message : 'No se pudo guardar la dirección.';
+        addressError.hidden = false;
+      }
+    } finally {
+      if (guardar) guardar.disabled = false;
+    }
+  });
+
+  continuePayBtn?.addEventListener('click', () => {
+    const d = direcciones.find((x) => x.id === direccionElegida);
+    if (!d) return;
+    if (shipSummaryAlias) shipSummaryAlias.textContent = d.alias;
+    if (shipSummaryWho) shipSummaryWho.textContent = `${d.destinatario} · ${telefonoLegible(d.telefono)}`;
+    if (shipSummaryText) shipSummaryText.textContent = lineaDireccion(d);
+    paso = 'pago';
+    actualizarFormaPago();
+    stepPago?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+  $('changeAddressBtn')?.addEventListener('click', () => {
+    paso = 'envio';
+    actualizarFormaPago();
+  });
 
   function buildRow(item: CartItem): HTMLElement | null {
     const fragment = rowTemplate?.content.cloneNode(true) as DocumentFragment | undefined;
@@ -343,6 +758,13 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     setText(row, '.item-name', item.nombre);
     setText(row, '.variant', item.variante);
     setText(row, '.unit-price', `${money(item.precio)} c/u`);
+    // Con promoción vigente se muestra también el precio de lista tachado
+    const original = row.querySelector<HTMLElement>('.unit-original');
+    if (original && item.precio_original) {
+      original.textContent = money(item.precio_original);
+      original.setAttribute('aria-label', `Antes ${money(item.precio_original)}`);
+      original.hidden = false;
+    }
     setText(row, '.item-total-val', money(item.subtotal));
 
     const remove = row.querySelector<HTMLButtonElement>('.btn-remove');
@@ -366,6 +788,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   }
 
   function renderCart(data: CartResponse): void {
+    if (data.saldo_monedero !== undefined) saldoMonedero = data.saldo_monedero;
     const items = data.items ?? [];
     if (loadingMsg) loadingMsg.style.display = 'none';
 
@@ -420,6 +843,10 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
         return;
       }
 
+      if (data.compra_confirmada) {
+        showToast('¡Tu pago con Mercado Pago se aprobó! Registramos tu compra.');
+        window.setTimeout(() => { window.location.href = `/cuenta/compras/${data.compra_confirmada}`; }, 1400);
+      }
       renderNotices(data.avisos);
       renderCart(data);
     } catch {
@@ -510,13 +937,169 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     updateCart({ action: 'clear' });
   });
 
-  // Flujo de compra
+  // ── Formas de pago ────────────────────────────────────────────────
+  document.querySelectorAll<HTMLInputElement>('input[name="formaPago"]').forEach((radio) =>
+    radio.addEventListener('change', () => {
+      if (cardError) cardError.hidden = true;
+      actualizarFormaPago();
+    }));
+
+  const soloDigitos = (valor: string) => valor.replace(/\D/g, '');
+  const marcaDe = (numero: string): string => {
+    if (/^4/.test(numero)) return 'Visa';
+    if (/^(5[1-5]|2[2-7])/.test(numero)) return 'Mastercard';
+    if (/^3[47]/.test(numero)) return 'American Express';
+    return '';
+  };
+  // Mismo algoritmo de Luhn que valida el servidor (src/lib/pagos.ts); aquí solo es para avisar antes
+  const pasaLuhn = (numero: string): boolean => {
+    let suma = 0;
+    for (let i = 0; i < numero.length; i++) {
+      let d = Number(numero[numero.length - 1 - i]);
+      if (i % 2 === 1) { d *= 2; if (d > 9) d -= 9; }
+      suma += d;
+    }
+    return numero.length > 0 && suma % 10 === 0;
+  };
+
+  cardNumber?.addEventListener('input', () => {
+    const digitos = soloDigitos(cardNumber.value).slice(0, 16);
+    cardNumber.value = digitos.replace(/(\d{4})(?=\d)/g, '$1 ');
+    if (cardBrand) cardBrand.textContent = marcaDe(digitos);
+  });
+  cardExpiry?.addEventListener('input', () => {
+    const digitos = soloDigitos(cardExpiry.value).slice(0, 4);
+    cardExpiry.value = digitos.length > 2 ? `${digitos.slice(0, 2)}/${digitos.slice(2)}` : digitos;
+  });
+  cardCvv?.addEventListener('input', () => { cardCvv.value = soloDigitos(cardCvv.value).slice(0, 4); });
+
+  const mostrarErrorTarjeta = (mensaje: string, campo?: HTMLInputElement | null): void => {
+    if (cardError) { cardError.textContent = mensaje; cardError.hidden = false; }
+    campo?.focus();
+  };
+
+  /** Datos de la tarjeta si pasan las revisiones básicas; el servidor vuelve a validar todo. */
+  function leerTarjeta(): { numero: string; titular: string; vencimiento: string; cvv: string } | null {
+    const numero = soloDigitos(cardNumber?.value ?? '');
+    const marca = marcaDe(numero);
+    if (!marca || numero.length !== (marca === 'American Express' ? 15 : 16) || !pasaLuhn(numero)) {
+      mostrarErrorTarjeta('Revisa el número de la tarjeta.', cardNumber);
+      return null;
+    }
+    const titular = cardName?.value.trim() ?? '';
+    if (titular.length < 3) { mostrarErrorTarjeta('Escribe el nombre del titular.', cardName); return null; }
+    const vencimiento = cardExpiry?.value.trim() ?? '';
+    if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(vencimiento)) { mostrarErrorTarjeta('La fecha de vencimiento debe ser MM/AA.', cardExpiry); return null; }
+    const cvv = cardCvv?.value.trim() ?? '';
+    if (cvv.length !== (marca === 'American Express' ? 4 : 3)) { mostrarErrorTarjeta('Revisa el código de seguridad (CVV).', cardCvv); return null; }
+    if (cardError) cardError.hidden = true;
+    return { numero, titular, vencimiento, cvv };
+  }
+
+  const nombrePago: Record<FormaPago, string> = {
+    monedero: 'con tu monedero',
+    tarjeta_credito: 'con tu tarjeta de crédito',
+    tarjeta_debito: 'con tu tarjeta de débito',
+    mercado_pago: 'con Mercado Pago',
+  };
+
+  /**
+   * Registra la compra con monedero o tarjeta. El servidor autoriza la tarjeta (simulado),
+   * registra la venta y, con monedero, cobra el saldo en la misma transacción. Si algo
+   * falla no se registra nada. Con una pasarela real la tarjeta se tokenizaría con su SDK y aquí
+   * solo viajaría el token, nunca el número.
+   */
+  async function pagar(forma: FormaPago, extra: Record<string, unknown> = {}): Promise<boolean> {
+    if (paying || busy) return false;
+    paying = true;
+    if (checkoutBtn) checkoutBtn.disabled = true;
+    if (checkoutLabel) checkoutLabel.textContent = 'Procesando pago...';
+
+    const terminar = async (): Promise<false> => {
+      paying = false;
+      await loadCart();
+      return false;
+    };
+
+    try {
+      const res = await fetch('/api/ventas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ pago: forma, id_direccion: direccionElegida, ...extra }),
+      });
+      const data = (await res.json()) as { success?: boolean; id_venta?: number; total?: number; referencia_pago?: string | null; error?: string };
+
+      if (!res.ok || !data.success || !data.id_venta) {
+        if (esTarjeta(forma)) {
+          mostrarErrorTarjeta(data.error ?? 'No se pudo completar el pago.');
+          if (cardCvv) cardCvv.value = '';
+        } else {
+          showToast(data.error ?? 'No se pudo completar el pago.', 'error');
+        }
+        return terminar();
+      }
+
+      const detalle = data.referencia_pago ? ` (${data.referencia_pago})` : '';
+      showToast(`¡Compra realizada! Pagaste ${money(Number(data.total ?? 0))} MXN ${nombrePago[forma]}${detalle}.`);
+      window.setTimeout(() => { window.location.href = `/cuenta/compras/${data.id_venta}`; }, 1400);
+      return true;
+    } catch {
+      showToast('No se pudo completar el pago. Revisa tu conexión e intenta de nuevo.', 'error');
+      return terminar();
+    }
+  }
+
+  /**
+   * Mercado Pago oficial (Checkout Pro): el servidor crea la preferencia de pago y aquí solo se
+   * redirige a su página. La compra se registra al volver, cuando el servidor confirma el pago con
+   * la API de Mercado Pago (/checkout/mercadopago).
+   */
+  async function irAMercadoPago(): Promise<void> {
+    if (paying || busy) return;
+    paying = true;
+    if (checkoutBtn) checkoutBtn.disabled = true;
+    if (checkoutLabel) checkoutLabel.textContent = 'Conectando con Mercado Pago...';
+    try {
+      const res = await fetch('/api/pagos/mercadopago', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ id_direccion: direccionElegida }),
+      });
+      const data = (await res.json()) as { ok?: boolean; url?: string; error?: string };
+      if (!res.ok || !data.ok || !data.url) throw new Error(data.error || 'No se pudo iniciar el pago con Mercado Pago.');
+      window.location.href = data.url;
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No se pudo iniciar el pago con Mercado Pago.', 'error');
+      paying = false;
+      await loadCart();
+    }
+  }
+
   checkoutBtn?.addEventListener('click', () => {
-    showToast('Redirigiendo a pasarela de pago segura. ¡Gracias por probar el flujo de compra!');
-    window.setTimeout(() => { window.location.href = '/'; }, 1600);
+    const forma = formaElegida();
+    if (forma === 'mercado_pago') {
+      void irAMercadoPago();
+      return;
+    }
+    if (esTarjeta(forma)) {
+      const tarjeta = leerTarjeta();
+      if (tarjeta) void pagar(forma, { tarjeta });
+      return;
+    }
+    void pagar('monedero');
+  });
+
+
+  // Al regresar con "Atrás" el navegador restaura la página tal cual (con "Conectando con Mercado Pago…"):
+  // se reinicia el botón y se vuelve a leer el carrito, que además revisa si el pago ya se aprobó
+  window.addEventListener('pageshow', (event) => {
+    if (!event.persisted) return;
+    paying = false;
+    void loadCart();
   });
 
   loadCart();
+  void cargarDirecciones();
 </script>
 
 <style>
@@ -617,6 +1200,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
   .product-meta h3 { margin: 2px 0; font-size: 16px; font-weight: 400; }
   .variant { margin: 0 0 4px; font-family: var(--font-ui); font-size: 11px; color: #555; }
   .unit-price { font-family: var(--font-ui); font-size: 12px; font-weight: 700; color: #171717; }
+  .unit-original { font-family: var(--font-ui); font-size: 11px; color: #716e67; margin-left: 6px; }
   
   .btn-remove {
     align-items: center;
@@ -705,7 +1289,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     padding-bottom: 10px;
   }
 
-  .summary-line {
+  .summary-line, #taxLines :global(.summary-line) {
     display: flex;
     justify-content: space-between;
     font-family: var(--font-ui);
@@ -718,13 +1302,195 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     gap: 6px;
     padding-left: 10px;
   }
-  .tax-line { color: #57534e; font-size: 12px; }
+  .tax-line, #taxLines :global(.tax-line) { color: #57534e; font-size: 12px; }
+  #taxLines { display: flex; flex-direction: column; gap: 6px; }
   .tax-note {
     color: #716e67;
     font-family: var(--font-ui);
     font-size: 10px;
     margin: -8px 0 0;
   }
+  /* ── Indicador de pasos ─────────────────────────────────── */
+  .checkout-steps { align-items: center; border-top: 2px solid #171717; display: flex; gap: 10px; list-style: none; margin: 0; padding: 16px 0 0; }
+  .checkout-steps[hidden] { display: none; }
+  .cs-step { align-items: center; color: #a8a29e; display: flex; font: 700 12px var(--font-ui); gap: 8px; letter-spacing: .3px; text-transform: uppercase; }
+  .cs-dot { align-items: center; border: 1.5px solid currentColor; border-radius: 50%; display: inline-flex; font-size: 11px; height: 24px; justify-content: center; width: 24px; }
+  .cs-done { display: none; }
+  .cs-step[data-estado="actual"] { color: #171717; }
+  .cs-step[data-estado="actual"] .cs-dot { background: #f7d21c; border-color: #171717; }
+  .cs-step[data-estado="hecho"] { color: #171717; }
+  .cs-step[data-estado="hecho"] .cs-dot { background: #171717; border-color: #171717; color: #f7d21c; }
+  .cs-step[data-estado="hecho"] .cs-num { display: none; }
+  .cs-step[data-estado="hecho"] .cs-done { display: inline; }
+  .cs-line { background: #d8d3c3; flex: 1; height: 1.5px; }
+
+  /* ── Paso 1: dirección ──────────────────────────────────── */
+  .checkout-step { display: grid; gap: 12px; }
+  .checkout-step[hidden] { display: none; }
+  .step-head { align-items: baseline; display: flex; gap: 12px; justify-content: space-between; }
+  .step-title { font-size: 19px; font-weight: 400; letter-spacing: -.3px; margin: 0; }
+  .step-link { color: #716e67; font: 700 11px var(--font-ui); text-decoration: underline; text-underline-offset: 3px; }
+  .step-link:hover { color: #171717; }
+
+  .address-list { display: grid; gap: 10px; }
+  .address-list[hidden] { display: none; }
+  .address-card {
+    align-items: start;
+    background: #fffdf3;
+    border: 1.5px solid #d8d3c3;
+    cursor: pointer;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 36px minmax(0, 1fr) 22px;
+    padding: 14px;
+    position: relative;
+    transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease, transform .18s ease;
+  }
+  .address-card:hover { border-color: #a8a29e; transform: translateY(-1px); }
+  .address-card:has(.address-radio:checked) { background: #fff8d6; border-color: #171717; box-shadow: 4px 4px 0 #171717; }
+  .address-card:has(.address-radio:focus-visible) { outline: 3px solid #f7d21c; outline-offset: 2px; }
+  /* El radio queda accesible para teclado y lector de pantalla; lo que se ve es la palomita */
+  .address-radio { height: 1px; margin: 0; opacity: 0; position: absolute; width: 1px; }
+  .address-icon { align-items: center; background: #f0ece0; color: #171717; display: flex; height: 36px; justify-content: center; transition: background-color .18s ease; width: 36px; }
+  .address-card:has(.address-radio:checked) .address-icon { background: #171717; color: #f7d21c; }
+  .address-icon .ico { display: none; }
+  .address-card[data-tipo="casa"] .ico-casa,
+  .address-card[data-tipo="oficina"] .ico-oficina,
+  .address-card[data-tipo="otro"] .ico-otro { display: block; }
+  .address-body { display: flex; flex-direction: column; font-family: var(--font-ui); gap: 3px; min-width: 0; }
+  .address-title { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 2px; }
+  .address-alias { font-size: 14px; }
+  .address-badge { background: #171717; color: #fffdf3; font-size: 9px; font-weight: 700; letter-spacing: .6px; padding: 2px 6px; text-transform: uppercase; }
+  .address-badge[hidden] { display: none; }
+  .address-who { color: #171717; font-size: 12px; }
+  .address-line { color: #57534e; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+  .address-ref { border-left: 2px solid #d8d3c3; color: #716e67; font-size: 11px; font-style: italic; margin-top: 4px; padding-left: 8px; }
+  .address-ref[hidden] { display: none; }
+  .address-check {
+    align-items: center;
+    border: 1.5px solid #d8d3c3;
+    border-radius: 50%;
+    color: transparent;
+    display: flex;
+    height: 22px;
+    justify-content: center;
+    transition: background-color .18s ease, border-color .18s ease, color .18s ease, transform .25s cubic-bezier(.34, 1.56, .64, 1);
+    width: 22px;
+  }
+  .address-card:has(.address-radio:checked) .address-check { background: #f7d21c; border-color: #171717; color: #171717; transform: scale(1.1); }
+
+  .address-add {
+    align-items: center;
+    background: transparent;
+    border: 1.5px dashed #a8a29e;
+    color: #171717;
+    cursor: pointer;
+    display: flex;
+    font: 700 12px var(--font-ui);
+    gap: 10px;
+    padding: 12px 14px;
+    text-align: left;
+    transition: border-color .18s ease, background-color .18s ease;
+  }
+  .address-add:hover { background: #fffdf3; border-color: #171717; }
+  .address-add[hidden] { display: none; }
+  .address-add-icon { align-items: center; background: #f7d21c; display: inline-flex; font-size: 16px; height: 24px; justify-content: center; line-height: 1; width: 24px; }
+
+  .address-form { background: #fffdf3; border: 1.5px solid #171717; display: grid; gap: 12px; padding: 14px; }
+  .address-form[hidden] { display: none; }
+  .address-form-head { align-items: center; border-bottom: 1px solid #e8e4da; display: flex; font-family: var(--font-ui); font-size: 13px; justify-content: space-between; padding-bottom: 10px; }
+  .address-form-close { background: none; border: 0; color: #716e67; cursor: pointer; font-size: 22px; line-height: 1; padding: 0 2px; }
+  .address-form-close:hover { color: #171717; }
+  .address-form-close[hidden] { display: none; }
+  .form-grid { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+  .form-grid .span-2 { grid-column: span 2; }
+  .card-field select { background: #fffdf3; border: 1.5px solid #d8d3c3; font: 400 14px var(--font-ui); min-height: 40px; padding: 8px 10px; width: 100%; }
+  .card-field select:focus { border-color: #171717; outline: none; }
+  .card-field select:disabled { color: #a8a29e; cursor: not-allowed; }
+  .geo-aviso { background: #f0ece0; color: #57534e; font: 11px var(--font-ui); margin: -2px 0 0; padding: 6px 10px; }
+  .geo-aviso[hidden] { display: none; }
+  .geo-aviso[data-tipo="error"] { background: #fff1ef; color: #9f2a1e; }
+  .optional { color: #716e67; font-weight: 400; }
+  .req { color: #d93e2e; font-weight: 700; }
+  .req-nota { color: #716e67; display: block; font-size: 10px; font-weight: 400; margin-top: 2px; }
+  .address-form :is(input, select):user-invalid { border-color: #d93e2e; }
+  .check-field { align-items: center; display: flex; font-family: var(--font-ui); font-size: 12px; gap: 8px; }
+  .check-field input { accent-color: #171717; }
+  .save-address { background: #171717; border: 0; color: #fffdf3; cursor: pointer; font: 700 12px var(--font-ui); letter-spacing: .3px; min-height: 42px; padding: 0 14px; }
+  .save-address:hover { background: #2b2b2b; }
+  .save-address:disabled { opacity: .6; cursor: wait; }
+  .continue-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .continue-btn[hidden] { display: none; }
+  .link-button { background: none; border: 0; color: #171717; cursor: pointer; font: 700 12px var(--font-ui); justify-self: start; padding: 4px 0; text-decoration: underline; }
+  .link-button[hidden] { display: none; }
+
+  /* ── Paso 2: a dónde se envía ───────────────────────────── */
+  .ship-summary { align-items: start; background: #fffdf3; border: 1.5px solid #171717; display: grid; gap: 12px; grid-template-columns: 36px minmax(0, 1fr) auto; padding: 12px 14px; }
+  .ship-icon { align-items: center; background: #171717; color: #f7d21c; display: flex; height: 36px; justify-content: center; width: 36px; }
+  .ship-body { display: flex; flex-direction: column; font-family: var(--font-ui); font-size: 12px; gap: 2px; min-width: 0; }
+  .ship-body strong { font-size: 14px; }
+  .ship-body span:last-child { color: #57534e; line-height: 1.4; overflow-wrap: anywhere; }
+  .ship-label { color: #716e67; font-size: 10px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; }
+  .ship-change { background: none; border: 1.5px solid #171717; cursor: pointer; font: 700 11px var(--font-ui); padding: 6px 10px; transition: background-color .18s ease; }
+  .ship-change:hover { background: #f7d21c; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .address-card, .address-check, .address-icon { transition: none; }
+    .address-card:hover { transform: none; }
+  }
+  @media (max-width: 480px) { .form-grid { grid-template-columns: 1fr; } .form-grid .span-2 { grid-column: auto; } }
+  .sr-only { border: 0; clip: rect(0 0 0 0); height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; white-space: nowrap; width: 1px; }
+  @media (max-width: 480px) { .form-grid { grid-template-columns: 1fr; } .form-grid .span-2 { grid-column: auto; } }
+  .pay-options { border: 0; display: grid; gap: 8px; margin: 0; padding: 0; }
+  .pay-options legend { font-family: var(--font-ui); font-size: 12px; font-weight: 700; margin-bottom: 8px; padding: 0; }
+  .pay-option {
+    align-items: center;
+    background: #fffdf3;
+    border: 1.5px solid #d8d3c3;
+    cursor: pointer;
+    display: flex;
+    gap: 10px;
+    padding: 10px 12px;
+    transition: border-color .15s;
+  }
+  .pay-option:has(input:checked) { border-color: #171717; box-shadow: inset 3px 0 0 #f7d21c; }
+  .pay-option.is-disabled { cursor: not-allowed; opacity: .55; }
+  .pay-option input { accent-color: #171717; margin: 0; }
+  .pay-option-body { display: flex; flex-direction: column; font-family: var(--font-ui); gap: 2px; }
+  .pay-option-body strong { font-size: 13px; }
+  .pay-option-body small { color: #716e67; font-size: 11px; }
+  .card-form { display: grid; gap: 10px; }
+  .card-form[hidden] { display: none; }
+  .card-field { display: grid; font-family: var(--font-ui); font-size: 11px; font-weight: 700; gap: 4px; }
+  .card-field input {
+    background: #fffdf3;
+    border: 1.5px solid #d8d3c3;
+    font: 400 14px var(--font-ui);
+    min-height: 40px;
+    padding: 8px 10px;
+    width: 100%;
+  }
+  .card-field input:focus { border-color: #171717; outline: none; }
+  .card-number-wrap { position: relative; }
+  .card-brand { color: #716e67; font-size: 11px; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); }
+  .card-row { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+  .card-error { background: #fff1ef; border-left: 3px solid #d93e2e; color: #9f2a1e; font-family: var(--font-ui); font-size: 12px; margin: 0; padding: 8px 10px; }
+  .card-error[hidden], .card-note[hidden] { display: none; }
+  .card-note { color: #716e67; font-family: var(--font-ui); font-size: 10px; line-height: 1.4; margin: 0; }
+  .wallet-warning {
+    background: #fff1ef;
+    border-left: 3px solid #d93e2e;
+    color: #9f2a1e;
+    display: flex;
+    flex-wrap: wrap;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    gap: 4px 8px;
+    margin: 0;
+    padding: 8px 10px;
+  }
+  .wallet-warning[hidden] { display: none; }
+  .wallet-warning a { color: #171717; font-weight: 700; }
   .shipping-cost { font-weight: 800; }
   .shipping-cost.badge-free { font-size: 11px; }
   .shipping-hint {

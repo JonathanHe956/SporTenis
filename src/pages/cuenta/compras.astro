@@ -6,6 +6,7 @@ import { db } from '../../db/db';
 import { Usuarios } from '../../db/schema';
 import { findClientId } from '../../lib/clientes';
 import { getComprasCliente, type CompraResumen } from '../../lib/compras';
+import { revisarPagosPendientes } from '../../lib/mercadoPago';
 import { ESTADOS_VENTA_EFECTIVA } from '../../lib/ventas';
 import { eq } from 'drizzle-orm';
 
@@ -17,6 +18,10 @@ if (!sessionUser) {
 
 // Buscar el cliente asociado al usuario
 const clientId = await findClientId(sessionUser.id);
+// Un pago de Mercado Pago aprobado que no llegó por regreso ni webhook se registra antes de listar
+if (clientId !== null) {
+  try { await revisarPagosPendientes(clientId); } catch (error) { console.error('No se pudieron revisar los pagos de Mercado Pago:', error); }
+}
 const compras: CompraResumen[] = clientId !== null ? await getComprasCliente(clientId) : [];
 
 // Nombre del usuario para el saludo

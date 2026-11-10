@@ -45,23 +45,14 @@ if (!Astro.locals.user) {
         <section class="movement-card" aria-labelledby="movement-title">
           <div class="movement-heading">
             <div>
-              <p class="eyebrow">Administra tu saldo</p>
-              <h2 id="movement-title">Nuevo movimiento</h2>
+              <p class="eyebrow">Agrega saldo</p>
+              <h2 id="movement-title">Recargar monedero</h2>
             </div>
             <span class="movement-mark" aria-hidden="true">↗</span>
           </div>
 
-          <div class="operation-switch" role="group" aria-label="Tipo de movimiento">
-            <button type="button" class="operation-option active" data-action="recargar" aria-pressed="true">
-              <span aria-hidden="true">＋</span> Recargar
-            </button>
-            <button type="button" class="operation-option" data-action="descontar" aria-pressed="false">
-              <span aria-hidden="true">−</span> Usar saldo
-            </button>
-          </div>
-
           <form id="walletForm">
-            <label for="amount">Monto del movimiento</label>
+            <label for="amount">Monto a recargar</label>
             <div class="amount-field">
               <span aria-hidden="true">$</span>
               <input
@@ -83,7 +74,7 @@ if (!Astro.locals.user) {
           </form>
 
           <p class="feedback" id="walletFeedback" role="status" aria-live="polite"></p>
-          <p class="demo-note"><strong>Nota:</strong> Las recargas se aplican directamente al saldo; esta versión no procesa pagos externos.</p>
+          <p class="demo-note"><strong>Nota:</strong> Tus compras de la tienda se pagan automáticamente con este saldo. Las recargas se aplican directamente; esta versión no procesa pagos externos.</p>
         </section>
       </div>
 
@@ -147,10 +138,6 @@ if (!Astro.locals.user) {
   .movement-heading .eyebrow { font-size: 8px; margin-bottom: 7px; }
   h2 { font-size: 25px; font-weight: 400; letter-spacing: -1px; margin: 0; }
   .movement-mark { align-items: center; background: #f7d21c; border-radius: 50%; display: flex; font-family: Arial, sans-serif; font-size: 19px; height: 35px; justify-content: center; width: 35px; }
-  .operation-switch { background: #f6f4ed; display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 22px; padding: 4px; }
-  .operation-option { background: transparent; border: 0; color: #716e67; cursor: pointer; font-family: Arial, sans-serif; font-size: 11px; font-weight: 700; min-height: 39px; }
-  .operation-option span { font-size: 16px; margin-right: 5px; }
-  .operation-option.active { background: #171717; color: #fffdf3; }
   form { display: flex; flex-direction: column; }
   label { font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; margin-bottom: 8px; text-transform: uppercase; }
   .amount-field { align-items: center; border: 1px solid #d8d3c3; display: flex; min-height: 57px; padding: 0 14px; }
@@ -184,6 +171,7 @@ if (!Astro.locals.user) {
   .history-type::before { border-radius: 50%; content: ''; height: 7px; width: 7px; }
   .history-type[data-type="Recarga"]::before { background: #25834b; }
   .history-type[data-type="Descuento"]::before { background: #d93e2e; }
+  .history-type[data-type="Reembolso"]::before { background: #2563eb; }
   .history-empty { color: #716e67; padding: 20px 12px; text-align: center !important; }
   .continue-link { color: #171717; display: inline-flex; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; gap: 8px; margin-top: 25px; text-decoration: none; text-transform: uppercase; }
   .continue-link span { font-size: 16px; }
@@ -208,13 +196,20 @@ if (!Astro.locals.user) {
   const submitButton = document.getElementById('submitMovement') as HTMLButtonElement | null;
   const submitLabel = document.getElementById('submitLabel');
   const walletForm = document.getElementById('walletForm') as HTMLFormElement | null;
-  const operationOptions = document.querySelectorAll<HTMLButtonElement>('.operation-option');
-  let selectedAction: 'recargar' | 'descontar' = 'recargar';
 
   const formatMoney = (amount: number): string =>
     new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amount);
 
-  const renderHistory = (movimientos: Array<{ tipo: 'Recarga' | 'Descuento'; monto: string | number; fecha: string }>): void => {
+  type Movimiento = { tipo: 'Recarga' | 'Descuento' | 'Reembolso'; monto: string | number; fecha: string; id_venta?: number | null };
+
+  // Un descuento es el pago de una compra; un reembolso, su devolución al cancelarla
+  const etiquetaMovimiento = (m: Movimiento): string => {
+    if (m.tipo === 'Descuento') return m.id_venta ? `Compra #${m.id_venta}` : 'Compra';
+    if (m.tipo === 'Reembolso') return m.id_venta ? `Reembolso compra #${m.id_venta}` : 'Reembolso';
+    return 'Recarga';
+  };
+
+  const renderHistory = (movimientos: Movimiento[]): void => {
     if (!movementHistory) return;
     movementHistory.replaceChildren();
 
@@ -242,9 +237,10 @@ if (!Astro.locals.user) {
         : new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
       typeLabel.className = 'history-type';
       typeLabel.dataset.type = movimiento.tipo;
-      typeLabel.textContent = movimiento.tipo;
+      typeLabel.textContent = etiquetaMovimiento(movimiento);
       typeCell.append(typeLabel);
-      amountCell.textContent = formatMoney(Number(movimiento.monto));
+      // Las compras restan saldo; recargas y reembolsos lo suman
+      amountCell.textContent = `${movimiento.tipo === 'Descuento' ? '−' : '+'}${formatMoney(Number(movimiento.monto))}`;
       row.append(dateCell, typeCell, amountCell);
       movementHistory.append(row);
     });
@@ -275,22 +271,6 @@ if (!Astro.locals.user) {
     }
   };
 
-  operationOptions.forEach((option) => {
-    option.addEventListener('click', () => {
-      selectedAction = option.dataset.action === 'descontar' ? 'descontar' : 'recargar';
-      operationOptions.forEach((item) => {
-        const isActive = item === option;
-        item.classList.toggle('active', isActive);
-        item.setAttribute('aria-pressed', String(isActive));
-      });
-      if (submitLabel) submitLabel.textContent = selectedAction === 'recargar' ? 'Recargar monedero' : 'Usar saldo';
-      if (feedback) {
-        feedback.textContent = '';
-        delete feedback.dataset.kind;
-      }
-    });
-  });
-
   walletForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!amountInput || !submitButton) return;
@@ -313,23 +293,20 @@ if (!Astro.locals.user) {
       const response = await fetch('/api/monedero', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: selectedAction, monto }),
+        body: JSON.stringify({ action: 'recargar', monto }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'No se pudo completar el movimiento.');
 
       if (balanceOutput) balanceOutput.textContent = formatMoney(Number(result.saldo));
       void loadBalance();
-      showFeedback(
-        selectedAction === 'recargar' ? 'Recarga aplicada correctamente.' : 'Saldo descontado correctamente.',
-        'success',
-      );
+      showFeedback('Recarga aplicada correctamente.', 'success');
       amountInput.value = '';
     } catch (error) {
       showFeedback(error instanceof Error ? error.message : 'No se pudo completar el movimiento.', 'error');
     } finally {
       submitButton.disabled = false;
-      if (submitLabel) submitLabel.textContent = selectedAction === 'recargar' ? 'Recargar monedero' : 'Usar saldo';
+      if (submitLabel) submitLabel.textContent = 'Recargar monedero';
     }
   });
 

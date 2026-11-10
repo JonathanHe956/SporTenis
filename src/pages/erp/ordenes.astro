@@ -4,6 +4,7 @@ import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Clientes, DetalleVentas, MetodosPago, MovimientosInventario, Productos, Usuarios, Ventas } from '../../db/schema';
 import { cancelarFacturaYPago, facturarYConciliarVenta } from '../../lib/facturacion';
+import { MonederoError } from '../../lib/monedero';
 import { procesarLogisticaStock } from '../../lib/stockLogistics';
 import { registrarHistorialOrden } from '../../lib/ventas';
 
@@ -144,7 +145,8 @@ if (Astro.request.method === 'POST') {
     params.set('actualizada', '1');
     return Astro.redirect(`/erp/ordenes?${params.toString()}`, 303);
   } catch (error: unknown) {
-    if (error instanceof OrdenError) {
+    if (error instanceof OrdenError || error instanceof MonederoError) {
+      // Con el monedero, confirmar una orden falla si el cliente no tiene saldo suficiente
       errorMsg = error.message;
     } else {
       console.error('Error al actualizar el estado de la orden:', error);

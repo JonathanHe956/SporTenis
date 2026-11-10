@@ -42,18 +42,35 @@ describe('ajustarAlStock', () => {
 });
 
 describe('resumirCarrito', () => {
+  const IVA = { nombre: 'IVA', porcentaje: 16, tasa: 0.16 };
+
   it('desglosa el IVA del total cuando el envío es gratis', () => {
-    const resumen = resumirCarrito([item({ precio: 2400, subtotal: 2400 })]);
-    expect(resumen).toMatchObject({ subtotal: 2400, envio: 0, total: 2400, unidades: 1, tasa_iva: 0.16 });
-    expect(resumen.base_sin_iva).toBe(2068.97);
-    expect(resumen.iva).toBe(331.03);
+    const resumen = resumirCarrito([item({ precio: 2400, subtotal: 2400 })], [IVA]);
+    expect(resumen).toMatchObject({ subtotal: 2400, envio: 0, total: 2400, unidades: 1 });
+    expect(resumen.base_sin_impuestos).toBe(2068.97);
+    expect(resumen.impuestos).toEqual([{ nombre: 'IVA', porcentaje: 16, monto: 331.03 }]);
+    expect(resumen.total_impuestos).toBe(331.03);
   });
 
   it('incluye el envío en el desglose y no pierde centavos', () => {
-    const resumen = resumirCarrito([item({ precio: 1500, subtotal: 1500 })]);
+    const resumen = resumirCarrito([item({ precio: 1500, subtotal: 1500 })], [IVA]);
     expect(resumen).toMatchObject({ subtotal: 1500, envio: 500, total: 2000 });
-    expect(resumen.base_sin_iva).toBe(1724.14);
-    expect(resumen.iva).toBe(275.86);
-    expect(Math.round((resumen.base_sin_iva + resumen.iva) * 100)).toBe(Math.round(resumen.total * 100));
+    expect(resumen.base_sin_impuestos).toBe(1724.14);
+    expect(resumen.total_impuestos).toBe(275.86);
+    expect(Math.round((resumen.base_sin_impuestos + resumen.total_impuestos) * 100)).toBe(Math.round(resumen.total * 100));
+  });
+
+  it('muestra una línea por cada impuesto activo', () => {
+    const resumen = resumirCarrito([item({ precio: 2480, subtotal: 2480 })], [IVA, { nombre: 'IEPS', porcentaje: 8, tasa: 0.08 }]);
+    expect(resumen.base_sin_impuestos).toBe(2000);
+    expect(resumen.impuestos).toEqual([
+      { nombre: 'IVA', porcentaje: 16, monto: 320 },
+      { nombre: 'IEPS', porcentaje: 8, monto: 160 },
+    ]);
+  });
+
+  it('sin impuestos activos no hay desglose', () => {
+    const resumen = resumirCarrito([item({ precio: 2400, subtotal: 2400 })], []);
+    expect(resumen).toMatchObject({ base_sin_impuestos: 2400, impuestos: [], total_impuestos: 0 });
   });
 });

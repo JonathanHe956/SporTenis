@@ -1,7 +1,8 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { db } from '../db/db';
 import { Carritos, Categorias, DetalleCarritos, Modelos, Productos } from '../db/schema';
-import { desglosarIva, TASA_IVA } from './facturacion';
+import { IMPUESTOS_POR_DEFECTO, desglosarImpuestos, type ImpuestoAplicado, type LineaImpuesto } from './impuestos';
+import { preciosVigentes } from './promociones';
 import { calcularTotales, type ItemVenta, type TotalesVenta } from './ventas';
 
 /** Error de negocio cuyo mensaje sí se puede mostrar al usuario. */
@@ -20,7 +21,10 @@ export interface CartItem {
   nombre: string;
   categoria: string | null;
   variante: string;
+  /** Precio unitario que se cobra (impuestos incluidos), con la promoción vigente si hay. */
   precio: number;
+  /** Precio de lista cuando hay una promoción aplicada; null si se cobra el de lista. */
+  precio_original?: number | null;
   cantidad: number;
   stock: number;
   subtotal: number;
@@ -30,11 +34,11 @@ export interface CartItem {
 
 export interface CartSummary extends TotalesVenta {
   unidades: number;
-  /** Total (productos + envío) sin IVA, igual que lo desglosará la factura. */
-  base_sin_iva: number;
-  /** IVA incluido en el total. */
-  iva: number;
-  tasa_iva: number;
+  /** Total (productos + envío) sin impuestos, igual que lo desglosará la factura. */
+  base_sin_impuestos: number;
+  /** Monto de cada impuesto activo incluido en el total. */
+  impuestos: LineaImpuesto[];
+  total_impuestos: number;
 }
 
 const findCartId = async (clientId: number): Promise<number | null> => {
@@ -81,14 +85,17 @@ export const getCartItems = async (clientId: number): Promise<CartItem[]> => {
     .where(eq(DetalleCarritos.id_carrito, cartId))
     .orderBy(asc(DetalleCarritos.id));
 
+  const precios = await preciosVigentes(rows.map((row) => ({ id: row.id_producto, precio_venta: row.precio })));
+
   return rows.map((row) => {
-    const precio = Number(row.precio);
+    const { lista: precioLista, final: precio } = precios.get(row.id_producto)!;
     return {
       id_producto: row.id_producto,
       nombre: row.nombre,
       categoria: row.categoria,
       variante: [row.color, row.talla ? `${row.talla}cm` : ''].filter(Boolean).join(' - ') || 'Estándar',
       precio,
+      precio_original: precio < precioLista ? precioLista : null,
       cantidad: row.cantidad,
       stock: row.stock,
       subtotal: calcularTotales([{ precio, cantidad: row.cantidad }], 0).subtotal,
@@ -97,16 +104,16 @@ export const getCartItems = async (clientId: number): Promise<CartItem[]> => {
   });
 };
 
-// Los precios ya traen IVA: se desglosa del total con la misma función que usa la factura
-export const resumirCarrito = (items: CartItem[]): CartSummary => {
+// Los precios ya incluyen los impuestos: solo se desglosan del total, igual que en la factura
+export const resumirCarrito = (items: CartItem[], impuestos: readonly ImpuestoAplicado[] = IMPUESTOS_POR_DEFECTO): CartSummary => {
   const totales = calcularTotales(items);
-  const { subtotal: base_sin_iva, iva } = desglosarIva(totales.total);
+  const desglose = desglosarImpuestos(totales.total, impuestos);
   return {
     ...totales,
     unidades: items.reduce((total, item) => total + item.cantidad, 0),
-    base_sin_iva,
-    iva,
-    tasa_iva: TASA_IVA,
+    base_sin_impuestos: desglose.subtotal,
+    impuestos: desglose.impuestos,
+    total_impuestos: desglose.total_impuestos,
   };
 };
 

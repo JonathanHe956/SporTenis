@@ -5,6 +5,7 @@ import { Modelos, Marcas, Categorias, Productos, Proveedores, Notificaciones, Pe
 import { eq, and } from 'drizzle-orm';
 import { procesarLogisticaStock } from '../../lib/stockLogistics';
 import { canEditCatalogo } from '../../lib/auth';
+import { desglosarImpuestos, impuestosVigentes } from '../../lib/impuestos';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 const { module } = Astro.params;
@@ -163,6 +164,12 @@ if (q) {
     (item.nombre && item.nombre.toLowerCase().includes(searchTerm)) || (item.marca && item.marca.toLowerCase().includes(searchTerm)) || (item.categoria && item.categoria.toLowerCase().includes(searchTerm)) || (item.proveedor && item.proveedor.toLowerCase().includes(searchTerm))
   );
 }
+
+// El precio de venta es el precio final (impuestos incluidos); aquí solo se muestra cuánto de él son impuestos
+const impuestosHoy = await impuestosVigentes();
+const impuestosIncluidos = (precio: string | number) =>
+  desglosarImpuestos(Number(precio) || 0, impuestosHoy).total_impuestos
+    .toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 ---
 
 <CrmLayout title="Productos SCM" activePath={`${base}/productos`}>
@@ -235,6 +242,7 @@ if (q) {
               <td><span class={`badge ${producto.estrategia === 'PULL' ? 'badge-pull' : 'badge-push'}`}>{producto.estrategia === 'PULL' ? 'PULL (Auto)' : 'PUSH (Manual)'}</span></td>
               <td>
                 Venta: ${producto.precio_venta}<br/>
+                <small style="color:#666;">Incluye impuestos: ${impuestosIncluidos(producto.precio_venta)}</small><br/>
                 <small style="color:#666;">Costo: ${producto.costo}</small>
               </td>
               <td class="text-right" style="white-space: nowrap;">
@@ -367,7 +375,7 @@ if (q) {
         </div>
 
         <div class="form-row">
-          <label>Precio de venta</label>
+          <label>Precio de venta (final, impuestos incluidos)</label>
           <input type="number" step="0.001" name="precio_venta" value="0.000" required oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" />
         </div>
         
@@ -475,7 +483,7 @@ if (q) {
         </div>
 
         <div class="form-row">
-          <label>Precio de venta</label>
+          <label>Precio de venta (final, impuestos incluidos)</label>
           <input type="number" step="0.001" name="precio_venta" id="edit_producto_precio" required oninput="this.value = this.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')" />
         </div>
         

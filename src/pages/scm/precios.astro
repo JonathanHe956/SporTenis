@@ -1,0 +1,595 @@
+---
+// Promociones de precio por producto e impuestos incluidos en el precio (solo se desglosan).
+import CrmLayout from '../../layouts/CrmLayout.astro';
+import { asc, eq } from 'drizzle-orm';
+import { db } from '../../db/db';
+import { Modelos, Productos } from '../../db/schema';
+import { impuestosVigentes, listarImpuestos, tasaTotal, type Impuesto } from '../../lib/impuestos';
+import { listarPromociones, type Promocion } from '../../lib/promociones';
+
+const user = Astro.locals.user;
+if (!user) return Astro.redirect('/login');
+const isAdmin = user.role === 'administrador';
+
+// Si alguna migración (0010 / 0011) falta, la página lo dice en vez de romperse
+let promociones: Promocion[] = [];
+let impuestos: Impuesto[] = [];
+let faltaPromociones = false;
+let faltaImpuestos = false;
+try { promociones = await listarPromociones(); } catch (error) { console.error(error); faltaPromociones = true; }
+try { impuestos = await listarImpuestos(); } catch (error) { console.error(error); faltaImpuestos = true; }
+const impuestosHoy = await impuestosVigentes();
+const tasaImpuestosPct = Math.round(tasaTotal(impuestosHoy) * 10000) / 100;
+
+const productos = await db
+  .select({
+    id: Productos.id,
+    sku: Productos.sku,
+    modelo: Modelos.nombre,
+    color: Productos.color,
+    talla: Productos.talla_cm,
+    precio: Productos.precio_venta,
+    estado: Productos.estado,
+  })
+  .from(Productos)
+  .innerJoin(Modelos, eq(Productos.id_modelo, Modelos.id))
+  .orderBy(asc(Modelos.nombre), asc(Productos.color), asc(Productos.talla_cm));
+
+const catalogo = productos.map((p) => ({
+  id: p.id,
+  sku: p.sku,
+  nombre: p.modelo,
+  variante: [p.color, p.talla ? `${p.talla}cm` : ''].filter(Boolean).join(' · ') || 'Estándar',
+  // Precio de lista capturado en el producto (impuestos incluidos): sobre este se aplican los descuentos
+  precio: Number(p.precio) || 0,
+  activo: p.estado === 'Activo',
+}));
+const nombrePorId = new Map(catalogo.map((p) => [p.id, `${p.nombre} (${p.variante})`]));
+
+const money = (n: number) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+const fecha = (d: Date) => d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+// Fecha local (hora del servidor) para precargar los <input type="date">
+const fechaInput = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const descuentoTexto = (p: Promocion) => (p.tipo_descuento === 'porcentaje' ? `${p.valor}%` : `${money(p.valor)}`);
+const badgeVigencia: Record<Promocion['vigencia'], string> = {
+  Vigente: 'badge-success',
+  Programada: 'badge-info',
+  Vencida: 'badge-neutral',
+  Inactiva: 'badge-neutral',
+};
+
+const vigentes = promociones.filter((p) => p.vigencia === 'Vigente');
+const programadas = promociones.filter((p) => p.vigencia === 'Programada');
+const productosConDescuento = new Set(vigentes.flatMap((p) => p.productos)).size;
+
+const promocionesCliente = promociones.map((p) => ({
+  id: p.id,
+  nombre: p.nombre,
+  descripcion: p.descripcion ?? '',
+  tipo_descuento: p.tipo_descuento,
+  valor: p.valor,
+  fecha_inicio: fechaInput(p.fecha_inicio),
+  fecha_fin: fechaInput(p.fecha_fin),
+  estado: p.estado,
+  productos: p.productos,
+}));
+const hoy = fechaInput(new Date());
+---
+
+<CrmLayout title="Promociones e impuestos" activePath="/scm/precios">
+  <div class="header-actions">
+    <div>
+      <h1 class="crm-title">Promociones e impuestos</h1>
+      <p class="subtitle">Descuentos por producto e impuestos incluidos en el precio que se desglosan en la tienda, el carrito y la factura.</p>
+    </div>
+    <button class="btn-primary" type="button" id="btnNuevaPromocion" disabled={faltaPromociones}>+ Nueva promoción</button>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-number stat-success">{vigentes.length}</div><div class="stat-label">Promociones vigentes</div></div>
+    <div class="stat-card"><div class="stat-number stat-info">{programadas.length}</div><div class="stat-label">Programadas</div></div>
+    <div class="stat-card"><div class="stat-number">{productosConDescuento}</div><div class="stat-label">Productos con descuento hoy</div></div>
+    <div class="stat-card"><div class="stat-number stat-warning">{tasaImpuestosPct}%</div><div class="stat-label">Impuestos incluidos en el precio</div></div>
+  </div>
+
+  <section class="crm-card section-card" aria-labelledby="tituloPromociones">
+    <div class="section-head">
+      <div>
+        <h2 id="tituloPromociones">Promociones</h2>
+        <p class="section-note">El descuento se aplica sobre el precio del producto: se ve en la tienda y en el carrito, y es el que se cobra. Si a un producto le tocan varias promociones vigentes, se aplica la más conveniente para el cliente.</p>
+      </div>
+      <span class="badge badge-neutral">{promociones.length} en total</span>
+    </div>
+
+    {faltaPromociones ? (
+      <p class="empty">La tabla de promociones no existe todavía. Aplica la migración <code>db/migrations/0011_promociones.sql</code>.</p>
+    ) : promociones.length === 0 ? (
+      <p class="empty">Aún no hay promociones. Crea la primera con <strong>+ Nueva promoción</strong>.</p>
+    ) : (
+      <div class="table-responsive">
+        <table class="crm-table">
+          <thead>
+            <tr><th>Promoción</th><th class="text-right">Descuento</th><th>Vigencia</th><th>Productos</th><th class="text-center">Estado</th><th class="text-right">Acciones</th></tr>
+          </thead>
+          <tbody>
+            {promociones.map((p) => {
+              const nombres = p.productos.map((id) => nombrePorId.get(id) ?? `Producto #${id}`);
+              return (
+                <tr>
+                  <td>
+                    <strong>{p.nombre}</strong>
+                    {p.descripcion && <div class="muted">{p.descripcion}</div>}
+                  </td>
+                  <td class="text-right"><strong>{descuentoTexto(p)}</strong></td>
+                  <td class="nowrap">{fecha(p.fecha_inicio)} – {fecha(p.fecha_fin)}</td>
+                  <td>
+                    <span title={nombres.join('\n')}>
+                      {nombres.slice(0, 2).join(', ')}{nombres.length > 2 && <span class="muted"> y {nombres.length - 2} más</span>}
+                    </span>
+                  </td>
+                  <td class="text-center"><span class={`badge ${badgeVigencia[p.vigencia]}`}>{p.vigencia}</span></td>
+                  <td class="text-right nowrap">
+                    <button type="button" class="link-btn" data-editar-promocion={p.id}>Editar</button>
+                    <button type="button" class="link-btn" data-estado-promocion={p.id} data-estado={p.estado === 'Activa' ? 'Inactiva' : 'Activa'}>
+                      {p.estado === 'Activa' ? 'Pausar' : 'Activar'}
+                    </button>
+                    <button
+                      type="button"
+                      class="link-btn danger"
+                      data-eliminar-promocion={p.id}
+                      data-confirm-click={`¿Eliminar la promoción "${p.nombre}"? Los productos vuelven a su precio de lista.`}
+                      data-confirm-title="Eliminar promoción"
+                      data-confirm-accept="Eliminar"
+                    >Eliminar</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </section>
+
+  <section class="crm-card section-card" aria-labelledby="tituloImpuestos">
+    <div class="section-head">
+      <div>
+        <h2 id="tituloImpuestos">Impuestos</h2>
+        <p class="section-note">
+          El precio que se captura en cada producto es el precio final: <strong>ya incluye los impuestos</strong> y es lo que se cobra.
+          Los impuestos activos solo se desglosan dentro de ese precio (tienda, carrito, ticket y factura); cambiar un porcentaje
+          o agregar un impuesto cambia el desglose, no el precio. Cada factura conserva el desglose con el que se emitió.
+        </p>
+      </div>
+      {isAdmin && !faltaImpuestos && <button class="btn-secondary" type="button" id="btnNuevoImpuesto">+ Nuevo impuesto</button>}
+    </div>
+
+    {!isAdmin && <p class="readonly-note">Solo el administrador puede cambiar los impuestos.</p>}
+
+    {faltaImpuestos ? (
+      <p class="empty">La tabla de impuestos no existe todavía; se desglosa el IVA de respaldo (16%). Aplica la migración <code>db/migrations/0010_impuestos.sql</code>.</p>
+    ) : impuestos.length === 0 ? (
+      <p class="empty">No hay impuestos registrados; se desglosa el IVA de respaldo (16%).</p>
+    ) : (
+      <div class="table-responsive">
+        <table class="crm-table">
+          <thead><tr><th>Impuesto</th><th class="text-right">Porcentaje</th><th>Uso</th><th class="text-center">Estado</th>{isAdmin && <th class="text-right">Acciones</th>}</tr></thead>
+          <tbody>
+            {impuestos.map((imp) => (
+              <tr>
+                <td><strong>{imp.nombre}</strong></td>
+                <td class="text-right">{imp.porcentaje.toFixed(2)}%</td>
+                <td class="muted">{imp.estado === 'Activo' ? 'Se desglosa en tienda, carrito, ticket y factura' : 'No se desglosa'}</td>
+                <td class="text-center"><span class={`badge ${imp.estado === 'Activo' ? 'badge-success' : 'badge-neutral'}`}>{imp.estado}</span></td>
+                {isAdmin && (
+                  <td class="text-right nowrap">
+                    <button
+                      type="button"
+                      class="link-btn"
+                      data-editar-impuesto={imp.id}
+                      data-nombre={imp.nombre}
+                      data-porcentaje={imp.porcentaje}
+                      data-estado={imp.estado}
+                    >Editar</button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </section>
+
+  <!-- Alta / edición de promoción -->
+  <dialog id="modalPromocion" class="scm-modal modal-wide" aria-labelledby="tituloModalPromocion">
+    <form id="formPromocion" class="modal-content" novalidate>
+      <div class="modal-header">
+        <h2 id="tituloModalPromocion">Nueva promoción</h2>
+        <button type="button" class="close-btn" data-cerrar aria-label="Cerrar">×</button>
+      </div>
+
+      <div class="form-grid">
+        <label class="span-2">Nombre
+          <input name="nombre" maxlength="255" required placeholder="Buen Fin 2026" />
+        </label>
+        <label class="span-2">Descripción <span class="muted">(opcional)</span>
+          <input name="descripcion" placeholder="Solo para uso interno" />
+        </label>
+        <label>Tipo de descuento
+          <select name="tipo_descuento">
+            <option value="porcentaje">Porcentaje (%)</option>
+            <option value="monto">Monto fijo ($ MXN)</option>
+          </select>
+        </label>
+        <label>Descuento
+          <input name="valor" type="number" min="0.01" step="0.01" required placeholder="20" />
+        </label>
+        <label>Desde
+          <input name="fecha_inicio" type="date" required />
+        </label>
+        <label>Hasta (incluido)
+          <input name="fecha_fin" type="date" required />
+        </label>
+        <label class="check span-2">
+          <input name="activa" type="checkbox" checked /> Activa (desmárcala para guardarla en pausa)
+        </label>
+      </div>
+
+      <fieldset class="product-picker">
+        <legend>Productos <span class="muted" id="contadorProductos">(0 seleccionados)</span></legend>
+        <div class="picker-tools">
+          <input type="search" id="buscarProducto" placeholder="Buscar por modelo, color, talla o SKU" aria-label="Buscar producto" />
+          <button type="button" class="link-btn" id="marcarVisibles">Marcar visibles</button>
+          <button type="button" class="link-btn" id="desmarcarTodos">Quitar todos</button>
+        </div>
+        <ul class="picker-list" id="listaProductos">
+          {catalogo.map((p) => (
+            <li data-busqueda={`${p.nombre} ${p.variante} ${p.sku}`.toLowerCase()}>
+              <label>
+                <input type="checkbox" name="productos" value={p.id} />
+                <span class="picker-name">{p.nombre} <span class="muted">{p.variante} · {p.sku}</span>{!p.activo && <span class="badge badge-neutral">Inactivo</span>}</span>
+                <span class="picker-price" data-precio={p.precio}>{money(p.precio)}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </fieldset>
+
+      <p class="form-error" id="errorPromocion" role="alert" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" data-cerrar>Cancelar</button>
+        <button type="submit" class="btn-save">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Alta / edición de impuesto (solo administrador) -->
+  {isAdmin && (
+    <dialog id="modalImpuesto" class="scm-modal" aria-labelledby="tituloModalImpuesto">
+      <form id="formImpuesto" class="modal-content" novalidate>
+        <div class="modal-header">
+          <h2 id="tituloModalImpuesto">Nuevo impuesto</h2>
+          <button type="button" class="close-btn" data-cerrar aria-label="Cerrar">×</button>
+        </div>
+        <div class="form-grid">
+          <label class="span-2">Nombre
+            <input name="nombre" maxlength="100" required />
+          </label>
+          <label>Porcentaje
+            <input name="porcentaje" type="number" min="0" max="100" step="0.01" required />
+          </label>
+          <label>Estado
+            <select name="estado">
+              <option value="Activo">Activo</option>
+              <option value="Inactivo">Inactivo</option>
+            </select>
+          </label>
+        </div>
+        <p class="form-error" id="errorImpuesto" role="alert" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" data-cerrar>Cancelar</button>
+          <button type="submit" class="btn-save">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+  )}
+
+  <script define:vars={{ promocionesCliente, hoy }}>
+    const AVISO_KEY = 'scmPreciosAviso';
+
+    const toast = (mensaje, kind = 'success') => {
+      const region = document.getElementById('appToastRegion');
+      if (!region) return;
+      const el = document.createElement('div');
+      el.className = 'app-toast';
+      el.dataset.kind = kind;
+      el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+      el.textContent = mensaje;
+      region.appendChild(el);
+      window.setTimeout(() => el.remove(), 4000);
+    };
+
+    // El aviso sobrevive a la recarga que muestra los datos actualizados
+    const recargarCon = (mensaje) => {
+      try { sessionStorage.setItem(AVISO_KEY, mensaje); } catch {}
+      window.location.reload();
+    };
+    try {
+      const pendiente = sessionStorage.getItem(AVISO_KEY);
+      if (pendiente) { sessionStorage.removeItem(AVISO_KEY); toast(pendiente); }
+    } catch {}
+
+    const enviar = async (url, method, body) => {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) throw new Error(data.error || 'No se pudo guardar el cambio.');
+      return data;
+    };
+
+    document.querySelectorAll('dialog [data-cerrar]').forEach((btn) =>
+      btn.addEventListener('click', () => btn.closest('dialog')?.close()));
+
+    // ── Promociones ────────────────────────────────────────────
+    const modal = document.getElementById('modalPromocion');
+    const form = document.getElementById('formPromocion');
+    const titulo = document.getElementById('tituloModalPromocion');
+    const errorBox = document.getElementById('errorPromocion');
+    const buscar = document.getElementById('buscarProducto');
+    const contador = document.getElementById('contadorProductos');
+    const items = [...document.querySelectorAll('#listaProductos li')];
+    const checks = () => [...form.querySelectorAll('input[name="productos"]')];
+    let editandoId = null;
+
+    const money = (n) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+    // Vista previa: el precio de cada producto con el descuento capturado
+    const actualizarVista = () => {
+      const tipo = form.tipo_descuento.value;
+      const valor = Number(form.valor.value);
+      const seleccionados = checks().filter((c) => c.checked).length;
+      contador.textContent = `(${seleccionados} seleccionado${seleccionados === 1 ? '' : 's'})`;
+
+      form.querySelectorAll('.picker-price').forEach((el) => {
+        const precio = Number(el.dataset.precio);
+        if (!(valor > 0)) { el.textContent = money(precio); return; }
+        const descuento = tipo === 'porcentaje' ? Math.round(precio * Math.min(valor, 100)) / 100 : valor;
+        const final = Math.max(0, Math.round((precio - descuento) * 100) / 100);
+        el.innerHTML = '';
+        const antes = document.createElement('s');
+        antes.textContent = money(precio);
+        el.append(antes, ` ${money(final)}`);
+      });
+    };
+
+    const filtrar = () => {
+      const q = buscar.value.trim().toLowerCase();
+      items.forEach((li) => { li.hidden = q !== '' && !li.dataset.busqueda.includes(q); });
+    };
+
+    const abrirPromocion = (promo) => {
+      editandoId = promo?.id ?? null;
+      titulo.textContent = promo ? 'Editar promoción' : 'Nueva promoción';
+      form.reset();
+      errorBox.hidden = true;
+      form.nombre.value = promo?.nombre ?? '';
+      form.descripcion.value = promo?.descripcion ?? '';
+      form.tipo_descuento.value = promo?.tipo_descuento ?? 'porcentaje';
+      form.valor.value = promo ? String(promo.valor) : '';
+      form.fecha_inicio.value = promo?.fecha_inicio ?? hoy;
+      form.fecha_fin.value = promo?.fecha_fin ?? '';
+      form.activa.checked = promo ? promo.estado === 'Activa' : true;
+      const elegidos = new Set(promo?.productos ?? []);
+      checks().forEach((c) => { c.checked = elegidos.has(Number(c.value)); });
+      buscar.value = '';
+      filtrar();
+      actualizarVista();
+      modal.showModal();
+      form.nombre.focus();
+    };
+
+    document.getElementById('btnNuevaPromocion')?.addEventListener('click', () => abrirPromocion(null));
+    document.querySelectorAll('[data-editar-promocion]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const promo = promocionesCliente.find((p) => p.id === Number(btn.dataset.editarPromocion));
+        if (promo) abrirPromocion(promo);
+      }));
+
+    buscar.addEventListener('input', filtrar);
+    form.addEventListener('input', (e) => { if (e.target !== buscar) actualizarVista(); });
+    document.getElementById('marcarVisibles').addEventListener('click', () => {
+      items.forEach((li) => { if (!li.hidden) li.querySelector('input').checked = true; });
+      actualizarVista();
+    });
+    document.getElementById('desmarcarTodos').addEventListener('click', () => {
+      checks().forEach((c) => { c.checked = false; });
+      actualizarVista();
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      errorBox.hidden = true;
+      const productos = checks().filter((c) => c.checked).map((c) => Number(c.value));
+      const body = {
+        nombre: form.nombre.value,
+        descripcion: form.descripcion.value,
+        tipo_descuento: form.tipo_descuento.value,
+        valor: form.valor.value,
+        fecha_inicio: form.fecha_inicio.value,
+        fecha_fin: form.fecha_fin.value,
+        estado: form.activa.checked ? 'Activa' : 'Inactiva',
+        productos,
+      };
+      const guardar = form.querySelector('.btn-save');
+      guardar.disabled = true;
+      try {
+        if (editandoId) await enviar(`/api/promociones/${editandoId}`, 'PUT', body);
+        else await enviar('/api/promociones', 'POST', body);
+        recargarCon(editandoId ? 'Promoción actualizada.' : 'Promoción creada.');
+      } catch (error) {
+        errorBox.textContent = error.message;
+        errorBox.hidden = false;
+        guardar.disabled = false;
+      }
+    });
+
+    document.querySelectorAll('[data-estado-promocion]').forEach((btn) =>
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          await enviar(`/api/promociones/${btn.dataset.estadoPromocion}`, 'PUT', { estado: btn.dataset.estado });
+          recargarCon(btn.dataset.estado === 'Activa' ? 'Promoción activada.' : 'Promoción pausada.');
+        } catch (error) {
+          toast(error.message, 'error');
+          btn.disabled = false;
+        }
+      }));
+
+    // El layout pide confirmación y luego dispara `app-confirmed` sobre el botón
+    document.querySelectorAll('[data-eliminar-promocion]').forEach((btn) =>
+      btn.addEventListener('app-confirmed', async () => {
+        try {
+          await enviar(`/api/promociones/${btn.dataset.eliminarPromocion}`, 'DELETE');
+          recargarCon('Promoción eliminada.');
+        } catch (error) {
+          toast(error.message, 'error');
+        }
+      }));
+
+    // ── Impuestos ──────────────────────────────────────────────
+    const modalImp = document.getElementById('modalImpuesto');
+    const formImp = document.getElementById('formImpuesto');
+    if (modalImp && formImp) {
+      const tituloImp = document.getElementById('tituloModalImpuesto');
+      const errorImp = document.getElementById('errorImpuesto');
+      let impuestoId = null;
+
+      const abrirImpuesto = (datos) => {
+        impuestoId = datos?.id ?? null;
+        tituloImp.textContent = datos ? `Editar ${datos.nombre}` : 'Nuevo impuesto';
+        errorImp.hidden = true;
+        formImp.nombre.value = datos?.nombre ?? '';
+        formImp.porcentaje.value = datos ? String(datos.porcentaje) : '';
+        formImp.estado.value = datos?.estado ?? 'Activo';
+        modalImp.showModal();
+        formImp.nombre.focus();
+      };
+
+      document.getElementById('btnNuevoImpuesto')?.addEventListener('click', () => abrirImpuesto(null));
+      document.querySelectorAll('[data-editar-impuesto]').forEach((btn) =>
+        btn.addEventListener('click', () => abrirImpuesto({
+          id: Number(btn.dataset.editarImpuesto),
+          nombre: btn.dataset.nombre,
+          porcentaje: Number(btn.dataset.porcentaje),
+          estado: btn.dataset.estado,
+        })));
+
+      formImp.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        errorImp.hidden = true;
+        const body = { nombre: formImp.nombre.value, porcentaje: formImp.porcentaje.value, estado: formImp.estado.value };
+        const guardar = formImp.querySelector('.btn-save');
+        guardar.disabled = true;
+        try {
+          if (impuestoId) await enviar(`/api/impuestos/${impuestoId}`, 'PUT', body);
+          else await enviar('/api/impuestos', 'POST', body);
+          recargarCon(impuestoId ? 'Impuesto actualizado.' : 'Impuesto creado.');
+        } catch (error) {
+          errorImp.textContent = error.message;
+          errorImp.hidden = false;
+          guardar.disabled = false;
+        }
+      });
+    }
+  </script>
+</CrmLayout>
+
+<style>
+  .header-actions { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+  .crm-title { margin-bottom: 4px; }
+  .subtitle { margin: 0; font-size: 13px; color: var(--color-text-muted); }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+  .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 18px 20px; }
+  .stat-number { font-size: 28px; font-weight: 800; }
+  .stat-label { margin-top: 4px; font-size: 12px; color: var(--color-text-muted); }
+  .stat-success { color: var(--color-success); }
+  .stat-info { color: #0369a1; }
+  .stat-warning { color: #b45309; }
+
+  .section-card { margin-bottom: 24px; }
+  .section-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+  .section-head h2 { margin: 0 0 4px; font-size: 18px; }
+  .section-note { margin: 0; max-width: 720px; font-size: 13px; color: var(--color-text-muted); line-height: 1.45; }
+  .readonly-note { margin: 0 0 12px; font-size: 13px; color: #92400e; background: #fef3c7; padding: 8px 12px; border-radius: 6px; }
+  .empty { color: var(--color-text-muted); text-align: center; padding: 20px; }
+  .muted { color: var(--color-text-muted); font-size: 12px; font-weight: 400; }
+  .nowrap { white-space: nowrap; }
+
+  .table-responsive { overflow-x: auto; }
+  .crm-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .crm-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--color-text-muted); padding: 10px 12px; border-bottom: 1px solid var(--color-border); }
+  .crm-table td { padding: 12px; border-bottom: 1px solid #ece8dc; vertical-align: top; }
+  .text-right { text-align: right !important; }
+  .text-center { text-align: center !important; }
+
+  .badge-info { background: #e0f2fe; color: #0369a1; }
+
+  .link-btn { background: none; border: 0; padding: 4px 6px; font: inherit; font-size: 13px; font-weight: 650; color: #0369a1; cursor: pointer; border-radius: 4px; }
+  .link-btn:hover { background: #e0f2fe; }
+  .link-btn.danger { color: var(--color-danger); }
+  .link-btn.danger:hover { background: var(--color-danger-light); }
+  .link-btn:disabled { opacity: .5; cursor: wait; }
+
+  .btn-secondary { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 6px; padding: 8px 14px; font: inherit; font-weight: 650; cursor: pointer; white-space: nowrap; }
+  .btn-secondary:hover { border-color: var(--color-text); }
+
+  .scm-modal { border: none; border-radius: 12px; padding: 0; width: calc(100% - 32px); max-width: 520px; box-shadow: 0 25px 50px -12px rgba(0,0,0,.25); }
+  .scm-modal.modal-wide { max-width: 760px; }
+  .scm-modal::backdrop { background: rgba(0,0,0,.5); backdrop-filter: blur(3px); }
+  .modal-content { padding: 28px; background: #fff; border-radius: 12px; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .modal-header h2 { margin: 0; font-size: 18px; }
+  .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #64748b; line-height: 1; }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+  .form-grid label { display: grid; gap: 6px; font-size: 13px; font-weight: 650; }
+  .form-grid .span-2 { grid-column: span 2; }
+  .form-grid input:not([type="checkbox"]), .form-grid select, .picker-tools input {
+    width: 100%; border: 1px solid #e2e8f0; border-radius: 8px; padding: 9px 12px; font: inherit; font-weight: 400;
+  }
+  .form-grid input[readonly] { background: #f1f5f9; color: var(--color-text-muted); }
+  .form-grid .check { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+
+  .product-picker { margin: 18px 0 0; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; }
+  .product-picker legend { font-size: 13px; font-weight: 650; padding: 0 4px; }
+  .picker-tools { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .picker-tools input { flex: 1; }
+  .picker-list { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+  .picker-list label { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-bottom: 1px solid #f1f5f9; font-size: 13px; cursor: pointer; }
+  .picker-list label:hover { background: #fafaf7; }
+  .picker-name { flex: 1; min-width: 0; }
+  .picker-name .badge { margin-left: 6px; }
+  .picker-price { white-space: nowrap; font-weight: 650; }
+  .picker-price :global(s) { color: var(--color-text-muted); font-weight: 400; margin-right: 4px; }
+
+  .form-error { margin: 14px 0 0; padding: 10px 12px; border-radius: 6px; background: var(--color-danger-light); color: var(--color-danger); font-size: 13px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; }
+  .btn-cancel, .btn-save { min-height: 38px; padding: 0 16px; border-radius: 6px; font: inherit; font-weight: 650; cursor: pointer; }
+  .btn-cancel { background: #fff; border: 1px solid var(--color-border); }
+  .btn-save { background: #171717; color: #fff; border: 1px solid #171717; }
+  .btn-save:disabled { opacity: .6; cursor: wait; }
+
+  @media (max-width: 640px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .form-grid .span-2 { grid-column: auto; }
+    .section-head { flex-direction: column; }
+  }
+</style>

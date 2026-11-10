@@ -5,7 +5,6 @@ import AccountHeader from '../../../components/AccountHeader.astro';
 import EstadoPedido from '../../../components/EstadoPedido.astro';
 import { findClientId } from '../../../lib/clientes';
 import { getDetalleCompra, PASOS_PEDIDO, pasoActual } from '../../../lib/compras';
-import { TASA_IVA } from '../../../lib/facturacion';
 
 const sessionUser = Astro.locals.user;
 if (!sessionUser) {
@@ -61,6 +60,7 @@ const pago = compra.pago ? { ...compra.pago, ...(estadoPago[compra.pago.estado] 
 const iconoMetodo = (metodo: string): string => {
   if (/tarjeta/i.test(metodo)) return '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>';
   if (/transfer/i.test(metodo)) return '<path d="M3 21h18"/><path d="M3 10h18"/><path d="m12 3 9 7H3z"/><path d="M5 10v11M19 10v11M9 10v11M15 10v11"/>';
+  if (/mercado pago/i.test(metodo)) return '<circle cx="12" cy="12" r="9"/><path d="M7.5 12.5c1.5-1.5 3-1.5 4.5 0s3 1.5 4.5 0"/>';
   if (/monedero/i.test(metodo)) return '<rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 9h18M16 15h.01"/>';
   return '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>';
 };
@@ -184,11 +184,23 @@ const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency',
               <div><dt>Subtotal</dt><dd>{money(compra.subtotal)}</dd></div>
               <div><dt>Envío</dt><dd class:list={{ free: compra.envio === 0 }}>{compra.envio === 0 ? 'Gratis' : money(compra.envio)}</dd></div>
               {compra.cupon && <div><dt>Cupón</dt><dd class="coupon">{compra.cupon}</dd></div>}
-              <div class="tax"><dt>Importe sin IVA</dt><dd>{money(compra.baseSinIva)}</dd></div>
-              <div class="tax"><dt>IVA ({Math.round(TASA_IVA * 100)}%)</dt><dd>{money(compra.iva)}</dd></div>
+              <div class="tax"><dt>Importe sin impuestos</dt><dd>{money(compra.baseSinImpuestos)}</dd></div>
+              {compra.impuestos.map((imp) => (
+                <div class="tax"><dt>{imp.nombre} ({imp.porcentaje.toLocaleString('es-MX', { maximumFractionDigits: 2 })}%)</dt><dd>{money(imp.monto)}</dd></div>
+              ))}
               <div class="total"><dt>Total</dt><dd>{money(compra.total)}</dd></div>
             </dl>
           </section>
+
+          <!-- Envío: copia de la dirección elegida al comprar -->
+          {compra.direccionEnvio && (
+            <section class="card enter" style="--d: 270ms" aria-labelledby="shipTitle">
+              <h2 class="card-title" id="shipTitle">Envío</h2>
+              <address class="ship-address">
+                {compra.direccionEnvio.split('\n').map((linea, i) => i === 0 ? <strong>{linea}</strong> : <span>{linea}</span>)}
+              </address>
+            </section>
+          )}
 
           <!-- Pago -->
           <section class="card enter" style="--d: 300ms" aria-labelledby="payTitle">
@@ -200,6 +212,7 @@ const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency',
               <div>
                 <span class="pay-label">Método de pago</span>
                 <strong>{compra.metodoPago}</strong>
+                {pago?.referencia && <span class="pay-label">{pago.referencia}</span>}
               </div>
             </div>
             {pago ? (
@@ -332,6 +345,8 @@ const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency',
   .free { color: #15803d; text-transform: uppercase; font-size: 11px; }
   .coupon { background: #fff1c2; border: 1px dashed #8a5a00; font-family: 'Courier New', monospace; padding: 2px 8px; }
 
+  .ship-address { display: flex; flex-direction: column; font-family: var(--font-ui); font-size: 13px; font-style: normal; gap: 4px; line-height: 1.45; }
+  .ship-address strong { font-size: 14px; }
   .pay-method { align-items: center; background: #f6f4ed; border: 1.5px solid #e8e4da; display: flex; gap: 14px; margin-bottom: 16px; padding: 14px; }
   .pay-icon { align-items: center; background: #f7d21c; border-radius: 50%; display: flex; flex-shrink: 0; height: 44px; justify-content: center; width: 44px; }
   .pay-label { color: #716e67; display: block; font-family: var(--font-ui); font-size: 10px; font-weight: 700; letter-spacing: .8px; margin-bottom: 2px; text-transform: uppercase; }
