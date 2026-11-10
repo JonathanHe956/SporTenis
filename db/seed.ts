@@ -2,7 +2,7 @@ import { db } from '../src/db/db.js';
 import { hashPassword } from '../src/lib/password.js';
 import {
   Categorias, Marcas, Modelos, Productos, Roles, Usuarios, EtapasCrm, Clientes,
-  TiposInteraccion, Interacciones, MetodosPago, Ventas, DetalleVentas, MovimientosInventario,
+  TiposInteraccion, Interacciones, MetodosPago, Ventas, DetalleVentas, MovimientosInventario, Impuestos,
 } from '../src/db/schema.js';
 
 async function main() {
@@ -56,6 +56,9 @@ async function main() {
     { id: 2, nombre: 'Tarjeta' },
     { id: 3, nombre: 'Transferencia' }
   ]);
+
+  // IVA vigente que usan el checkout y la factura (configurable en Impuestos)
+  await db.insert(Impuestos).values({ nombre: 'IVA', porcentaje: '16.00', estado: 'Activo' });
 
   await db.insert(EtapasCrm).values([
     { id: 1, nombre: 'Prospecto' },

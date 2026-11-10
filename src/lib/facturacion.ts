@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { db } from '../db/db';
 import { Facturas, Pagos } from '../db/schema';
+import { IVA_POR_DEFECTO, tasaIvaVigente } from './impuestos';
 
-// Los precios de la tienda ya incluyen IVA: la factura solo lo desglosa
-export const TASA_IVA = 0.16;
+// Los precios de la tienda ya incluyen IVA: la factura solo lo desglosa.
+// La tasa vigente se configura en la tabla Impuestos; esta es la de respaldo.
+export const TASA_IVA = IVA_POR_DEFECTO;
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -13,9 +15,9 @@ const toCents = (value: number): number => Math.round(value * 100);
 export const folioFactura = (id_venta: number): string => `FAC-${String(id_venta).padStart(6, '0')}`;
 
 /** Separa un total con IVA incluido en base e impuesto, sin perder centavos. */
-export const desglosarIva = (total: number): { subtotal: number; iva: number; total: number } => {
+export const desglosarIva = (total: number, tasa = TASA_IVA): { subtotal: number; iva: number; total: number } => {
   const totalCents = toCents(total);
-  const baseCents = Math.round(totalCents / (1 + TASA_IVA));
+  const baseCents = Math.round(totalCents / (1 + tasa));
   return { subtotal: baseCents / 100, iva: (totalCents - baseCents) / 100, total: totalCents / 100 };
 };
 
@@ -32,7 +34,7 @@ export async function facturarYConciliarVenta(
   venta: { id_venta: number; id_metodo_pago: number; total: number },
 ): Promise<{ id_factura: number; folio: string }> {
   const ahora = new Date();
-  const importes = desglosarIva(venta.total);
+  const importes = desglosarIva(venta.total, await tasaIvaVigente(tx));
   const folio = folioFactura(venta.id_venta);
 
   const [resFactura] = await tx.insert(Facturas).values({

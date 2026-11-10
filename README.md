@@ -50,9 +50,10 @@ mysql -u root -p sportenis_db < db/migrations/0006_facturas_pagos_reportes.sql
 mysql -u root -p sportenis_db < db/migrations/0007_presupuestos_cxc_cxp.sql
 mysql -u root -p sportenis_db < db/migrations/0008_monedero.sql
 mysql -u root -p sportenis_db < db/migrations/0009_movimientos_monedero.sql
+mysql -u root -p sportenis_db < db/migrations/0010_impuestos.sql
 ```
 
-Ejecuta solo las migraciones que aún no hayas aplicado, en orden. La `0009` es necesaria para que funcionen las recargas y el historial del monedero.
+Ejecuta solo las migraciones que aún no hayas aplicado, en orden. La `0009` es necesaria para que funcionen las recargas y el historial del monedero, y la `0010` crea la tabla de impuestos con el IVA al 16%.
 
 ### Usuarios de prueba
 
