@@ -3,6 +3,7 @@ import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Interacciones, Clientes, TiposInteraccion, Usuarios, ActividadTienda } from '../../db/schema';
 import { eq, desc } from 'drizzle-orm';
+import { contactosSoporte } from '../../lib/soporte';
 
 const currentUserId = Astro.locals.user?.id ?? 0;
 
@@ -23,7 +24,7 @@ try {
     .leftJoin(Clientes, eq(Interacciones.id_cliente, Clientes.id))
     .leftJoin(TiposInteraccion, eq(Interacciones.id_tipo_interaccion, TiposInteraccion.id))
     .leftJoin(Usuarios, eq(Interacciones.id_usuario, Usuarios.id))
-    .then((rows) => rows.map((row) => ({ ...row, esActividad: false })));
+    .then((rows) => rows.map((row) => ({ ...row, esActividad: false, canal: 'crm' })));
 } catch (e) {
   interaccionesCrm = [];
 }
@@ -43,13 +44,28 @@ try {
     })
     .from(ActividadTienda)
     .leftJoin(Usuarios, eq(ActividadTienda.id_usuario, Usuarios.id))
-    .then((rows) => rows.map((row) => ({ ...row, esActividad: true })));
+    .then((rows) => rows.map((row) => ({ ...row, esActividad: true, canal: 'tienda' })));
 } catch (e) {
   actividadTienda = [];
 }
 
+// 3. Soporte: el cliente abre un ticket o el equipo le responde (la respuesta cuenta como contacto)
+const interaccionesSoporte = (await contactosSoporte()).map((c) => ({
+  id: `tk-${c.idTicket}-${new Date(c.fecha).getTime()}`,
+  fecha: c.fecha,
+  cliente: c.cliente,
+  clienteId: c.idCliente,
+  tipo: c.tipo,
+  descripcion: c.mensaje,
+  usuario: c.agente,
+  esActividad: false,
+  canal: 'soporte',
+  idTicket: c.idTicket,
+  folio: c.folio,
+}));
+
 // Combinar y ordenar cronológicamente
-const todasLasInteracciones = [...interaccionesCrm, ...actividadTienda].sort(
+const todasLasInteracciones = [...interaccionesCrm, ...actividadTienda, ...interaccionesSoporte].sort(
   (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
 );
 
@@ -69,10 +85,8 @@ const q = Astro.url.searchParams.get('q');
 const canalFiltro = Astro.url.searchParams.get('canal');
 let interaccionesFiltradas = todasLasInteracciones;
 
-if (canalFiltro === 'crm') {
-  interaccionesFiltradas = interaccionesFiltradas.filter(i => !i.esActividad);
-} else if (canalFiltro === 'tienda') {
-  interaccionesFiltradas = interaccionesFiltradas.filter(i => i.esActividad);
+if (canalFiltro === 'crm' || canalFiltro === 'tienda' || canalFiltro === 'soporte') {
+  interaccionesFiltradas = interaccionesFiltradas.filter(i => i.canal === canalFiltro);
 }
 
 if (q) {
@@ -81,7 +95,8 @@ if (q) {
     (item.cliente && item.cliente.toLowerCase().includes(searchTerm)) || 
     (item.descripcion && item.descripcion.toLowerCase().includes(searchTerm)) || 
     (item.tipo && item.tipo.toLowerCase().includes(searchTerm)) ||
-    (item.usuario && item.usuario.toLowerCase().includes(searchTerm))
+    (item.usuario && item.usuario.toLowerCase().includes(searchTerm)) ||
+    (item.folio && item.folio.toLowerCase().includes(searchTerm))
   );
 }
 
@@ -114,6 +129,10 @@ const interaccionesEsteMes = todasLasInteracciones.filter(i => new Date(i.fecha)
       <div class="stat-label">Contacto Directo (CRM)</div>
     </div>
     <div class="stat-card">
+      <div class="stat-number stat-soporte">{interaccionesSoporte.length}</div>
+      <div class="stat-label">Soporte (Tickets)</div>
+    </div>
+    <div class="stat-card">
       <div class="stat-number stat-auto">{actividadTienda.length}</div>
       <div class="stat-label">Eventos en Tienda</div>
     </div>
@@ -128,7 +147,7 @@ const interaccionesEsteMes = todasLasInteracciones.filter(i => new Date(i.fecha)
     <div class="filters">
       <form method="GET" style="margin: 0; flex: 1; max-width: 420px; display: flex; position: relative;" id="searchForm">
         {canalFiltro && <input type="hidden" name="canal" value={canalFiltro} />}
-        <input type="search" name="q" value={q || ""} placeholder="Buscar por cliente, notas, tipo o agente..." class="search-input" style="width: 100%; padding-right: 40px;" />
+        <input type="search" name="q" value={q || ""} placeholder="Buscar por cliente, notas, tipo, agente o folio..." class="search-input" style="width: 100%; padding-right: 40px;" />
         <button type="submit" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
@@ -139,6 +158,7 @@ const interaccionesEsteMes = todasLasInteracciones.filter(i => new Date(i.fecha)
         <select name="canal" class="filter-select" onchange="document.getElementById('channelFilterForm').submit()">
           <option value="todos" selected={!canalFiltro || canalFiltro === 'todos'}>Canal: Todos los eventos</option>
           <option value="crm" selected={canalFiltro === 'crm'}>Solo Contacto CRM</option>
+          <option value="soporte" selected={canalFiltro === 'soporte'}>Solo Soporte (Tickets)</option>
           <option value="tienda" selected={canalFiltro === 'tienda'}>Solo Navegación Tienda</option>
         </select>
       </form>
@@ -172,8 +192,8 @@ const interaccionesEsteMes = todasLasInteracciones.filter(i => new Date(i.fecha)
                 )}
               </td>
               <td>
-                <span class={`badge ${act.esActividad ? 'badge-pull' : 'badge-success'}`}>
-                  {act.esActividad ? 'Tienda Online' : 'CRM Directo'}
+                <span class={`badge ${act.esActividad ? 'badge-pull' : act.canal === 'soporte' ? 'badge-soporte' : 'badge-success'}`}>
+                  {act.esActividad ? 'Tienda Online' : act.canal === 'soporte' ? 'Soporte' : 'CRM Directo'}
                 </span>
               </td>
               <td>
@@ -193,6 +213,11 @@ const interaccionesEsteMes = todasLasInteracciones.filter(i => new Date(i.fecha)
                       }
                     })()}
                   </div>
+                ) : act.canal === 'soporte' ? (
+                  <span style="line-height: 1.4;">
+                    <a href={`/crm/tickets/${act.idTicket}`} class="ticket-link">{act.folio}</a>
+                    {' · '}{act.descripcion.length > 160 ? `${act.descripcion.slice(0, 160)}…` : act.descripcion}
+                  </span>
                 ) : (
                   <span style="line-height: 1.4;">{act.descripcion || '-'}</span>
                 )}
@@ -201,7 +226,7 @@ const interaccionesEsteMes = todasLasInteracciones.filter(i => new Date(i.fecha)
                 {act.esActividad ? (
                   <span class="session-pill" title={act.usuario || ''}>{act.usuario ? (act.usuario.length > 12 ? act.usuario.slice(0, 10) + '…' : act.usuario) : 'Sesión'}</span>
                 ) : (
-                  <strong>{act.usuario || 'Agente'}</strong>
+                  <strong>{act.usuario || (act.canal === 'soporte' ? 'Cliente' : 'Agente')}</strong>
                 )}
               </td>
             </tr>
@@ -231,7 +256,7 @@ const interaccionesEsteMes = todasLasInteracciones.filter(i => new Date(i.fecha)
   /* Stats Row estilo SCM */
   .stats-row {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 16px;
     margin-bottom: 24px;
   }
@@ -254,6 +279,7 @@ const interaccionesEsteMes = todasLasInteracciones.filter(i => new Date(i.fecha)
   .stat-warning { color: #d97706; }
   .stat-success { color: var(--color-success); }
   .stat-auto { color: #2563eb; }
+  .stat-soporte { color: #7c3aed; }
   .stat-label {
     font-size: 12px;
     color: var(--color-text-muted);
@@ -310,6 +336,9 @@ const interaccionesEsteMes = todasLasInteracciones.filter(i => new Date(i.fecha)
   .badge-pull { background: #dbeafe; color: #1e40af; }
   .badge-info { background: #e0f2fe; color: #0369a1; }
   .badge-neutral { background: #f1f5f9; color: #475569; }
+  .badge-soporte { background: #ede9fe; color: #6d28d9; }
+  .ticket-link { color: var(--color-text); font-family: 'Courier New', monospace; font-weight: 700; }
+  .ticket-link:hover { color: #0284c7; }
 
   .raw-details {
     font-family: monospace;

@@ -1,23 +1,23 @@
 ---
-import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
-import { Clientes, DetalleVentas, MetodosPago, MovimientosInventario, Productos, Usuarios, Ventas } from '../../db/schema';
-import { cancelarFacturaYPago, facturarYConciliarVenta } from '../../lib/facturacion';
+import { Clientes, MetodosPago, Usuarios, Ventas } from '../../db/schema';
 import { MonederoError } from '../../lib/monedero';
-import { procesarLogisticaStock } from '../../lib/stockLogistics';
-import { registrarHistorialOrden } from '../../lib/ventas';
-
-const estadosOrden = ['Procesando', 'Confirmada', 'Entregada', 'Cancelada'] as const;
-type EstadoOrden = (typeof estadosOrden)[number];
-const isEstadoOrden = (value: string): value is EstadoOrden =>
-  estadosOrden.includes(value as EstadoOrden);
-
-class OrdenError extends Error {}
+import { ESTADOS_ORDEN as estadosOrden, OrdenError, cambiarEstadoOrden, esEstadoOrden as isEstadoOrden, type EstadoOrden } from '../../lib/ordenes';
 
 let errorMsg = '';
+// Al cancelar se dice a dónde regresó el dinero
+const avisosReembolso: Record<string, string> = {
+  monedero: 'El importe regresó al monedero del cliente.',
+  tarjeta: 'El reembolso se hizo a la tarjeta con la que pagó el cliente.',
+  mercado_pago: 'El pago se devolvió en Mercado Pago.',
+  otro: 'Devuelve el importe al cliente por el mismo medio con el que pagó.',
+  sin_cargo: 'La orden no se había cobrado: no hay nada que devolver.',
+};
 const successMsg = Astro.url.searchParams.get('actualizada') === '1'
-  ? 'El estado de la orden se actualizó correctamente.'
+  ? ['El estado de la orden se actualizó correctamente.', avisosReembolso[Astro.url.searchParams.get('reembolso') ?? ''] ?? '']
+      .filter(Boolean).join(' ')
   : '';
 
 if (Astro.request.method === 'POST') {
@@ -26,112 +26,11 @@ if (Astro.request.method === 'POST') {
     const idOrden = Number(form.get('id_orden'));
     const nextStatusValue = form.get('estado')?.toString() ?? '';
 
-    if (!Number.isSafeInteger(idOrden) || idOrden <= 0 || !isEstadoOrden(nextStatusValue)) {
+    if (!isEstadoOrden(nextStatusValue)) {
       throw new OrdenError('La orden o el estado seleccionado no son válidos.');
     }
-
-    const productosConfirmados = await db.transaction(async (tx) => {
-      // Se bloquea la orden para no confirmarla mientras alguien la modifica
-      const [orden] = await tx
-        .select({ estado: Ventas.estado, total: Ventas.total, id_metodo_pago: Ventas.id_metodo_pago })
-        .from(Ventas)
-        .where(eq(Ventas.id, idOrden))
-        .for('update');
-
-      if (!orden) throw new OrdenError('No se encontró la orden solicitada.');
-      if (!isEstadoOrden(orden.estado)) throw new OrdenError('La orden tiene un estado no reconocido.');
-
-      const currentStatus = orden.estado;
-      const canConfirm = currentStatus === 'Procesando' && nextStatusValue === 'Confirmada';
-      const canDeliver = currentStatus === 'Confirmada' && nextStatusValue === 'Entregada';
-      const canCancel = (currentStatus === 'Procesando' || currentStatus === 'Confirmada')
-        && nextStatusValue === 'Cancelada';
-
-      if (!canConfirm && !canDeliver && !canCancel) {
-        throw new OrdenError('La transición de estado solicitada no está permitida.');
-      }
-
-      const [updated] = await tx
-        .update(Ventas)
-        .set({
-          estado: nextStatusValue,
-          fecha_entrega: canDeliver ? new Date() : null,
-        })
-        .where(and(eq(Ventas.id, idOrden), eq(Ventas.estado, currentStatus)));
-
-      if (updated.affectedRows !== 1) {
-        throw new OrdenError('La orden cambió mientras se procesaba. Actualiza la página e inténtalo de nuevo.');
-      }
-
-      await registrarHistorialOrden(tx, {
-        id_venta: idOrden,
-        id_usuario: Astro.locals.user?.id ?? null,
-        estado_anterior: currentStatus,
-        estado_nuevo: nextStatusValue,
-      });
-
-      if (canConfirm || (canCancel && currentStatus === 'Confirmada')) {
-        const lineas = await tx
-          .select({ id_producto: DetalleVentas.id_producto, cantidad: DetalleVentas.cantidad })
-          .from(DetalleVentas)
-          .where(eq(DetalleVentas.id_venta, idOrden));
-
-        if (canConfirm && lineas.length === 0) {
-          throw new OrdenError('No se puede confirmar una orden sin productos.');
-        }
-
-        for (const linea of lineas) {
-          const [stockChange] = await tx
-            .update(Productos)
-            .set({
-              stock: canConfirm
-                ? sql`${Productos.stock} - ${linea.cantidad}`
-                : sql`${Productos.stock} + ${linea.cantidad}`,
-            })
-            .where(canConfirm
-              ? and(eq(Productos.id, linea.id_producto), gte(Productos.stock, linea.cantidad))
-              : eq(Productos.id, linea.id_producto));
-
-          if (stockChange.affectedRows !== 1) {
-            throw new OrdenError(canConfirm
-              ? `Stock insuficiente para uno de los productos de la orden #${idOrden}. Modifica la orden o repón el inventario antes de confirmarla.`
-              : `No se pudo devolver al inventario un producto de la orden #${idOrden}.`);
-          }
-        }
-
-        if (lineas.length > 0) {
-          await tx.insert(MovimientosInventario).values(
-            lineas.map((linea) => ({
-              id_producto: linea.id_producto,
-              tipo: canConfirm ? 'Salida' : 'Entrada',
-              cantidad: linea.cantidad,
-              motivo: canConfirm ? `Venta #${idOrden}` : `Cancelación de venta #${idOrden}`,
-              fecha: new Date(),
-              id_usuario: Astro.locals.user?.id ?? null,
-              id_venta: idOrden,
-            })),
-          );
-        }
-
-        // Al confirmar se factura y se concilia el cobro; al cancelar se revierten
-        if (canConfirm) {
-          await facturarYConciliarVenta(tx, {
-            id_venta: idOrden,
-            id_metodo_pago: orden.id_metodo_pago,
-            total: Number(orden.total),
-          });
-          return lineas.map((linea) => linea.id_producto);
-        }
-        await cancelarFacturaYPago(tx, idOrden);
-      }
-
-      return [];
-    });
-
-    // Reposición PULL automática o alerta PUSH para los productos que salieron del inventario
-    for (const id_producto of new Set(productosConfirmados)) {
-      await procesarLogisticaStock({ id_producto, id_usuario: Astro.locals.user?.id });
-    }
+    // Stock, factura, cobro e historial se actualizan en una transacción (src/lib/ordenes.ts)
+    const { reembolso } = await cambiarEstadoOrden(idOrden, nextStatusValue, Astro.locals.user?.id ?? null);
 
     const params = new URLSearchParams();
     const q = Astro.url.searchParams.get('q');
@@ -143,6 +42,7 @@ if (Astro.request.method === 'POST') {
       if (value) params.set(key, value);
     }
     params.set('actualizada', '1');
+    if (reembolso) params.set('reembolso', reembolso.tipo);
     return Astro.redirect(`/erp/ordenes?${params.toString()}`, 303);
   } catch (error: unknown) {
     if (error instanceof OrdenError || error instanceof MonederoError) {

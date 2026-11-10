@@ -191,6 +191,44 @@ async function reembolsar(paymentId: string, id: number, motivo: string): Promis
   }
 }
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Devuelve en Mercado Pago el pago de una venta que se está cancelando. Va dentro de la transacción
+ * de la cancelación y al final de ella: si Mercado Pago no acepta el reembolso, se lanza
+ * MercadoPagoError y la cancelación completa se revierte (el pedido no queda cancelado sin devolver
+ * el dinero). La llave de idempotencia evita un doble reembolso si se reintenta.
+ * Devuelve false si la venta no se pagó con Mercado Pago.
+ */
+export async function reembolsarVentaMercadoPago(tx: Tx, id_venta: number): Promise<boolean> {
+  const [checkout] = await tx
+    .select({ id: CheckoutsMercadoPago.id, paymentId: CheckoutsMercadoPago.payment_id, estado: CheckoutsMercadoPago.estado })
+    .from(CheckoutsMercadoPago)
+    .where(eq(CheckoutsMercadoPago.id_venta, id_venta))
+    .limit(1);
+  if (!checkout?.paymentId) return false;
+  if (checkout.estado === 'reembolsado') return true;
+
+  try {
+    await new PaymentRefund(cliente()).create({
+      payment_id: checkout.paymentId,
+      requestOptions: { idempotencyKey: `sportenis-cancelacion-${checkout.paymentId}` },
+    });
+  } catch (error) {
+    console.error(`No se pudo reembolsar en Mercado Pago el pago ${checkout.paymentId} (venta #${id_venta}):`, error);
+    throw new MercadoPagoError(
+      'Mercado Pago no aceptó el reembolso, así que la orden no se canceló. Inténtalo de nuevo en un momento o revisa el pago en tu panel de Mercado Pago.',
+      502,
+    );
+  }
+
+  await tx
+    .update(CheckoutsMercadoPago)
+    .set({ estado: 'reembolsado', mensaje: `Reembolsado al cancelar la venta #${id_venta}`, fecha_actualizacion: new Date() })
+    .where(eq(CheckoutsMercadoPago.id, checkout.id));
+  return true;
+}
+
 /**
  * Consulta un pago a la API de Mercado Pago y actúa según su estado. Se puede llamar varias veces con
  * el mismo pago (regreso del cliente y webhook): solo la primera que lo "reclama" registra la venta.

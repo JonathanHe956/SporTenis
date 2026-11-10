@@ -8,8 +8,11 @@ import {
   Favoritos,
   Carritos,
   DetalleCarritos,
+  Evaluaciones,
+  Tickets,
 } from '../../db/schema';
 import { eq } from 'drizzle-orm';
+import { esTablaInexistente } from '../../lib/dbErrores';
 import { SESSION_COOKIE } from '../../lib/session';
 
 export const POST: APIRoute = async ({ cookies, locals }) => {
@@ -70,7 +73,15 @@ export const POST: APIRoute = async ({ cookies, locals }) => {
         .delete(Direcciones)
         .where(eq(Direcciones.id_cliente, clienteId));
 
-      // 6. Cliente
+      // 6. Tickets de soporte (sus mensajes se borran en cascada) y calificaciones
+      try {
+        await db.delete(Tickets).where(eq(Tickets.id_cliente, clienteId));
+      } catch (error) {
+        if (!esTablaInexistente(error)) throw error;
+      }
+      await db.delete(Evaluaciones).where(eq(Evaluaciones.id_cliente, clienteId));
+
+      // 6b. Cliente
       await db.delete(Clientes).where(eq(Clientes.id, clienteId));
     }
 

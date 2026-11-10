@@ -1,10 +1,13 @@
 ---
-// Detalle de un pedido del cliente. Solo lectura: no hay acciones que modifiquen la compra.
+// Detalle de un pedido del cliente. La compra no se modifica aquí: el cliente la califica cuando
+// se entrega y, si algo sale mal, levanta un ticket de soporte (que puede pedir la cancelación).
 import Layout from '../../../layouts/Layout.astro';
 import AccountHeader from '../../../components/AccountHeader.astro';
 import EstadoPedido from '../../../components/EstadoPedido.astro';
 import { findClientId } from '../../../lib/clientes';
 import { getDetalleCompra, PASOS_PEDIDO, pasoActual } from '../../../lib/compras';
+import { describirReembolso } from '../../../lib/reembolsos';
+import { MAX_COMENTARIO, calificacionDePedido, listarTicketsCliente, tiposPermitidos, type TipoTicket } from '../../../lib/soporte';
 
 const sessionUser = Astro.locals.user;
 if (!sessionUser) {
@@ -20,6 +23,23 @@ if (!compra) {
 }
 
 const titulo = compra.factura?.folio ?? `Pedido #${compra.id}`;
+
+// Calificación y tickets del pedido (vacíos si la migración 0018 aún no se aplica)
+const [calificacion, ticketsPedido] = await Promise.all([
+  calificacionDePedido(clientId as number, compra.id),
+  listarTicketsCliente(clientId as number, compra.id),
+]);
+const entregada = compra.estado === 'Entregada';
+const tiposDisponibles = tiposPermitidos({ estado: compra.estado, fechaEntrega: compra.fechaEntrega });
+const accionesAyuda = ([
+  { tipo: 'Retraso en la entrega', label: 'Mi pedido no llega' },
+  { tipo: 'Cancelación', label: 'Quiero cancelarlo' },
+  { tipo: 'Producto dañado o incorrecto', label: 'Llegó dañado o incorrecto' },
+  { tipo: 'Cambio o devolución', label: 'Cambio o devolución' },
+  { tipo: 'Pago o factura', label: 'Pago o factura' },
+] satisfies Array<{ tipo: TipoTicket; label: string }>).filter((a) => tiposDisponibles.includes(a.tipo));
+const enlaceTicket = (tipo: string) => `/cuenta/soporte?pedido=${compra.id}&tipo=${encodeURIComponent(tipo)}`;
+const tonoTicket: Record<string, string> = { Abierto: 'warn', 'En proceso': 'info', Resuelto: 'ok', Cerrado: 'info' };
 const cancelada = compra.estado === 'Cancelada';
 const paso = pasoActual(compra.estado);
 const unidades = compra.articulos.reduce((total, a) => total + a.cantidad, 0);
@@ -49,6 +69,15 @@ const pasos = PASOS_PEDIDO.map((estado, i) => ({
 }));
 const progreso = cancelada || paso < 0 ? 0 : paso / (PASOS_PEDIDO.length - 1);
 const fechaCancelacion = ultimaFecha('Cancelada');
+// A dónde regresó el dinero: monedero, la tarjeta usada (marca y últimos 4) o Mercado Pago
+const reembolso = cancelada
+  ? describirReembolso({
+      metodo: compra.metodoPago,
+      referencia: compra.pago?.referencia ?? null,
+      monto: compra.pago?.monto ?? compra.total,
+      cobrado: compra.pago?.estado === 'Reembolsado',
+    })
+  : null;
 
 const estadoPago: Record<string, { label: string; tone: string }> = {
   Conciliado: { label: 'Pagado', tone: 'ok' },
@@ -118,7 +147,8 @@ const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency',
           </span>
           <div>
             <strong>Este pedido fue cancelado{fechaCancelacion ? ` el ${fmtFecha(fechaCancelacion)}` : ''}.</strong>
-            <p>{pago?.estado === 'Reembolsado' ? 'El pago se reembolsó al mismo método con el que pagaste.' : 'No se realizó ningún cargo adicional por este pedido.'}</p>
+            <p>{reembolso?.mensaje}</p>
+            {reembolso?.tipo === 'monedero' && <a href="/monedero" class="cancel-link">Ver mi monedero →</a>}
           </div>
         </section>
       ) : paso >= 0 && (
@@ -157,6 +187,52 @@ const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency',
               </li>
             ))}
           </ul>
+        </section>
+
+        <!-- Calificación: solo cuando el pedido ya se entregó; se puede cambiar después -->
+        {entregada && (
+          <section class="card rate enter no-print" style="--d: 220ms" aria-labelledby="rateTitle">
+            <h2 class="card-title" id="rateTitle">{calificacion ? 'Tu calificación' : '¿Qué tal tu pedido?'}</h2>
+            <form class="rate-form" id="formCalificacion" data-venta={compra.id} novalidate>
+              <fieldset class="stars">
+                <legend class="sr-only">Calificación de 1 a 5 estrellas</legend>
+                {[5, 4, 3, 2, 1].map((n) => (
+                  <>
+                    <input type="radio" id={`estrella${n}`} name="calificacion" value={n} checked={calificacion?.calificacion === n} />
+                    <label for={`estrella${n}`} title={`${n} ${n === 1 ? 'estrella' : 'estrellas'}`}><span class="sr-only">{n} {n === 1 ? 'estrella' : 'estrellas'}</span>★</label>
+                  </>
+                ))}
+              </fieldset>
+              <textarea name="comentario" rows="3" maxlength={MAX_COMENTARIO} placeholder="Cuéntanos qué te gustó o qué podemos mejorar (opcional)">{calificacion?.comentario ?? ''}</textarea>
+              <p class="rate-status" id="estadoCalificacion" role="status"></p>
+              <div class="rate-actions">
+                <button type="submit" class="rate-btn">{calificacion ? 'Actualizar calificación' : 'Enviar calificación'}</button>
+              </div>
+            </form>
+          </section>
+        )}
+
+        <!-- Ayuda: accesos directos a un ticket según el estado del pedido -->
+        <section class="card help enter no-print" style="--d: 240ms" aria-labelledby="helpTitle">
+          <h2 class="card-title" id="helpTitle">¿Necesitas ayuda con este pedido?</h2>
+          {ticketsPedido.length > 0 && (
+            <ul class="help-tickets">
+              {ticketsPedido.map((t) => (
+                <li>
+                  <a href={`/cuenta/soporte/${t.id}`}>
+                    <span class="mono">{t.folio}</span>
+                    <span class="help-ticket-type">{t.tipo}</span>
+                    {t.respuestaNueva && <span class="badge-new">Respuesta nueva</span>}
+                    <span class={`pill pill-${tonoTicket[t.estado]}`}>{t.estado}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div class="help-actions">
+            {accionesAyuda.map((a) => <a class="help-btn" href={enlaceTicket(a.tipo)}>{a.label}</a>)}
+            <a class="help-btn ghost" href={enlaceTicket('Otro')}>Otra duda</a>
+          </div>
         </section>
 
         <!-- Historial: compacto, al lado de Pago y Factura -->
@@ -245,7 +321,7 @@ const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency',
 
       <div class="detalle-foot enter no-print" style="--d: 460ms">
         <a href="/cuenta/compras" class="back-button"><span aria-hidden="true">←</span> Volver a mis compras</a>
-        <p>¿Tienes dudas sobre este pedido? Tienes 30 días para cambios y devoluciones.</p>
+        <p>¿Tienes dudas sobre este pedido? Tienes 30 días para cambios y devoluciones. <a href="/cuenta/soporte">Ir a soporte</a></p>
       </div>
     </main>
   </div>
@@ -305,6 +381,7 @@ const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency',
   .cancel-icon { color: #b4271a; display: flex; flex-shrink: 0; }
   .cancel-banner strong { font-family: var(--font-ui); font-size: 14px; }
   .cancel-banner p { color: #57534e; font-family: var(--font-ui); font-size: 13px; margin: 4px 0 0; }
+  .cancel-link { color: #171717; display: inline-block; font-family: var(--font-ui); font-size: 12px; font-weight: 800; margin-top: 6px; }
 
   /* ── Rejilla ────────────────────────────────────────────── */
   .detalle-grid { align-items: start; display: grid; gap: 26px; grid-template-columns: 1fr 360px; margin-bottom: 26px; }
@@ -426,6 +503,48 @@ const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency',
   .print-button:hover .print-arrow { transform: translate(3px, -3px); }
   .item-sku { color: #716e67; font-family: 'Courier New', monospace; font-size: 11px; }
 
+  /* ── Calificación ───────────────────────────────────────── */
+  .rate-form { display: grid; gap: 12px; }
+  .stars { border: 0; display: flex; flex-direction: row-reverse; gap: 4px; justify-content: flex-end; margin: 0; padding: 0; }
+  .stars input { opacity: 0; position: absolute; }
+  .stars label { color: #d8d3c3; cursor: pointer; font-size: 34px; line-height: 1; transition: color .15s, transform .2s var(--ease-spring); }
+  /* row-reverse: se pintan la estrella elegida y las de su izquierda (sus hermanas siguientes en el DOM) */
+  .stars input:checked ~ label { color: #f2b705; }
+  /* Al pasar el mouse manda el hover sobre la selección (misma especificidad, va después) */
+  .stars:hover input ~ label { color: #d8d3c3; }
+  .stars input + label:hover, .stars input + label:hover ~ label { color: #f2b705; }
+  .stars input + label:hover { transform: scale(1.18); }
+  .stars input:focus-visible + label { outline: 2px solid #171717; outline-offset: 2px; }
+  .rate-form textarea { background: #fff; border: 1.5px solid #d8d3c3; font: 14px/1.5 var(--font-ui); padding: 10px; resize: vertical; width: 100%; }
+  .rate-form textarea:focus { border-color: #171717; outline: none; }
+  .rate-status { font: 13px var(--font-ui); margin: 0; }
+  .rate-status:empty { display: none; }
+  .rate-status[data-tipo="ok"] { color: #3f5d22; }
+  .rate-status[data-tipo="error"] { color: #b4271a; }
+  .rate-actions { display: flex; justify-content: flex-end; }
+  .rate-btn { background: #171717; border: 0; color: #fffdf3; cursor: pointer; font: 700 12px var(--font-ui); letter-spacing: .4px; min-height: 40px; padding: 0 18px; text-transform: uppercase; }
+  .rate-btn:disabled { cursor: wait; opacity: .6; }
+  .sr-only { border: 0; clip: rect(0 0 0 0); height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; white-space: nowrap; width: 1px; }
+
+  /* ── Ayuda ──────────────────────────────────────────────── */
+  .help-tickets { display: grid; gap: 8px; list-style: none; margin: 0 0 16px; padding: 0; }
+  .help-tickets a {
+    align-items: center; background: #f6f4ed; border: 1.5px solid #e8e4da; color: inherit; display: flex; font-family: var(--font-ui);
+    font-size: 13px; gap: 10px; padding: 10px 12px; text-decoration: none;
+  }
+  .help-tickets a:hover { border-color: #171717; }
+  .help-tickets .pill { margin-left: auto; }
+  .help-ticket-type { font-weight: 700; }
+  .badge-new { background: #d93e2e; color: #fff; font: 800 10px var(--font-ui); letter-spacing: .4px; padding: 3px 7px; text-transform: uppercase; }
+  .help-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  .help-btn {
+    background: #fffdf3; border: 2px solid #171717; color: #171717; font: 800 12px var(--font-ui); padding: 10px 14px; text-decoration: none;
+    transition: background .2s, box-shadow .2s var(--ease-out), transform .2s var(--ease-out);
+  }
+  .help-btn:hover { background: #f7d21c; box-shadow: 3px 3px 0 #171717; transform: translate(-2px, -2px); }
+  .help-btn.ghost { border-style: dashed; }
+  .detalle-foot p a { color: #171717; font-weight: 700; }
+
   @media (prefers-reduced-motion: reduce) {
     .enter, .item, .step.done .step-dot, .steps::after { animation: none; }
   }
@@ -443,4 +562,39 @@ const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency',
 
 <script>
   document.getElementById('btnImprimir')?.addEventListener('click', () => window.print());
+
+  const formCalificacion = document.getElementById('formCalificacion') as HTMLFormElement | null;
+  const estadoCalificacion = document.getElementById('estadoCalificacion');
+
+  formCalificacion?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const datos = new FormData(formCalificacion);
+    const calificacion = Number(datos.get('calificacion'));
+    const mostrar = (texto: string, tipo: 'ok' | 'error') => {
+      if (!estadoCalificacion) return;
+      estadoCalificacion.textContent = texto;
+      estadoCalificacion.dataset.tipo = tipo;
+    };
+    if (!calificacion) return mostrar('Elige de 1 a 5 estrellas.', 'error');
+
+    const boton = formCalificacion.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (boton) boton.disabled = true;
+    try {
+      const res = await fetch('/api/evaluaciones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ id_venta: Number(formCalificacion.dataset.venta), calificacion, comentario: datos.get('comentario') }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) throw new Error(data.error || 'No se pudo guardar tu calificación.');
+      mostrar(calificacion <= 2
+        ? 'Gracias por decírnoslo. Lamentamos que no haya salido bien: si quieres que lo revisemos, levanta un ticket abajo.'
+        : '¡Gracias por tu calificación!', 'ok');
+      if (boton) boton.textContent = 'Actualizar calificación';
+    } catch (error) {
+      mostrar(error instanceof Error ? error.message : 'No se pudo guardar tu calificación.', 'error');
+    } finally {
+      if (boton) boton.disabled = false;
+    }
+  });
 </script>

@@ -12,7 +12,9 @@ const todasLasEvaluaciones = await db
     comentarios: Evaluaciones.comentarios,
     cliente: Clientes.nombre,
     clienteId: Clientes.id,
-    usuario: Usuarios.nombre
+    usuario: Usuarios.nombre,
+    // Pedido calificado por el cliente desde "Mis compras" (migración 0018)
+    idVenta: Evaluaciones.id_venta,
   })
   .from(Evaluaciones)
   .leftJoin(Clientes, eq(Evaluaciones.id_cliente, Clientes.id))
@@ -45,7 +47,8 @@ if (q) {
   evaluacionesFiltradas = evaluacionesFiltradas.filter(ev => 
     (ev.cliente && ev.cliente.toLowerCase().includes(searchTerm)) ||
     (ev.comentarios && ev.comentarios.toLowerCase().includes(searchTerm)) ||
-    (ev.usuario && ev.usuario.toLowerCase().includes(searchTerm))
+    (ev.usuario && ev.usuario.toLowerCase().includes(searchTerm)) ||
+    (ev.idVenta !== null && `#${ev.idVenta}`.includes(searchTerm))
   );
 }
 
@@ -120,7 +123,7 @@ function getScoreBadgeClass(score: number) {
       <!-- Buscador -->
       <form method="GET" style="margin: 0; flex: 1; max-width: 420px; display: flex; position: relative;" id="searchForm">
         {ratingFiltro && <input type="hidden" name="rating" value={ratingFiltro} />}
-        <input type="search" name="q" value={q || ""} placeholder="Buscar por cliente, comentario o agente..." class="search-input" style="width: 100%; padding-right: 40px;" />
+        <input type="search" name="q" value={q || ""} placeholder="Buscar por cliente, comentario, agente o pedido..." class="search-input" style="width: 100%; padding-right: 40px;" />
         <button type="submit" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
@@ -148,7 +151,7 @@ function getScoreBadgeClass(score: number) {
             <th>Cliente</th>
             <th>Calificación</th>
             <th>Comentarios y Feedback</th>
-            <th>Atendido Por</th>
+            <th>Origen</th>
           </tr>
         </thead>
         <tbody>
@@ -175,7 +178,11 @@ function getScoreBadgeClass(score: number) {
                 )}
               </td>
               <td>
-                <span class="user-pill">{ev.usuario || 'Atención General'}</span>
+                {ev.idVenta ? (
+                  <a href={`/erp/ordenes?q=${ev.idVenta}`} class="user-pill pill-store">Cliente · Pedido #{ev.idVenta}</a>
+                ) : (
+                  <span class="user-pill">{ev.usuario || 'Atención General'}</span>
+                )}
               </td>
             </tr>
           ))}
@@ -327,6 +334,8 @@ function getScoreBadgeClass(score: number) {
     border-radius: 4px;
     font-size: 12px;
   }
+  .pill-store { background: #fef9c3; color: #854d0e; text-decoration: none; white-space: nowrap; }
+  .pill-store:hover { text-decoration: underline; }
 
   .pagination {
     margin-top: 16px;

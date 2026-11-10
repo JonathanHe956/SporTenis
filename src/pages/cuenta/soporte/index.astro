@@ -1,0 +1,322 @@
+---
+// Soporte: el cliente levanta tickets (pedido que no llega, cancelación, producto dañado, devolución,
+// pago o factura) y ve los que ya tiene. Desde el detalle de un pedido se llega con
+// ?pedido={id}&tipo={motivo} para que el formulario abra ya lleno.
+import Layout from '../../../layouts/Layout.astro';
+import AccountHeader from '../../../components/AccountHeader.astro';
+import { findClientId } from '../../../lib/clientes';
+import { getComprasCliente } from '../../../lib/compras';
+import {
+  DIAS_DEVOLUCION,
+  MAX_ASUNTO,
+  MAX_MENSAJE,
+  TIPOS_TICKET,
+  esTipoTicket,
+  listarTicketsCliente,
+  motivoTipoNoPermitido,
+  ticketActivo,
+} from '../../../lib/soporte';
+
+const sessionUser = Astro.locals.user;
+if (!sessionUser) return Astro.redirect('/login');
+
+const clientId = await findClientId(sessionUser.id);
+const [compras, tickets] = clientId !== null
+  ? await Promise.all([getComprasCliente(clientId), listarTicketsCliente(clientId)])
+  : [[], []];
+
+// Por cada pedido (y "sin pedido"), qué motivos se pueden elegir y por qué no los demás
+const motivos = (pedido: { estado: string; fechaEntrega: Date | null } | null) =>
+  Object.fromEntries(TIPOS_TICKET.map((tipo) => [tipo, motivoTipoNoPermitido(tipo, pedido)]));
+const reglas: Record<string, Record<string, string | null>> = {
+  '': motivos(null),
+  ...Object.fromEntries(compras.map((c) => [String(c.id), motivos(c)])),
+};
+
+const pedidoParam = Number(Astro.url.searchParams.get('pedido'));
+const pedidoInicial = compras.some((c) => c.id === pedidoParam) ? String(pedidoParam) : '';
+const tipoParam = Astro.url.searchParams.get('tipo');
+const tipoInicial = esTipoTicket(tipoParam) && reglas[pedidoInicial][tipoParam] === null ? tipoParam : '';
+const abrirFormulario = Astro.url.searchParams.has('nuevo') || pedidoInicial !== '' || tipoInicial !== '';
+
+const descripcionTipo: Record<string, string> = {
+  'Retraso en la entrega': 'Mi pedido no ha llegado',
+  Cancelación: 'Quiero cancelar mi pedido',
+  'Producto dañado o incorrecto': 'Llegó dañado o no es lo que pedí',
+  'Cambio o devolución': `Quiero cambiarlo o regresarlo (${DIAS_DEVOLUCION} días)`,
+  'Pago o factura': 'Cobros, reembolsos o mi factura',
+  Otro: 'Cualquier otra duda',
+};
+
+const activos = tickets.filter((t) => ticketActivo(t.estado));
+const cerrados = tickets.filter((t) => !ticketActivo(t.estado));
+const tonoEstado: Record<string, string> = { Abierto: 'warn', 'En proceso': 'info', Resuelto: 'ok', Cerrado: 'muted' };
+const fmtFecha = (fecha: Date) =>
+  new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(fecha));
+const etiquetaPedido = (c: (typeof compras)[number]) => `${c.folio ?? `Pedido #${c.id}`} · ${fmtFecha(c.fecha)} · ${c.estado}`;
+---
+
+<Layout title="Soporte | SporTenis">
+  <div class="sop-page">
+    <AccountHeader backHref="/cuenta" backLabel="Volver a mi cuenta" active="soporte" />
+
+    <main class="sop-main">
+      <section class="page-head">
+        <div>
+          <nav class="breadcrumb" aria-label="Ruta de navegación">
+            <a href="/cuenta">Mi cuenta</a><span aria-hidden="true">/</span><span>Soporte</span>
+          </nav>
+          <p class="eyebrow"><span></span> Atención al cliente</p>
+          <h1>¿En qué te <em>ayudamos?</em></h1>
+          <p class="head-sub">Levanta un ticket y te respondemos aquí mismo. Te avisamos con una etiqueta cuando haya una respuesta nueva.</p>
+        </div>
+        <button type="button" class="primary-btn" id="nuevoTicket" hidden={abrirFormulario}>+ Nuevo ticket</button>
+      </section>
+
+      <div class="sop-layout">
+        <form class="ticket-form card" id="formTicket" novalidate hidden={!abrirFormulario} data-reglas={JSON.stringify(reglas)}>
+          <h2>Nuevo ticket</h2>
+
+          <label class="field">
+            <span>Pedido</span>
+            <select name="id_venta" id="selPedido">
+              <option value="" selected={pedidoInicial === ''}>Sin pedido · duda general</option>
+              {compras.map((c) => <option value={c.id} selected={pedidoInicial === String(c.id)}>{etiquetaPedido(c)}</option>)}
+            </select>
+          </label>
+
+          <fieldset class="field">
+            <legend>Motivo <span class="req" aria-hidden="true">*</span></legend>
+            <div class="motivos" id="motivos">
+              {TIPOS_TICKET.map((tipo) => (
+                <label class="motivo">
+                  <input type="radio" name="tipo" value={tipo} checked={tipoInicial === tipo} disabled={reglas[pedidoInicial][tipo] !== null} />
+                  <span class="motivo-body">
+                    <strong>{tipo}</strong>
+                    <small data-desc={descripcionTipo[tipo]}>{reglas[pedidoInicial][tipo] ?? descripcionTipo[tipo]}</small>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <label class="field">
+            <span>Asunto <span class="muted">(opcional)</span></span>
+            <input name="asunto" maxlength={MAX_ASUNTO} placeholder="Ej. Mi pedido lleva 10 días sin moverse" />
+          </label>
+
+          <label class="field">
+            <span>Cuéntanos qué pasó <span class="req" aria-hidden="true">*</span></span>
+            <textarea name="mensaje" rows="5" maxlength={MAX_MENSAJE} minlength="10" required placeholder="Entre más detalles nos des, más rápido lo resolvemos."></textarea>
+          </label>
+
+          <p class="form-error" id="errorTicket" role="alert" hidden></p>
+          <div class="form-actions">
+            <button type="button" class="link-btn" id="cancelarTicket">Cancelar</button>
+            <button type="submit" class="primary-btn">Enviar ticket</button>
+          </div>
+        </form>
+
+        <section class="ticket-col" aria-labelledby="activosTitulo">
+          <h2 class="col-title" id="activosTitulo">Abiertos <span>({activos.length})</span></h2>
+          {activos.length === 0 && <p class="empty">No tienes tickets abiertos. Si algo salió mal con un pedido, levanta uno.</p>}
+          <ul class="ticket-list">
+            {activos.map((t) => (
+              <li>
+                <a class="ticket-card" href={`/cuenta/soporte/${t.id}`}>
+                  <span class="ticket-top">
+                    <span class="mono">{t.folio}</span>
+                    {t.respuestaNueva && <span class="badge-new">Respuesta nueva</span>}
+                    <span class={`pill pill-${tonoEstado[t.estado]}`}>{t.estado}</span>
+                  </span>
+                  <strong>{t.asunto}</strong>
+                  <span class="ticket-meta">{t.tipo}{t.pedido ? ` · ${t.pedido}` : ''} · Actualizado el {fmtFecha(t.fechaActualizacion)}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+
+          {cerrados.length > 0 && (
+            <details class="cerrados">
+              <summary>Resueltos y cerrados ({cerrados.length})</summary>
+              <ul class="ticket-list">
+                {cerrados.map((t) => (
+                  <li>
+                    <a class="ticket-card done" href={`/cuenta/soporte/${t.id}`}>
+                      <span class="ticket-top">
+                        <span class="mono">{t.folio}</span>
+                        <span class={`pill pill-${tonoEstado[t.estado]}`}>{t.estado}</span>
+                      </span>
+                      <strong>{t.asunto}</strong>
+                      <span class="ticket-meta">{t.tipo}{t.pedido ? ` · ${t.pedido}` : ''} · {fmtFecha(t.fechaResolucion ?? t.fechaActualizacion)}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </section>
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<script>
+  const form = document.getElementById('formTicket') as HTMLFormElement | null;
+  const reglas: Record<string, Record<string, string | null>> = JSON.parse(form?.dataset.reglas ?? '{}');
+  const btnNuevo = document.getElementById('nuevoTicket');
+  const selPedido = document.getElementById('selPedido') as HTMLSelectElement | null;
+  const errorBox = document.getElementById('errorTicket');
+
+  const mostrarError = (mensaje: string) => {
+    if (!errorBox) return;
+    errorBox.textContent = mensaje;
+    errorBox.hidden = !mensaje;
+  };
+
+  // Al cambiar de pedido se habilitan solo los motivos que aplican y se explica por qué no los demás
+  const aplicarReglas = () => {
+    const reglasPedido = reglas[selPedido?.value ?? ''] ?? reglas[''] ?? {};
+    form?.querySelectorAll<HTMLInputElement>('input[name="tipo"]').forEach((radio) => {
+      const motivo = reglasPedido[radio.value] ?? null;
+      radio.disabled = motivo !== null;
+      if (radio.disabled) radio.checked = false;
+      const small = radio.closest('.motivo')?.querySelector<HTMLElement>('small');
+      if (small) small.textContent = motivo ?? small.dataset.desc ?? '';
+    });
+  };
+  selPedido?.addEventListener('change', aplicarReglas);
+
+  btnNuevo?.addEventListener('click', () => {
+    if (!form) return;
+    form.hidden = false;
+    btnNuevo.hidden = true;
+    form.querySelector<HTMLSelectElement>('select')?.focus();
+  });
+  document.getElementById('cancelarTicket')?.addEventListener('click', () => {
+    if (!form) return;
+    form.reset();
+    aplicarReglas();
+    mostrarError('');
+    form.hidden = true;
+    if (btnNuevo) btnNuevo.hidden = false;
+  });
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const datos = new FormData(form);
+    if (!datos.get('tipo')) return mostrarError('Elige el motivo del ticket.');
+    if (String(datos.get('mensaje') ?? '').trim().length < 10) return mostrarError('Cuéntanos qué pasó (al menos 10 caracteres).');
+    mostrarError('');
+
+    const boton = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (boton) boton.disabled = true;
+    try {
+      const res = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(Object.fromEntries(datos)),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) throw new Error(data.error || 'No se pudo enviar el ticket.');
+      window.location.href = `/cuenta/soporte/${data.id}?creado=1`;
+    } catch (error) {
+      mostrarError(error instanceof Error ? error.message : 'No se pudo enviar el ticket.');
+      if (boton) boton.disabled = false;
+    }
+  });
+</script>
+
+<style>
+  :global(*) { box-sizing: border-box; }
+  :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; margin: 0; -webkit-font-smoothing: antialiased; }
+
+  .sop-page { min-height: 100vh; }
+  .sop-main { margin: 0 auto; max-width: 1120px; padding: clamp(28px, 4vw, 48px) clamp(16px, 4vw, 48px) 80px; }
+
+  .page-head { align-items: flex-end; display: flex; flex-wrap: wrap; gap: 24px; justify-content: space-between; margin-bottom: 30px; }
+  .breadcrumb { align-items: center; display: flex; font-family: var(--font-ui); font-size: 12px; gap: 8px; margin-bottom: 18px; }
+  .breadcrumb a { color: #716e67; text-decoration: none; }
+  .breadcrumb a:hover { color: #171717; text-decoration: underline; }
+  .breadcrumb span:last-child { font-weight: 700; }
+  .eyebrow { color: #d93e2e; font-family: var(--font-ui); font-size: 11px; font-weight: 700; letter-spacing: 2px; margin: 0 0 8px; text-transform: uppercase; }
+  .eyebrow span { background: #f7d21c; display: inline-block; height: 7px; margin-right: 8px; width: 7px; }
+  h1 { font-size: clamp(40px, 5.5vw, 64px); font-weight: 400; letter-spacing: -2.5px; line-height: .95; margin: 0 0 14px; }
+  .head-sub { color: #57534e; font-family: var(--font-ui); font-size: 14px; line-height: 1.6; margin: 0; max-width: 520px; }
+
+  .primary-btn { background: #171717; border: 0; color: #fffdf3; cursor: pointer; font: 700 13px var(--font-ui); min-height: 44px; padding: 0 18px; }
+  .primary-btn:disabled { cursor: wait; opacity: .6; }
+  .primary-btn[hidden] { display: none; }
+  .link-btn { background: none; border: 0; color: #171717; cursor: pointer; font: 700 12px var(--font-ui); padding: 4px 0; text-decoration: underline; }
+
+  .sop-layout { align-items: start; display: grid; gap: 28px; grid-template-columns: minmax(0, 1fr); }
+  .sop-layout:has(.ticket-form:not([hidden])) { grid-template-columns: minmax(0, 460px) minmax(0, 1fr); }
+
+  .card { background: #fffdf3; border: 2px solid #171717; box-shadow: 6px 6px 0 #171717; padding: 22px 24px; }
+  .ticket-form { display: grid; gap: 16px; }
+  .ticket-form[hidden] { display: none; }
+  .ticket-form h2 { border-bottom: 2px solid #171717; font-size: 22px; font-weight: 400; margin: 0; padding-bottom: 10px; }
+  .field { border: 0; display: grid; font: 700 11px var(--font-ui); gap: 6px; margin: 0; min-width: 0; padding: 0; }
+  .field legend { margin-bottom: 6px; padding: 0; }
+  .field input, .field select, .field textarea {
+    background: #fff; border: 1.5px solid #d8d3c3; font: 400 14px var(--font-ui); min-height: 40px; padding: 8px 10px; width: 100%;
+  }
+  .field textarea { line-height: 1.5; resize: vertical; }
+  .field :is(input, select, textarea):focus { border-color: #171717; outline: none; }
+  .req { color: #d93e2e; }
+  .muted { color: #716e67; font-weight: 400; }
+
+  .motivos { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
+  .motivo { cursor: pointer; display: block; position: relative; }
+  .motivo input { opacity: 0; position: absolute; }
+  .motivo-body {
+    background: #fff; border: 1.5px solid #d8d3c3; display: flex; flex-direction: column; gap: 3px; height: 100%; padding: 10px 12px;
+    transition: border-color .15s, background .15s, transform .2s var(--ease-out);
+  }
+  .motivo strong { font-size: 12px; }
+  .motivo small { color: #716e67; font-size: 11px; font-weight: 400; line-height: 1.35; }
+  .motivo:hover .motivo-body { border-color: #171717; }
+  .motivo input:checked + .motivo-body { background: #f7d21c; border-color: #171717; box-shadow: 3px 3px 0 #171717; transform: translate(-2px, -2px); }
+  .motivo input:checked + .motivo-body small { color: #171717; }
+  .motivo input:focus-visible + .motivo-body { outline: 2px solid #171717; outline-offset: 2px; }
+  .motivo input:disabled + .motivo-body { background: #f0ece0; border-style: dashed; cursor: not-allowed; }
+  .motivo input:disabled + .motivo-body strong { color: #a09d96; }
+  .motivo:has(input:disabled) { cursor: not-allowed; }
+
+  .form-error { background: #fff1ef; border-left: 3px solid #d93e2e; color: #9f2a1e; font: 12px var(--font-ui); margin: 0; padding: 8px 10px; }
+  .form-error[hidden] { display: none; }
+  .form-actions { align-items: center; display: flex; gap: 16px; justify-content: flex-end; }
+
+  .col-title { font-size: 22px; font-weight: 400; margin: 0 0 14px; }
+  .col-title span { color: #716e67; font: 13px var(--font-ui); }
+  .empty { background: #fffdf3; border: 1.5px dashed #d8d3c3; color: #57534e; font: 14px var(--font-ui); margin: 0 0 16px; padding: 24px; text-align: center; }
+  .ticket-list { display: grid; gap: 12px; list-style: none; margin: 0; padding: 0; }
+  .ticket-card {
+    background: #fffdf3; border: 1.5px solid #171717; color: inherit; display: flex; flex-direction: column; gap: 6px; padding: 14px 16px;
+    text-decoration: none; transition: box-shadow .2s var(--ease-out), transform .2s var(--ease-out);
+  }
+  .ticket-card:hover { box-shadow: 4px 4px 0 #171717; transform: translate(-2px, -2px); }
+  .ticket-card.done { border-color: #d8d3c3; }
+  .ticket-card strong { font-size: 18px; font-weight: 400; }
+  .ticket-top { align-items: center; display: flex; gap: 8px; }
+  .ticket-top .pill { margin-left: auto; }
+  .ticket-meta { color: #716e67; font: 12px var(--font-ui); }
+  .mono { font: 700 12px 'Courier New', monospace; }
+  .badge-new { background: #d93e2e; color: #fff; font: 800 10px var(--font-ui); letter-spacing: .4px; padding: 3px 7px; text-transform: uppercase; }
+  .pill { border-radius: 999px; font: 800 11px var(--font-ui); padding: 4px 10px; white-space: nowrap; }
+  .pill-ok { background: #d7e1c3; color: #3f5d22; }
+  .pill-warn { background: #fff1c2; color: #8a5a00; }
+  .pill-info { background: #e3def3; color: #4c3d8f; }
+  .pill-muted { background: #e8e4da; color: #57534e; }
+
+  .cerrados { margin-top: 22px; }
+  .cerrados summary { cursor: pointer; font: 700 13px var(--font-ui); margin-bottom: 12px; }
+
+  @media (max-width: 900px) {
+    .sop-layout:has(.ticket-form:not([hidden])) { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 480px) {
+    .motivos { grid-template-columns: 1fr; }
+    .card { padding: 18px; }
+  }
+</style>

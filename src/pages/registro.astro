@@ -4,6 +4,7 @@ import { db } from '../db/db';
 import { Usuarios, Clientes } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { getOrCreateRoleId } from '../lib/auth';
+import { avisarBienvenida } from '../lib/avisosCorreo';
 import { hashPassword } from '../lib/password';
 import { iniciarSesion } from '../lib/session';
 
@@ -50,6 +51,7 @@ if (Astro.request.method === 'POST') {
         fecha_registro: now
       });
 
+      avisarBienvenida({ nombre: fullName, correo });
       await iniciarSesion(Astro.cookies, userId);
       return Astro.redirect('/cuenta');
     }

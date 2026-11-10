@@ -1,6 +1,7 @@
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { db } from '../db/db';
 import { Clientes, DetalleVentas, HistorialOrdenes, MetodosPago, MovimientosInventario, Productos, Ventas } from '../db/schema';
+import { avisarPedido } from './avisosCorreo';
 import { facturarYConciliarVenta } from './facturacion';
 import { precioAlPublico, promocionesPorProducto, type PromocionPrecio } from './promociones';
 import { procesarLogisticaStock } from './stockLogistics';
@@ -286,6 +287,9 @@ export async function registrarVenta(venta: NuevaVenta): Promise<TotalesVenta & 
   for (const id_producto of confirmada ? new Set(items.map((item) => item.id_producto)) : []) {
     await procesarLogisticaStock({ id_producto, id_usuario: venta.id_usuario ?? undefined });
   }
+
+  // Correo al cliente: compra confirmada, o pedido recibido si queda en Procesando
+  avisarPedido(resultado.id_venta, confirmada ? 'confirmado' : 'recibido');
 
   return resultado;
 }

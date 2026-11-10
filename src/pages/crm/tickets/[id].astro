@@ -1,0 +1,251 @@
+---
+// Atención de un ticket: el agente responde al cliente, cambia estado, prioridad o quién lo atiende
+// y, si es una solicitud de cancelación, la aprueba (cancela el pedido con la lógica de /erp/ordenes).
+import CrmLayout from '../../../layouts/CrmLayout.astro';
+import { MonederoError } from '../../../lib/monedero';
+import { OrdenError, esCancelable } from '../../../lib/ordenes';
+import {
+  ESTADOS_TICKET,
+  MAX_MENSAJE,
+  PRIORIDADES_TICKET,
+  SoporteError,
+  actualizarTicket,
+  agentesSoporte,
+  aprobarCancelacion,
+  esEstadoTicket,
+  esPrioridadTicket,
+  obtenerTicket,
+  responderComoSoporte,
+  ticketActivo,
+  validarMensaje,
+} from '../../../lib/soporte';
+
+const user = Astro.locals.user!;
+const id = Number(Astro.params.id);
+
+const avisos: Record<string, string> = {
+  respuesta: 'Respuesta enviada al cliente.',
+  actualizado: 'Ticket actualizado.',
+  cancelado: 'Cancelación aprobada: el pedido quedó cancelado y el ticket resuelto.',
+};
+const successMsg = avisos[Astro.url.searchParams.get('ok') ?? ''] ?? '';
+let errorMsg = '';
+
+/** Ejecuta la acción del formulario y devuelve la clave del aviso que se muestra al volver. */
+async function atender(form: FormData): Promise<keyof typeof avisos> {
+  const accion = form.get('accion')?.toString();
+  if (accion === 'responder') {
+    const estado = form.get('estado')?.toString() ?? '';
+    await responderComoSoporte(user.id, id, validarMensaje(form.get('mensaje')), esEstadoTicket(estado) ? estado : undefined);
+    return 'respuesta';
+  }
+  if (accion === 'actualizar') {
+    const estado = form.get('estado')?.toString();
+    const prioridad = form.get('prioridad')?.toString();
+    const asignado = form.get('asignado')?.toString() ?? '';
+    if (asignado !== '' && !(await agentesSoporte()).some((a) => a.id === Number(asignado))) {
+      throw new SoporteError('Elige un agente del CRM.');
+    }
+    await actualizarTicket(user.id, id, {
+      estado: esEstadoTicket(estado) ? estado : undefined,
+      prioridad: esPrioridadTicket(prioridad) ? prioridad : undefined,
+      asignarA: asignado === '' ? null : Number(asignado),
+    });
+    return 'actualizado';
+  }
+  if (accion === 'aprobar_cancelacion') {
+    await aprobarCancelacion(user.id, id);
+    return 'cancelado';
+  }
+  throw new SoporteError('Acción no reconocida.');
+}
+
+if (Astro.request.method === 'POST') {
+  try {
+    const aviso = await atender(await Astro.request.formData());
+    return Astro.redirect(`/crm/tickets/${id}?ok=${aviso}`, 303);
+  } catch (error: unknown) {
+    if (error instanceof SoporteError || error instanceof OrdenError || error instanceof MonederoError) {
+      errorMsg = error.message;
+    } else {
+      console.error('Error al atender el ticket:', error);
+      errorMsg = 'No se pudo guardar el cambio. Inténtalo de nuevo.';
+    }
+  }
+}
+
+const ticket = await obtenerTicket(id);
+if (!ticket) return Astro.redirect('/crm/tickets');
+const agentes = await agentesSoporte();
+
+const activo = ticketActivo(ticket.estado);
+const puedeAprobarCancelacion = ticket.tipo === 'Cancelación' && activo && ticket.idVenta !== null && esCancelable(ticket.estadoPedido ?? '');
+const claseEstado: Record<string, string> = { Abierto: 'st-abierto', 'En proceso': 'st-proceso', Resuelto: 'st-resuelto', Cerrado: 'st-cerrado' };
+const clasePrioridad: Record<string, string> = { Alta: 'pr-alta', Media: 'pr-media', Baja: 'pr-baja' };
+const fmtFechaHora = (fecha: Date) =>
+  new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(fecha));
+---
+
+<CrmLayout title={`${ticket.folio} · Tickets`} activePath="/crm/tickets">
+  <a href="/crm/tickets" class="back">← Tickets de soporte</a>
+
+  <div class="head">
+    <div>
+      <p class="eyebrow">{ticket.folio} · {ticket.tipo}</p>
+      <h1 class="crm-title">{ticket.asunto}</h1>
+    </div>
+    <div class="head-tags">
+      <span class={`tag ${clasePrioridad[ticket.prioridad]}`}>Prioridad {ticket.prioridad.toLowerCase()}</span>
+      <span class={`tag ${claseEstado[ticket.estado]}`}>{ticket.estado}</span>
+    </div>
+  </div>
+
+  {successMsg && <p class="alert success" role="status">{successMsg}</p>}
+  {errorMsg && <p class="alert error" role="alert">{errorMsg}</p>}
+
+  <div class="layout">
+    <section class="crm-card thread-card" aria-label="Conversación">
+      <ol class="thread">
+        {ticket.mensajes.map((m) => m.autor === 'Sistema' ? (
+          <li class="sys">{m.mensaje}{m.nombre ? ` (${m.nombre})` : ''} · {fmtFechaHora(m.fecha)}</li>
+        ) : (
+          <li class:list={['msg', m.autor === 'Soporte' ? 'agent' : 'client']}>
+            <div class="msg-head">
+              <strong>{m.autor === 'Soporte' ? m.nombre ?? 'Soporte' : ticket.cliente.nombre}</strong>
+              <span>{m.autor === 'Soporte' ? 'Soporte' : 'Cliente'} · {fmtFechaHora(m.fecha)}</span>
+            </div>
+            <p>{m.mensaje}</p>
+          </li>
+        ))}
+      </ol>
+
+      {ticket.estado === 'Cerrado' ? (
+        <p class="closed">El ticket está cerrado: el cliente ya no puede responder. Reábrelo desde "Gestión" si hace falta.</p>
+      ) : (
+        <form method="POST" class="reply">
+          <input type="hidden" name="accion" value="responder" />
+          <label for="mensaje">Responder al cliente</label>
+          <textarea id="mensaje" name="mensaje" rows="5" maxlength={MAX_MENSAJE} required placeholder="Escribe la respuesta que verá el cliente en su cuenta…"></textarea>
+          <div class="reply-actions">
+            <select name="estado" class="input" aria-label="Estado después de responder">
+              <option value="">{ticket.estado === 'Abierto' ? 'Pasar a En proceso' : `Mantener ${ticket.estado}`}</option>
+              <option value="Resuelto">Marcar como resuelto</option>
+              <option value="Cerrado">Cerrar ticket</option>
+            </select>
+            <button type="submit" class="btn-primary">Enviar respuesta</button>
+          </div>
+        </form>
+      )}
+    </section>
+
+    <aside class="side">
+      {puedeAprobarCancelacion && (
+        <section class="crm-card cancel-card">
+          <h2>Solicitud de cancelación</h2>
+          <p>El pedido está <strong>{ticket.estadoPedido}</strong>. Al aprobar se cancela, se regresa el stock y se revierte el cobro (el monedero se reembolsa).</p>
+          <form method="POST" data-confirm={`¿Cancelar el pedido #${ticket.idVenta}? Esta acción no se puede deshacer.`} data-confirm-title="Aprobar cancelación" data-confirm-accept="Cancelar pedido">
+            <input type="hidden" name="accion" value="aprobar_cancelacion" />
+            <button type="submit" class="btn-danger">Aprobar y cancelar pedido</button>
+          </form>
+        </section>
+      )}
+
+      <section class="crm-card">
+        <h2>Cliente</h2>
+        <dl class="info">
+          <div><dt>Nombre</dt><dd><a href={`/crm/clientes/${ticket.cliente.id}`}>{ticket.cliente.nombre}</a></dd></div>
+          <div><dt>Correo</dt><dd>{ticket.cliente.correo}</dd></div>
+          {ticket.idVenta && (
+            <div><dt>Pedido</dt><dd><a href={`/erp/ordenes?q=${ticket.idVenta}`}>{ticket.pedido}</a> · {ticket.estadoPedido}</dd></div>
+          )}
+          <div><dt>Levantado</dt><dd>{fmtFechaHora(ticket.fechaCreacion)}</dd></div>
+          {ticket.fechaResolucion && <div><dt>Resuelto</dt><dd>{fmtFechaHora(ticket.fechaResolucion)}</dd></div>}
+        </dl>
+      </section>
+
+      <section class="crm-card">
+        <h2>Gestión</h2>
+        <form method="POST" class="manage">
+          <input type="hidden" name="accion" value="actualizar" />
+          <label>Estado
+            <select name="estado" class="input">
+              {ESTADOS_TICKET.map((e) => <option value={e} selected={ticket.estado === e}>{e}</option>)}
+            </select>
+          </label>
+          <label>Prioridad
+            <select name="prioridad" class="input">
+              {PRIORIDADES_TICKET.map((p) => <option value={p} selected={ticket.prioridad === p}>{p}</option>)}
+            </select>
+          </label>
+          <label>Atiende
+            <select name="asignado" class="input">
+              <option value="">Sin asignar</option>
+              {agentes.map((a) => <option value={a.id} selected={ticket.idAsignado === a.id}>{a.nombre}{a.id === user.id ? ' (yo)' : ''}</option>)}
+            </select>
+          </label>
+          <button type="submit" class="btn-secondary">Guardar cambios</button>
+        </form>
+      </section>
+    </aside>
+  </div>
+
+  <style>
+    .back { color: var(--color-text-muted); display: inline-block; font-size: 13px; margin-bottom: 14px; text-decoration: none; }
+    .back:hover { color: var(--color-text); text-decoration: underline; }
+    .head { align-items: flex-start; display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; margin-bottom: 18px; }
+    .eyebrow { color: var(--color-text-muted); font-family: 'Courier New', monospace; font-size: 12px; font-weight: 700; margin: 0 0 6px; }
+    .crm-title { margin: 0; overflow-wrap: anywhere; }
+    .head-tags { display: flex; gap: 8px; }
+
+    .alert { border-radius: 6px; font-size: 13px; margin: 0 0 16px; padding: 12px 14px; }
+    .success { background: #dcfce7; color: #166534; }
+    .error { background: #fee2e2; color: #991b1b; }
+
+    .layout { align-items: start; display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr) 320px; }
+    .side { display: flex; flex-direction: column; gap: 16px; }
+    .side h2 { font-size: 13px; font-weight: 800; letter-spacing: .04em; margin: 0 0 12px; text-transform: uppercase; }
+
+    .thread { display: flex; flex-direction: column; gap: 12px; list-style: none; margin: 0 0 20px; padding: 0; }
+    .msg { border: 1px solid var(--color-border); border-radius: 10px; max-width: 85%; padding: 12px 14px; }
+    .msg.client { align-self: flex-start; background: var(--color-bg); }
+    .msg.agent { align-self: flex-end; background: #fffbe6; border-color: #f7d21c; }
+    .msg-head { align-items: baseline; display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; }
+    .msg-head span { color: var(--color-text-muted); }
+    .msg p { font-size: 14px; line-height: 1.55; margin: 6px 0 0; overflow-wrap: anywhere; white-space: pre-line; }
+    .sys { align-self: center; color: var(--color-text-muted); font-size: 12px; font-style: italic; text-align: center; }
+
+    .reply { border-top: 1px solid var(--color-border); display: grid; gap: 10px; padding-top: 16px; }
+    .reply label { font-size: 13px; font-weight: 700; }
+    .reply textarea { border: 1px solid var(--color-border); border-radius: 6px; font: inherit; font-size: 14px; padding: 10px; resize: vertical; width: 100%; }
+    .reply textarea:focus { border-color: var(--color-text); outline: none; }
+    .reply-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+    .closed { background: var(--color-bg); border-radius: 6px; color: var(--color-text-muted); font-size: 13px; margin: 0; padding: 12px; text-align: center; }
+
+    .input { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text); font-size: 13px; padding: 8px 10px; }
+    .manage { display: grid; gap: 12px; }
+    .manage label { display: grid; font-size: 12px; font-weight: 700; gap: 5px; }
+    .btn-secondary { background: transparent; border: 1px solid var(--color-text); border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 700; padding: 9px 14px; text-transform: uppercase; }
+    .btn-secondary:hover { background: var(--color-bg); }
+    .btn-danger { background: var(--color-danger); border: 0; border-radius: 6px; color: #fff; cursor: pointer; font-size: 12px; font-weight: 700; padding: 10px 14px; text-transform: uppercase; width: 100%; }
+    .btn-danger:hover { background: #b4271a; }
+    .cancel-card { border-color: #fecaca; border-left: 4px solid var(--color-danger); }
+    .cancel-card p { color: var(--color-text-muted); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+
+    .info { display: grid; gap: 10px; margin: 0; }
+    .info div { display: grid; gap: 2px; }
+    .info dt { color: var(--color-text-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .info dd { font-size: 13px; margin: 0; overflow-wrap: anywhere; }
+    .info a { color: var(--color-text); font-weight: 600; }
+
+    .tag { border-radius: 4px; display: inline-block; font-size: 11px; font-weight: 700; padding: 4px 9px; white-space: nowrap; }
+    .st-abierto { background: #fef3c7; color: #92400e; }
+    .st-proceso { background: #dbeafe; color: #1e40af; }
+    .st-resuelto { background: #dcfce7; color: #166534; }
+    .st-cerrado { background: #e5e5e5; color: #525252; }
+    .pr-alta { background: #fee2e2; color: #991b1b; }
+    .pr-media { background: #ffedd5; color: #9a3412; }
+    .pr-baja { background: #f1f5f9; color: #475569; }
+
+    @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } .msg { max-width: 100%; } }
+  </style>
+</CrmLayout>

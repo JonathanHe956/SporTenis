@@ -1,0 +1,165 @@
+---
+// Conversación de un ticket del cliente. Puede responder mientras no esté cerrado;
+// responder a un ticket resuelto lo vuelve a abrir.
+import Layout from '../../../layouts/Layout.astro';
+import AccountHeader from '../../../components/AccountHeader.astro';
+import { findClientId } from '../../../lib/clientes';
+import { MAX_MENSAJE, obtenerTicket } from '../../../lib/soporte';
+
+const sessionUser = Astro.locals.user;
+if (!sessionUser) return Astro.redirect('/login');
+
+const clientId = await findClientId(sessionUser.id);
+const ticket = clientId !== null ? await obtenerTicket(Number(Astro.params.id), clientId) : null;
+// Ticket inexistente o de otro cliente
+if (!ticket) return Astro.redirect('/cuenta/soporte');
+
+const creado = Astro.url.searchParams.get('creado') === '1';
+const cerrado = ticket.estado === 'Cerrado';
+const tonoEstado: Record<string, string> = { Abierto: 'warn', 'En proceso': 'info', Resuelto: 'ok', Cerrado: 'muted' };
+const fmtFechaHora = (fecha: Date) =>
+  new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(fecha));
+---
+
+<Layout title={`${ticket.folio} | Soporte | SporTenis`}>
+  <div class="tk-page">
+    <AccountHeader backHref="/cuenta/soporte" backLabel="Mis tickets" active="soporte" />
+
+    <main class="tk-main">
+      <nav class="breadcrumb" aria-label="Ruta de navegación">
+        <a href="/cuenta">Mi cuenta</a><span aria-hidden="true">/</span>
+        <a href="/cuenta/soporte">Soporte</a><span aria-hidden="true">/</span>
+        <span>{ticket.folio}</span>
+      </nav>
+
+      {creado && (
+        <p class="notice" role="status">Recibimos tu ticket. Te responderemos aquí; normalmente en menos de 24 horas.</p>
+      )}
+
+      <section class="tk-head">
+        <div>
+          <p class="eyebrow"><span></span> {ticket.folio} · {ticket.tipo}</p>
+          <h1>{ticket.asunto}</h1>
+          <p class="head-meta">
+            Levantado el {fmtFechaHora(ticket.fechaCreacion)}
+            {ticket.idVenta && <> · <a href={`/cuenta/compras/${ticket.idVenta}`}>{ticket.pedido}</a></>}
+          </p>
+        </div>
+        <span class={`pill pill-${tonoEstado[ticket.estado]}`}>{ticket.estado}</span>
+      </section>
+
+      <ol class="thread" aria-label="Conversación">
+        {ticket.mensajes.map((m) => m.autor === 'Sistema' ? (
+          <li class="msg-system"><span>{m.mensaje} · {fmtFechaHora(m.fecha)}</span></li>
+        ) : (
+          <li class:list={['msg', m.autor === 'Cliente' ? 'mine' : 'theirs']}>
+            <span class="msg-author">{m.autor === 'Cliente' ? 'Tú' : `${m.nombre ?? 'Equipo'} · Soporte SporTenis`}</span>
+            <p>{m.mensaje}</p>
+            <time datetime={new Date(m.fecha).toISOString()}>{fmtFechaHora(m.fecha)}</time>
+          </li>
+        ))}
+      </ol>
+
+      {cerrado ? (
+        <p class="closed-note">Este ticket está cerrado. Si necesitas más ayuda, <a href="/cuenta/soporte?nuevo">levanta uno nuevo</a>.</p>
+      ) : (
+        <form class="reply" id="formRespuesta" data-id={ticket.id} novalidate>
+          <label for="mensaje">{ticket.estado === 'Resuelto' ? '¿Sigue sin resolverse? Escríbenos y lo volvemos a abrir.' : 'Responder'}</label>
+          <textarea id="mensaje" name="mensaje" rows="4" maxlength={MAX_MENSAJE} required placeholder="Escribe tu mensaje…"></textarea>
+          <p class="form-error" id="errorRespuesta" role="alert" hidden></p>
+          <div class="reply-actions">
+            <button type="submit" class="primary-btn">Enviar</button>
+          </div>
+        </form>
+      )}
+    </main>
+  </div>
+</Layout>
+
+<script>
+  const form = document.getElementById('formRespuesta') as HTMLFormElement | null;
+  const errorBox = document.getElementById('errorRespuesta');
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const textarea = form.querySelector('textarea');
+    const mensaje = textarea?.value.trim() ?? '';
+    if (!mensaje) {
+      if (errorBox) { errorBox.textContent = 'Escribe un mensaje.'; errorBox.hidden = false; }
+      return;
+    }
+    const boton = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (boton) boton.disabled = true;
+    try {
+      const res = await fetch(`/api/tickets/${form.dataset.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ mensaje }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) throw new Error(data.error || 'No se pudo enviar el mensaje.');
+      window.location.reload();
+    } catch (error) {
+      if (errorBox) {
+        errorBox.textContent = error instanceof Error ? error.message : 'No se pudo enviar el mensaje.';
+        errorBox.hidden = false;
+      }
+      if (boton) boton.disabled = false;
+    }
+  });
+</script>
+
+<style>
+  :global(*) { box-sizing: border-box; }
+  :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; margin: 0; -webkit-font-smoothing: antialiased; }
+
+  .tk-page { min-height: 100vh; }
+  .tk-main { margin: 0 auto; max-width: 820px; padding: clamp(24px, 4vw, 40px) clamp(16px, 4vw, 48px) 80px; }
+
+  .breadcrumb { align-items: center; display: flex; flex-wrap: wrap; font-family: var(--font-ui); font-size: 12px; gap: 8px; margin-bottom: 20px; }
+  .breadcrumb a { color: #716e67; text-decoration: none; }
+  .breadcrumb a:hover { color: #171717; text-decoration: underline; }
+  .breadcrumb span:last-child { font-weight: 700; }
+
+  .notice { background: #d7e1c3; border: 2px solid #171717; font: 600 13px var(--font-ui); margin: 0 0 22px; padding: 12px 16px; }
+
+  .tk-head { align-items: flex-start; border-bottom: 2px solid #171717; display: flex; gap: 16px; justify-content: space-between; margin-bottom: 26px; padding-bottom: 18px; }
+  .eyebrow { color: #d93e2e; font-family: var(--font-ui); font-size: 11px; font-weight: 700; letter-spacing: 1.5px; margin: 0 0 8px; text-transform: uppercase; }
+  .eyebrow span { background: #f7d21c; display: inline-block; height: 7px; margin-right: 8px; width: 7px; }
+  h1 { font-size: clamp(28px, 4vw, 42px); font-weight: 400; letter-spacing: -1.2px; line-height: 1.05; margin: 0 0 10px; overflow-wrap: anywhere; }
+  .head-meta { color: #57534e; font: 13px var(--font-ui); margin: 0; }
+  .head-meta a { color: #171717; font-weight: 700; }
+
+  .pill { border-radius: 999px; flex-shrink: 0; font: 800 12px var(--font-ui); padding: 5px 12px; white-space: nowrap; }
+  .pill-ok { background: #d7e1c3; color: #3f5d22; }
+  .pill-warn { background: #fff1c2; color: #8a5a00; }
+  .pill-info { background: #e3def3; color: #4c3d8f; }
+  .pill-muted { background: #e8e4da; color: #57534e; }
+
+  .thread { display: flex; flex-direction: column; gap: 14px; list-style: none; margin: 0 0 28px; padding: 0; }
+  .msg { border: 2px solid #171717; max-width: min(560px, 88%); padding: 12px 16px; }
+  .msg p { font: 14px/1.55 var(--font-ui); margin: 6px 0; overflow-wrap: anywhere; white-space: pre-line; }
+  .msg.mine { align-self: flex-end; background: #f7d21c; box-shadow: -4px 4px 0 #171717; }
+  .msg.theirs { align-self: flex-start; background: #fffdf3; box-shadow: 4px 4px 0 #171717; }
+  .msg-author { font: 800 11px var(--font-ui); letter-spacing: .3px; text-transform: uppercase; }
+  .msg time { color: #57534e; display: block; font: 11px var(--font-ui); text-align: right; }
+  .msg-system { align-self: center; color: #716e67; font: italic 12px var(--font-ui); text-align: center; }
+  .msg-system span { background: #ece8dc; display: inline-block; padding: 4px 12px; }
+
+  .reply { background: #fffdf3; border: 2px solid #171717; box-shadow: 6px 6px 0 #171717; display: grid; gap: 10px; padding: 18px 20px; }
+  .reply label { font: 700 13px var(--font-ui); }
+  .reply textarea { background: #fff; border: 1.5px solid #d8d3c3; font: 14px/1.5 var(--font-ui); padding: 10px; resize: vertical; width: 100%; }
+  .reply textarea:focus { border-color: #171717; outline: none; }
+  .reply-actions { display: flex; justify-content: flex-end; }
+  .primary-btn { background: #171717; border: 0; color: #fffdf3; cursor: pointer; font: 700 13px var(--font-ui); min-height: 44px; padding: 0 22px; }
+  .primary-btn:disabled { cursor: wait; opacity: .6; }
+  .form-error { background: #fff1ef; border-left: 3px solid #d93e2e; color: #9f2a1e; font: 12px var(--font-ui); margin: 0; padding: 8px 10px; }
+  .form-error[hidden] { display: none; }
+  .closed-note { background: #ece8dc; color: #57534e; font: 13px var(--font-ui); margin: 0; padding: 14px 16px; text-align: center; }
+  .closed-note a { color: #171717; font-weight: 700; }
+
+  @media (max-width: 560px) {
+    .tk-head { flex-direction: column; }
+    .msg { max-width: 100%; }
+  }
+</style>

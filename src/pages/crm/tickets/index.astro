@@ -1,0 +1,181 @@
+---
+// Bandeja de tickets de soporte que levantan los clientes desde la tienda.
+import CrmLayout from '../../../layouts/CrmLayout.astro';
+import {
+  ESTADOS_TICKET,
+  PRIORIDADES_TICKET,
+  TIPOS_TICKET,
+  listarTicketsSoporte,
+  ticketActivo,
+} from '../../../lib/soporte';
+
+const user = Astro.locals.user;
+const todos = await listarTicketsSoporte();
+
+const params = Astro.url.searchParams;
+const q = params.get('q')?.trim() ?? '';
+const estadoFiltro = params.get('estado') ?? 'activos';
+const tipoFiltro = params.get('tipo') ?? '';
+const prioridadFiltro = params.get('prioridad') ?? '';
+const soloMios = params.get('mios') === '1';
+
+const pesoPrioridad: Record<string, number> = { Alta: 0, Media: 1, Baja: 2 };
+const termino = q.toLowerCase();
+const tickets = todos
+  .filter((t) => estadoFiltro === 'todos' || (estadoFiltro === 'activos' ? ticketActivo(t.estado) : t.estado === estadoFiltro))
+  .filter((t) => !tipoFiltro || t.tipo === tipoFiltro)
+  .filter((t) => !prioridadFiltro || t.prioridad === prioridadFiltro)
+  .filter((t) => !soloMios || t.idAsignado === user?.id)
+  .filter((t) => !termino || [t.folio, t.asunto, t.cliente?.nombre, t.cliente?.correo, t.pedido]
+    .some((campo) => campo?.toLowerCase().includes(termino)))
+  // Primero lo que sigue abierto, luego lo más urgente y lo que espera respuesta del equipo
+  .sort((a, b) =>
+    Number(ticketActivo(b.estado)) - Number(ticketActivo(a.estado))
+    || pesoPrioridad[a.prioridad] - pesoPrioridad[b.prioridad]
+    || Number(b.esperaSoporte) - Number(a.esperaSoporte)
+    || new Date(b.fechaActualizacion).getTime() - new Date(a.fechaActualizacion).getTime());
+
+const activos = todos.filter((t) => ticketActivo(t.estado));
+const resueltos = todos.filter((t) => t.fechaResolucion);
+const horasResolucion = resueltos.length
+  ? resueltos.reduce((acc, t) => acc + (new Date(t.fechaResolucion!).getTime() - new Date(t.fechaCreacion).getTime()), 0) / resueltos.length / 3_600_000
+  : null;
+const kpis = {
+  abiertos: activos.length,
+  esperan: activos.filter((t) => t.esperaSoporte).length,
+  alta: activos.filter((t) => t.prioridad === 'Alta').length,
+  sinAsignar: activos.filter((t) => !t.asignado).length,
+  resolucion: horasResolucion === null ? '—' : horasResolucion < 48 ? `${horasResolucion.toFixed(1)} h` : `${(horasResolucion / 24).toFixed(1)} días`,
+};
+
+const claseEstado: Record<string, string> = { Abierto: 'st-abierto', 'En proceso': 'st-proceso', Resuelto: 'st-resuelto', Cerrado: 'st-cerrado' };
+const clasePrioridad: Record<string, string> = { Alta: 'pr-alta', Media: 'pr-media', Baja: 'pr-baja' };
+const fmtFecha = (fecha: Date) =>
+  new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(fecha));
+---
+
+<CrmLayout title="Tickets de soporte" activePath="/crm/tickets">
+  <div class="page-heading">
+    <div>
+      <h1 class="crm-title">Tickets de soporte</h1>
+      <p class="subtitle">Retrasos, cancelaciones, devoluciones y dudas que los clientes levantan desde la tienda.</p>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><strong>{kpis.abiertos}</strong><span>Abiertos</span></div>
+    <div class="stat"><strong class="warn">{kpis.esperan}</strong><span>Esperan respuesta</span></div>
+    <div class="stat"><strong class="danger">{kpis.alta}</strong><span>Prioridad alta</span></div>
+    <div class="stat"><strong>{kpis.sinAsignar}</strong><span>Sin asignar</span></div>
+    <div class="stat"><strong>{kpis.resolucion}</strong><span>Tiempo prom. de resolución</span></div>
+  </div>
+
+  <div class="crm-card">
+    <form method="GET" class="filters">
+      <input type="search" name="q" value={q} placeholder="Folio, cliente, correo, asunto o pedido…" class="input grow" />
+      <select name="estado" class="input">
+        <option value="activos" selected={estadoFiltro === 'activos'}>Abiertos y en proceso</option>
+        <option value="todos" selected={estadoFiltro === 'todos'}>Todos los estados</option>
+        {ESTADOS_TICKET.map((e) => <option value={e} selected={estadoFiltro === e}>{e}</option>)}
+      </select>
+      <select name="tipo" class="input">
+        <option value="">Todos los motivos</option>
+        {TIPOS_TICKET.map((t) => <option value={t} selected={tipoFiltro === t}>{t}</option>)}
+      </select>
+      <select name="prioridad" class="input">
+        <option value="">Cualquier prioridad</option>
+        {PRIORIDADES_TICKET.map((p) => <option value={p} selected={prioridadFiltro === p}>{p}</option>)}
+      </select>
+      <label class="check"><input type="checkbox" name="mios" value="1" checked={soloMios} /> Asignados a mí</label>
+      <button type="submit" class="btn-primary">Filtrar</button>
+    </form>
+
+    <div class="table-wrap">
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th>Folio</th>
+            <th>Cliente</th>
+            <th>Motivo y asunto</th>
+            <th>Pedido</th>
+            <th>Prioridad</th>
+            <th>Estado</th>
+            <th>Atiende</th>
+            <th>Actualizado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tickets.map((t) => (
+            <tr class:list={{ waiting: t.esperaSoporte }}>
+              <td><a href={`/crm/tickets/${t.id}`} class="folio">{t.folio}</a></td>
+              <td>
+                <a href={`/crm/clientes/${t.cliente?.id}`} class="cliente">{t.cliente?.nombre}</a>
+                <small>{t.cliente?.correo}</small>
+              </td>
+              <td>
+                <a href={`/crm/tickets/${t.id}`} class="asunto">{t.asunto}</a>
+                <small>{t.tipo}{t.esperaSoporte && <span class="dot-waiting"> · Espera respuesta</span>}</small>
+              </td>
+              <td>{t.pedido ?? <span class="muted">—</span>}</td>
+              <td><span class={`tag ${clasePrioridad[t.prioridad]}`}>{t.prioridad}</span></td>
+              <td><span class={`tag ${claseEstado[t.estado]}`}>{t.estado}</span></td>
+              <td>{t.asignado ?? <span class="muted">Sin asignar</span>}</td>
+              <td class="nowrap muted">{fmtFecha(t.fechaActualizacion)}</td>
+            </tr>
+          ))}
+          {tickets.length === 0 && (
+            <tr><td colspan="8" class="empty">{todos.length === 0 ? 'Todavía no hay tickets de clientes.' : 'Ningún ticket coincide con los filtros.'}</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+    <footer class="foot">Mostrando {tickets.length} de {todos.length} tickets</footer>
+  </div>
+
+  <style>
+    .page-heading { margin-bottom: 20px; }
+    .crm-title { margin-bottom: 4px; }
+    .subtitle { color: var(--color-text-muted); font-size: 13px; margin: 0; }
+
+    .stats { display: grid; gap: 14px; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 20px; }
+    .stat { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px; padding: 16px; text-align: center; }
+    .stat strong { display: block; font-size: 28px; font-weight: 900; line-height: 1.1; }
+    .stat span { color: var(--color-text-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .stat .warn { color: #d97706; }
+    .stat .danger { color: var(--color-danger); }
+
+    .filters { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+    .input { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text); font-size: 13px; padding: 9px 12px; }
+    .input:focus { border-color: var(--color-text); outline: none; }
+    .grow { flex: 1; min-width: 220px; }
+    .check { align-items: center; display: flex; font-size: 13px; gap: 6px; }
+
+    .table-wrap { margin: 0 -24px; overflow-x: auto; }
+    .crm-table { border-collapse: collapse; font-size: 13px; width: 100%; }
+    .crm-table th { border-bottom: 2px solid var(--color-border); color: var(--color-text-muted); font-weight: 700; padding: 10px 14px; text-align: left; white-space: nowrap; }
+    .crm-table th:first-child, .crm-table td:first-child { padding-left: 24px; }
+    .crm-table td { border-bottom: 1px solid var(--color-border); padding: 12px 14px; vertical-align: top; }
+    .crm-table tbody tr:hover { background: var(--color-bg); }
+    .crm-table tr.waiting td:first-child { box-shadow: inset 4px 0 0 #d97706; }
+    .crm-table small { color: var(--color-text-muted); display: block; font-size: 11px; margin-top: 2px; }
+    .folio { color: var(--color-text); font-family: 'Courier New', monospace; font-weight: 700; white-space: nowrap; }
+    .cliente, .asunto { color: var(--color-text); font-weight: 600; text-decoration: none; }
+    .cliente:hover, .asunto:hover, .folio:hover { color: #0284c7; text-decoration: underline; }
+    .dot-waiting { color: #b45309; font-weight: 700; }
+    .muted { color: var(--color-text-muted); }
+    .nowrap { white-space: nowrap; }
+    .empty { color: var(--color-text-muted); padding: 32px; text-align: center; }
+    .foot { color: var(--color-text-muted); font-size: 12px; padding-top: 14px; }
+
+    .tag { border-radius: 4px; display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; white-space: nowrap; }
+    .st-abierto { background: #fef3c7; color: #92400e; }
+    .st-proceso { background: #dbeafe; color: #1e40af; }
+    .st-resuelto { background: #dcfce7; color: #166534; }
+    .st-cerrado { background: #e5e5e5; color: #525252; }
+    .pr-alta { background: #fee2e2; color: #991b1b; }
+    .pr-media { background: #ffedd5; color: #9a3412; }
+    .pr-baja { background: #f1f5f9; color: #475569; }
+
+    @media (max-width: 900px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  </style>
+</CrmLayout>

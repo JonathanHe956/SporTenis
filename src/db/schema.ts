@@ -177,10 +177,13 @@ export const Interacciones = mysqlTable('Interacciones', {
 export const Evaluaciones = mysqlTable('Evaluaciones', {
   id: int('id').autoincrement().primaryKey(),
   id_cliente: int('id_cliente').references(() => Clientes.id).notNull(),
-  id_usuario: int('id_usuario').references(() => Usuarios.id).notNull(),
+  // Agente que la registró; null cuando la deja el propio cliente desde "Mis compras" (migración 0018)
+  id_usuario: int('id_usuario').references(() => Usuarios.id),
   calificacion: int('calificacion').notNull(),
   comentarios: text('comentarios'),
   fecha_evaluacion: datetime('fecha_evaluacion').notNull(),
+  // Pedido calificado por el cliente: una calificación por pedido (migración 0018)
+  id_venta: int('id_venta').references(() => Ventas.id).unique('uq_evaluaciones_venta'),
 });
 
 export const TareasSeguimiento = mysqlTable('TareasSeguimiento', {
@@ -460,4 +463,32 @@ export const FacturaImpuestos = mysqlTable('FacturaImpuestos', {
   nombre: varchar('nombre', { length: 100 }).notNull(),
   porcentaje: decimal('porcentaje', { precision: 5, scale: 2 }).notNull(),
   monto: decimal('monto', { precision: 10, scale: 2 }).notNull(),
+});
+
+// Tickets de soporte que levantan los clientes (migración 0018): retrasos, cancelaciones, devoluciones…
+export const Tickets = mysqlTable('Tickets', {
+  id: int('id').autoincrement().primaryKey(),
+  id_cliente: int('id_cliente').references(() => Clientes.id).notNull(),
+  // Pedido del que se queja el cliente; null en dudas generales
+  id_venta: int('id_venta').references(() => Ventas.id),
+  tipo: varchar('tipo', { length: 50 }).notNull(),
+  asunto: varchar('asunto', { length: 150 }).notNull(),
+  estado: mysqlEnum('estado', ['Abierto', 'En proceso', 'Resuelto', 'Cerrado']).default('Abierto').notNull(),
+  prioridad: mysqlEnum('prioridad', ['Baja', 'Media', 'Alta']).default('Media').notNull(),
+  id_usuario_asignado: int('id_usuario_asignado').references(() => Usuarios.id, { onDelete: 'set null' }),
+  fecha_creacion: datetime('fecha_creacion').notNull(),
+  fecha_actualizacion: datetime('fecha_actualizacion').notNull(),
+  // Cuándo pasó a Resuelto o Cerrado, para medir el tiempo de resolución
+  fecha_resolucion: datetime('fecha_resolucion'),
+});
+
+// Conversación de cada ticket: el primer mensaje es la descripción del cliente
+export const MensajesTicket = mysqlTable('MensajesTicket', {
+  id: int('id').autoincrement().primaryKey(),
+  id_ticket: int('id_ticket').references(() => Tickets.id, { onDelete: 'cascade' }).notNull(),
+  // Sistema = avisos automáticos (cambios de estado, cancelación aprobada)
+  autor: mysqlEnum('autor', ['Cliente', 'Soporte', 'Sistema']).notNull(),
+  id_usuario: int('id_usuario').references(() => Usuarios.id, { onDelete: 'set null' }),
+  mensaje: text('mensaje').notNull(),
+  fecha: datetime('fecha').notNull(),
 });

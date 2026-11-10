@@ -58,9 +58,10 @@ mysql -u root -p sportenis_db < db/migrations/0014_formas_pago.sql
 mysql -u root -p sportenis_db < db/migrations/0015_direcciones_envio.sql
 mysql -u root -p sportenis_db < db/migrations/0016_codigos_postales.sql
 mysql -u root -p sportenis_db < db/migrations/0017_mercado_pago.sql
+mysql -u root -p sportenis_db < db/migrations/0018_calificaciones_tickets.sql
 ```
 
-Ejecuta solo las migraciones que aún no hayas aplicado, en orden. La `0009` es necesaria para que funcionen las recargas y el historial del monedero, la `0010` crea la tabla de impuestos con el IVA al 16% y la `0011` las tablas de promociones (ambas se administran en `/scm/precios`). La `0012` guarda el desglose de impuestos de cada factura. El precio de cada producto ya incluye los impuestos: cambiar el IVA o agregar un impuesto solo cambia el desglose, no lo que se cobra. La `0013` agrega el método de pago Monedero: las compras de la tienda se pagan con el saldo del monedero (se bloquean si no alcanza) y se reembolsan al cancelarlas. La `0014` agrega tarjeta de crédito, tarjeta de débito y Mercado Pago como formas de pago en el carrito. Son **simulados**: no se cobra nada y de la tarjeta solo se guardan la marca y los últimos 4 dígitos. Tarjetas de prueba: `4242 4242 4242 4242` se aprueba, `4000 0000 0000 0002` se rechaza y `4000 0000 0000 9995` no tiene fondos (cualquier vencimiento futuro y CVV de 3 dígitos). La `0015` agrega las direcciones de envío: el cliente guarda varias en `/cuenta/direcciones` (una es la principal), elige una en el carrito antes de pagar y cada pedido guarda una copia de la dirección a la que se envió. La `0016` crea la tabla del catálogo de códigos postales y la `0017` la de los pagos con Mercado Pago.
+Ejecuta solo las migraciones que aún no hayas aplicado, en orden. La `0009` es necesaria para que funcionen las recargas y el historial del monedero, la `0010` crea la tabla de impuestos con el IVA al 16% y la `0011` las tablas de promociones (ambas se administran en `/scm/precios`). La `0012` guarda el desglose de impuestos de cada factura. El precio de cada producto ya incluye los impuestos: cambiar el IVA o agregar un impuesto solo cambia el desglose, no lo que se cobra. La `0013` agrega el método de pago Monedero: las compras de la tienda se pagan con el saldo del monedero (se bloquean si no alcanza) y se reembolsan al cancelarlas. La `0014` agrega tarjeta de crédito, tarjeta de débito y Mercado Pago como formas de pago en el carrito. Son **simulados**: no se cobra nada y de la tarjeta solo se guardan la marca y los últimos 4 dígitos. Tarjetas de prueba: `4242 4242 4242 4242` se aprueba, `4000 0000 0000 0002` se rechaza y `4000 0000 0000 9995` no tiene fondos (cualquier vencimiento futuro y CVV de 3 dígitos). La `0015` agrega las direcciones de envío: el cliente guarda varias en `/cuenta/direcciones` (una es la principal), elige una en el carrito antes de pagar y cada pedido guarda una copia de la dirección a la que se envió. La `0016` crea la tabla del catálogo de códigos postales y la `0017` la de los pagos con Mercado Pago. La `0018` agrega las calificaciones de pedidos y los tickets de soporte (ver [Atención al cliente](#atención-al-cliente-calificaciones-y-tickets)).
 
 ### Catálogo de códigos postales
 
@@ -91,6 +92,49 @@ npm run tunel
 Muestra una URL `https://…trycloudflare.com`: entra a la tienda con esa URL (e inicia sesión ahí). Mercado Pago descarta las URLs de regreso de `localhost`, así que sin túnel hay que volver a la tienda a mano; aun así la compra se registra al abrir el carrito o "Mis compras". Requiere `cloudflared` (`winget install --id Cloudflare.cloudflared`).
 
 El cliente paga en la página de Mercado Pago y regresa a `/checkout/mercadopago`; la compra se registra solo después de consultar el pago a la API de Mercado Pago. Con `SITE_URL` en https, Mercado Pago regresa solo al cliente y avisa por webhook a `/api/webhooks/mercadopago`. Si un pago aprobado no se puede registrar (por ejemplo, se agotó el stock), se reembolsa automáticamente.
+
+### Atención al cliente: calificaciones y tickets
+
+- **Calificar un pedido**: en el detalle de un pedido entregado (`/cuenta/compras/{id}`) el cliente le pone de 1 a 5 estrellas y un comentario; puede cambiarla después. Se ven en `/crm/evaluaciones` junto con las que captura el personal (columna "Origen").
+- **Levantar un ticket**: desde el detalle del pedido (botones según su estado) o en `/cuenta/soporte`. Los motivos dependen del pedido: *retraso* y *cancelación* solo antes de la entrega; *producto dañado* y *cambio o devolución* hasta 30 días después; *pago o factura* y *otro* no necesitan pedido. Retrasos y cancelaciones entran con prioridad alta, y no se puede abrir dos tickets del mismo motivo para el mismo pedido.
+- **Conversación**: el cliente y el personal se escriben en el ticket (`/cuenta/soporte/{id}`). El cliente ve "Respuesta nueva" cuando le contestan; si responde a un ticket resuelto, se vuelve a abrir. Uno cerrado ya no acepta mensajes.
+- **Bandeja del CRM** (`/crm/tickets`, administrador y ventas): KPIs (abiertos, esperan respuesta, prioridad alta, sin asignar, tiempo promedio de resolución) y filtros. En cada ticket el agente responde, cambia estado, prioridad o quién lo atiende y, si es una cancelación, la **aprueba**: el pedido se cancela con la misma lógica de `/erp/ordenes` (regresa el stock y revierte factura y cobro; el monedero se reembolsa) y el ticket queda resuelto.
+- **Bitácora y ficha del cliente**: la apertura de cada ticket y las respuestas del equipo aparecen en `/crm/interacciones` (canal *Soporte*) y en la bitácora de la ficha del cliente, que además tiene una pestaña *Tickets*. Responder un ticket cuenta como contacto: el cliente deja de salir en "clientes en riesgo" del dashboard.
+
+### Cancelaciones y reembolsos
+
+Una orden se cancela desde `/erp/ordenes` o aprobando el ticket de cancelación del cliente; las dos usan la misma lógica (`src/lib/ordenes.ts`), en una sola transacción:
+
+- **Procesando**: todavía no se cobró ni se tocó el inventario, así que no hay nada que devolver.
+- **Confirmada** (ya cobrada): el stock regresa al inventario, la factura se cancela, el pago queda como *Reembolsado* y el dinero se devuelve según cómo se pagó:
+  - **Monedero**: el importe vuelve al saldo al instante (queda en el historial del monedero).
+  - **Tarjeta de crédito o débito** (simulada): se informa que el reembolso va a la misma tarjeta, con su marca y últimos 4 dígitos.
+  - **Mercado Pago**: se devuelve de verdad con su API. Si Mercado Pago no acepta el reembolso, la cancelación completa se revierte y el pedido no queda cancelado sin devolver el dinero.
+- Una orden **entregada** ya no se cancela: el cliente pide un cambio o una devolución con un ticket.
+
+El cliente ve a dónde regresó su dinero en el detalle del pedido y en el correo de cancelación.
+
+### Correos electrónicos
+
+La tienda manda correos automáticos por SMTP (`src/lib/correo.ts` y `src/lib/avisosCorreo.ts`):
+
+- **Pedidos**: compra confirmada (artículos, total, forma de pago y dirección), pedido recibido, entregado (invita a calificar) y cancelado (con el reembolso).
+- **Tickets**: ticket recibido, respuesta del equipo, resuelto y cerrado. Si configuras `CORREO_SOPORTE`, ese buzón recibe un aviso de cada ticket nuevo.
+- **Cuenta**: bienvenida al registrarse.
+
+Si el correo falla, la venta o la cancelación no se revierten: el error solo queda en el log. Agrega a tu `.env` los datos de tu proveedor. Con Gmail, activa la verificación en dos pasos y crea una [contraseña de aplicación](https://myaccount.google.com/apppasswords):
+
+```bash
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=tu-correo@gmail.com
+SMTP_PASS=xxxx xxxx xxxx xxxx          # contraseña de aplicación, no la de tu cuenta
+CORREO_REMITENTE="SporTenis <tu-correo@gmail.com>"   # opcional
+CORREO_SOPORTE=tu-correo@gmail.com     # opcional: aviso de tickets nuevos
+SITE_URL=http://localhost:4321         # para los enlaces de los correos
+```
+
+Sin `SMTP_HOST` no se envía nada: cada correo se guarda como `.html` en `correos-salida/` (ignorada por git) para revisarlo en el navegador.
 
 ### Usuarios de prueba
 

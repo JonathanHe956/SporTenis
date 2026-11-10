@@ -22,6 +22,7 @@ export interface CompraResumen {
   fecha: Date;
   total: number;
   estado: string;
+  fechaEntrega: Date | null;
   unidades: number;
   /** Hasta 3 productos para la vista previa de la tarjeta. */
   vistaPrevia: Array<{ nombre: string; imagen: string | null; tema: string | null }>;
@@ -68,7 +69,7 @@ const variante = (color: string | null, talla: string | null): string =>
 /** Pedidos del cliente, del más reciente al más antiguo. */
 export async function getComprasCliente(clientId: number): Promise<CompraResumen[]> {
   const ventas = await db
-    .select({ id: Ventas.id, fecha: Ventas.fecha_venta, total: Ventas.total, estado: Ventas.estado })
+    .select({ id: Ventas.id, fecha: Ventas.fecha_venta, total: Ventas.total, estado: Ventas.estado, fechaEntrega: Ventas.fecha_entrega })
     .from(Ventas)
     .where(eq(Ventas.id_cliente, clientId))
     .orderBy(desc(Ventas.fecha_venta), desc(Ventas.id));
@@ -103,6 +104,7 @@ export async function getComprasCliente(clientId: number): Promise<CompraResumen
       fecha: venta.fecha,
       total: Number(venta.total),
       estado: venta.estado,
+      fechaEntrega: venta.fechaEntrega,
       unidades: lineas.reduce((total, l) => total + l.cantidad, 0),
       vistaPrevia: lineas.slice(0, 3).map((l) => ({ nombre: l.nombre, imagen: l.imagen, tema: l.tema })),
       productosExtra: Math.max(0, lineas.length - 3),

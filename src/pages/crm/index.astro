@@ -3,6 +3,7 @@ import CrmLayout from '../../layouts/CrmLayout.astro';
 import { db } from '../../db/db';
 import { Clientes, Interacciones, Evaluaciones, EtapasCrm } from '../../db/schema';
 import { eq, desc } from 'drizzle-orm';
+import { contactosSoporte } from '../../lib/soporte';
 
 // 1. Obtener datos de Clientes
 const todosLosClientes = await db.select().from(Clientes);
@@ -13,13 +14,17 @@ const porcentajeActivos = totalClientes > 0 ? Math.round((totalActivos / totalCl
 const totalInactivos = totalClientes - totalActivos;
 const porcentajeInactivos = totalClientes > 0 ? 100 - porcentajeActivos : 0;
 
-// 2. Interacciones
-const interacciones = await db.select().from(Interacciones);
+// 2. Interacciones: las registradas en la ficha del cliente y las respuestas del equipo en sus tickets
+const respuestasSoporte = (await contactosSoporte()).filter((c) => c.esContacto);
+const interacciones = [
+  ...(await db.select().from(Interacciones)).map((i) => ({ id_cliente: i.id_cliente, fecha_hora: i.fecha_hora })),
+  ...respuestasSoporte.map((c) => ({ id_cliente: c.idCliente, fecha_hora: c.fecha })),
+];
 const now = new Date();
 const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 const interaccionesMes = interacciones.filter(i => new Date(i.fecha_hora) >= thirtyDaysAgo).length;
 
-// Últimas interacciones por cliente
+// Último contacto con cada cliente (llamada, correo, reunión o respuesta a un ticket)
 const lastInteractions = new Map<number, Date>();
 for (const i of interacciones) {
   const d = new Date(i.fecha_hora);
@@ -121,7 +126,7 @@ const conteoEtapas = etapasList.map(etapa => {
         </span>
       </div>
       <div class="metric-value">{interaccionesMes}</div>
-      <p class="metric-desc">Contactos y seguimientos registrados</p>
+      <p class="metric-desc">Contactos, seguimientos y respuestas a tickets</p>
     </div>
 
     <div class="crm-card metric-card">

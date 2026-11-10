@@ -3,6 +3,7 @@ import CrmLayout from '../../../layouts/CrmLayout.astro';
 import { db } from '../../../db/db';
 import { Clientes, EtapasCrm, Interacciones, TiposInteraccion, Evaluaciones, Usuarios, Ventas, MetodosPago } from '../../../db/schema';
 import { ESTADOS_VENTA_EFECTIVA } from '../../../lib/ventas';
+import { contactosSoporte, listarTicketsCliente, ticketActivo } from '../../../lib/soporte';
 import { eq, desc } from 'drizzle-orm';
 const { module } = Astro.params;
 if (module !== 'crm' && module !== 'erp') return Astro.redirect('/404');
@@ -94,7 +95,7 @@ const estadoBadge: Record<string, string> = {
 const tiposInteraccion = await db.select().from(TiposInteraccion);
 
 // Obtener historial de interacciones
-const historial = await db
+const historialCrm = await db
   .select({
     id: Interacciones.id,
     fecha: Interacciones.fecha_hora,
@@ -107,6 +108,25 @@ const historial = await db
   .leftJoin(Usuarios, eq(Interacciones.id_usuario, Usuarios.id))
   .where(eq(Interacciones.id_cliente, clienteId))
   .orderBy(desc(Interacciones.fecha_hora));
+
+// Tickets del cliente: abrir un ticket y cada respuesta del equipo también van a la bitácora
+const [tickets, contactosTicket] = await Promise.all([listarTicketsCliente(clienteId), contactosSoporte(clienteId)]);
+const historial = [
+  ...historialCrm.map((h) => ({ ...h, key: `crm-${h.id}`, idTicket: null as number | null, folio: null as string | null })),
+  ...contactosTicket.map((c) => ({
+    id: 0,
+    key: `tk-${c.idTicket}-${new Date(c.fecha).getTime()}`,
+    fecha: c.fecha,
+    descripcion: c.mensaje,
+    tipo: c.tipo as string | null,
+    usuario: c.agente ?? cliente.nombre,
+    idTicket: c.idTicket as number | null,
+    folio: c.folio as string | null,
+  })),
+].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+const ticketsAbiertos = tickets.filter((t) => ticketActivo(t.estado)).length;
+const claseEstadoTicket: Record<string, string> = { Abierto: 'badge-warning', 'En proceso': 'badge-pull', Resuelto: 'badge-success', Cerrado: 'badge-neutral' };
+const clasePrioridad: Record<string, string> = { Alta: 'badge-danger', Media: 'badge-warning', Baja: 'badge-neutral' };
 
 // Obtener evaluaciones del cliente
 const evaluaciones = await db
@@ -192,6 +212,10 @@ const initials = (cliente.nombre || 'C').substring(0, 2).toUpperCase();
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         Evaluaciones CSAT ({evaluaciones.length})
       </button>
+      <button type="button" class="tab-btn" onclick="switchTab('tickets', this)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 9a3 3 0 0 0 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 0 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/></svg>
+        Tickets ({tickets.length}{ticketsAbiertos > 0 ? ` · ${ticketsAbiertos} abiertos` : ''})
+      </button>
       <button type="button" class="tab-btn" onclick="switchTab('ordenes', this)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/></svg>
         Órdenes ERP ({ordenes.length})
@@ -241,7 +265,7 @@ const initials = (cliente.nombre || 'C').substring(0, 2).toUpperCase();
       <div class="section-actions-bar">
         <div>
           <h3 style="margin: 0; font-size: 15px; font-weight: 700;">Bitácora de Contacto</h3>
-          <p style="margin: 2px 0 0 0; font-size: 12px; color: var(--color-text-muted);">Registro cronológico de llamadas, correos y visitas</p>
+          <p style="margin: 2px 0 0 0; font-size: 12px; color: var(--color-text-muted);">Registro cronológico de llamadas, correos, visitas y tickets de soporte</p>
         </div>
         <button type="button" class="btn-primary" onclick="document.getElementById('modalInteraction').showModal()">
           + NUEVA INTERACCIÓN
@@ -250,9 +274,11 @@ const initials = (cliente.nombre || 'C').substring(0, 2).toUpperCase();
 
       <div class="timeline">
         {historial.map(item => (
-          <div class="timeline-item">
-            <div class="timeline-icon">
-              {item.tipo === 'Llamada' ? (
+          <div class="timeline-item" data-key={item.key}>
+            <div class:list={['timeline-icon', { 'icon-soporte': item.idTicket !== null }]}>
+              {item.idTicket !== null ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 9a3 3 0 0 0 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 0 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/></svg>
+              ) : item.tipo === 'Llamada' ? (
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
               ) : item.tipo === 'Correo' ? (
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
@@ -262,11 +288,12 @@ const initials = (cliente.nombre || 'C').substring(0, 2).toUpperCase();
             </div>
             <div class="timeline-content">
               <div class="timeline-meta">
-                <span class="badge badge-neutral">{item.tipo}</span>
+                <span class:list={['badge', item.idTicket !== null ? 'badge-soporte' : 'badge-neutral']}>{item.tipo}</span>
+                {item.idTicket !== null && <a href={`/crm/tickets/${item.idTicket}`} class="orden-link">{item.folio}</a>}
                 <span class="timeline-date">{new Date(item.fecha).toLocaleString()}</span>
               </div>
-              <p class="timeline-desc">{item.descripcion}</p>
-              <div class="timeline-user">Registrado por: <strong>{item.usuario || 'Agente'}</strong></div>
+              <p class="timeline-desc" style="white-space: pre-line;">{item.descripcion}</p>
+              <div class="timeline-user">{item.idTicket === null ? 'Registrado por: ' : item.tipo === 'Ticket abierto' ? 'Lo levantó: ' : 'Respondió: '}<strong>{item.usuario || 'Agente'}</strong></div>
             </div>
           </div>
         ))}
@@ -311,6 +338,44 @@ const initials = (cliente.nombre || 'C').substring(0, 2).toUpperCase();
           </div>
         )}
       </div>
+    </div>
+
+    <!-- Contenido de Pestaña: Tickets -->
+    <div class="tab-content" id="tab-tickets" style="display: none;">
+      <div class="section-actions-bar">
+        <div>
+          <h3 style="margin: 0; font-size: 15px; font-weight: 700;">Tickets de Soporte</h3>
+          <p style="margin: 2px 0 0 0; font-size: 12px; color: var(--color-text-muted);">Problemas que el cliente levantó desde la tienda &bull; {ticketsAbiertos} abiertos</p>
+        </div>
+      </div>
+
+      {tickets.length > 0 ? (
+        <div style="overflow-x: auto;">
+          <table class="ordenes-table">
+            <thead>
+              <tr><th>Folio</th><th>Motivo y asunto</th><th>Pedido</th><th>Prioridad</th><th>Estado</th><th>Actualizado</th><th></th></tr>
+            </thead>
+            <tbody>
+              {tickets.map(t => (
+                <tr>
+                  <td><strong>{t.folio}</strong></td>
+                  <td>{t.asunto}<br /><small style="color: var(--color-text-muted);">{t.tipo}{t.esperaSoporte && <strong style="color: #b45309;"> · Espera respuesta</strong>}</small></td>
+                  <td>{t.pedido ?? '—'}</td>
+                  <td><span class={`badge ${clasePrioridad[t.prioridad]}`}>{t.prioridad}</span></td>
+                  <td><span class={`badge ${claseEstadoTicket[t.estado]}`}>{t.estado}</span></td>
+                  <td>{new Date(t.fechaActualizacion).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                  <td style="text-align: right;"><a href={`/crm/tickets/${t.id}`} class="orden-link">Atender</a></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div class="empty-state">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5"><path d="M2 9a3 3 0 0 0 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 0 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/></svg>
+          <p>Este cliente no ha levantado tickets de soporte.</p>
+        </div>
+      )}
     </div>
 
     <!-- Contenido de Pestaña: Órdenes -->
@@ -664,6 +729,8 @@ const initials = (cliente.nombre || 'C').substring(0, 2).toUpperCase();
     color: var(--color-text);
   }
   .timeline-content { flex: 1; }
+  .timeline-icon.icon-soporte { background: #ede9fe; color: #6d28d9; }
+  .badge-soporte { background: #ede9fe; color: #6d28d9; }
   .timeline-meta {
     display: flex;
     justify-content: space-between;
