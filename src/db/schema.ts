@@ -383,3 +383,11 @@ export const CuentasPorPagar = mysqlTable('CuentasPorPagar', {
   fecha_vencimiento: datetime('fecha_vencimiento').notNull(),
   fecha_pago: datetime('fecha_pago'),
 });
+
+// Etapa 4: impuestos que se aplican en el checkout y la factura (el IVA se configura aquí)
+export const Impuestos = mysqlTable('Impuestos', {
+  id: int('id').autoincrement().primaryKey(),
+  nombre: varchar('nombre', { length: 100 }).unique().notNull(),
+  porcentaje: decimal('porcentaje', { precision: 5, scale: 2 }).notNull(),
+  estado: varchar('estado', { length: 20 }).default('Activo').notNull(),
+});
