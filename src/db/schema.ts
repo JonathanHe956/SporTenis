@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { int, varchar, text, decimal, boolean, datetime, mysqlEnum, mysqlTable } from 'drizzle-orm/mysql-core';
+import { int, varchar, text, decimal, boolean, datetime, mysqlEnum, mysqlTable, primaryKey } from 'drizzle-orm/mysql-core';
 
 export const Roles = mysqlTable('Roles', {
   id: int('id').autoincrement().primaryKey(),
@@ -66,6 +66,24 @@ export const Productos = mysqlTable('Productos', {
   badge: varchar('badge', { length: 100 }),
   theme_class: varchar('theme_class', { length: 100 }),
 });
+
+export const Promociones = mysqlTable('Promociones', {
+  id: int('id').autoincrement().primaryKey(),
+  nombre: varchar('nombre', { length: 255 }).notNull(),
+  descripcion: text('descripcion'),
+  tipo_descuento: mysqlEnum('tipo_descuento', ['porcentaje', 'monto']).notNull(),
+  valor: decimal('valor', { precision: 10, scale: 2 }).notNull(),
+  fecha_inicio: datetime('fecha_inicio').notNull(),
+  fecha_fin: datetime('fecha_fin').notNull(),
+  estado: mysqlEnum('estado', ['Activa', 'Inactiva']).default('Activa').notNull(),
+});
+
+export const PromocionesProductos = mysqlTable('PromocionesProductos', {
+  id_promocion: int('id_promocion').references(() => Promociones.id, { onDelete: 'cascade' }).notNull(),
+  id_producto: int('id_producto').references(() => Productos.id, { onDelete: 'cascade' }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.id_promocion, table.id_producto] }),
+]);
 
 export const Usuarios = mysqlTable('Usuarios', {
   id: int('id').autoincrement().primaryKey(),
