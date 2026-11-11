@@ -1,16 +1,27 @@
 ---
-// Bandeja de tickets de soporte que levantan los clientes desde la tienda.
+// Bandeja de tickets de soporte que levantan los clientes desde la tienda. En /crm/tickets están todos;
+// en /scm/tickets, logística ve solo los de envío y devoluciones.
 import CrmLayout from '../../../layouts/CrmLayout.astro';
+import { canAccessRoute } from '../../../lib/auth';
 import {
   ESTADOS_TICKET,
   PRIORIDADES_TICKET,
   TIPOS_TICKET,
+  TIPOS_TICKET_LOGISTICA,
   listarTicketsSoporte,
   ticketActivo,
 } from '../../../lib/soporte';
 
+const { module } = Astro.params;
+if (module !== 'crm' && module !== 'scm') return Astro.redirect('/404');
+const base = `/${module}`;
+const esLogistica = module === 'scm';
+
 const user = Astro.locals.user;
-const todos = await listarTicketsSoporte();
+const todos = await listarTicketsSoporte(esLogistica ? 'logistica' : 'todos');
+const tiposDeLaBandeja = esLogistica ? TIPOS_TICKET_LOGISTICA : TIPOS_TICKET;
+// La ficha del cliente es del CRM: quien no entra ahí (logística) ve el nombre sin enlace
+const verFichaCliente = canAccessRoute(user?.role, '/crm/clientes');
 
 const params = Astro.url.searchParams;
 const q = params.get('q')?.trim() ?? '';
@@ -54,11 +65,15 @@ const fmtFecha = (fecha: Date) =>
   new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(fecha));
 ---
 
-<CrmLayout title="Tickets de soporte" activePath="/crm/tickets">
+<CrmLayout title={esLogistica ? 'Tickets de envío' : 'Tickets de soporte'} activePath={`${base}/tickets`}>
   <div class="page-heading">
     <div>
-      <h1 class="crm-title">Tickets de soporte</h1>
-      <p class="subtitle">Retrasos, cancelaciones, devoluciones y dudas que los clientes levantan desde la tienda.</p>
+      <h1 class="crm-title">{esLogistica ? 'Tickets de envío' : 'Tickets de soporte'}</h1>
+      <p class="subtitle">
+        {esLogistica
+          ? 'Retrasos en la entrega, productos dañados o incorrectos y cambios o devoluciones que levantan los clientes.'
+          : 'Retrasos, cancelaciones, devoluciones y dudas que los clientes levantan desde la tienda.'}
+      </p>
     </div>
   </div>
 
@@ -80,7 +95,7 @@ const fmtFecha = (fecha: Date) =>
       </select>
       <select name="tipo" class="input">
         <option value="">Todos los motivos</option>
-        {TIPOS_TICKET.map((t) => <option value={t} selected={tipoFiltro === t}>{t}</option>)}
+        {tiposDeLaBandeja.map((t) => <option value={t} selected={tipoFiltro === t}>{t}</option>)}
       </select>
       <select name="prioridad" class="input">
         <option value="">Cualquier prioridad</option>
@@ -107,13 +122,15 @@ const fmtFecha = (fecha: Date) =>
         <tbody>
           {tickets.map((t) => (
             <tr class:list={{ waiting: t.esperaSoporte }}>
-              <td><a href={`/crm/tickets/${t.id}`} class="folio">{t.folio}</a></td>
+              <td><a href={`${base}/tickets/${t.id}`} class="folio">{t.folio}</a></td>
               <td>
-                <a href={`/crm/clientes/${t.cliente?.id}`} class="cliente">{t.cliente?.nombre}</a>
+                {verFichaCliente
+                  ? <a href={`/crm/clientes/${t.cliente?.id}`} class="cliente">{t.cliente?.nombre}</a>
+                  : <span class="cliente">{t.cliente?.nombre}</span>}
                 <small>{t.cliente?.correo}</small>
               </td>
               <td>
-                <a href={`/crm/tickets/${t.id}`} class="asunto">{t.asunto}</a>
+                <a href={`${base}/tickets/${t.id}`} class="asunto">{t.asunto}</a>
                 <small>{t.tipo}{t.esperaSoporte && <span class="dot-waiting"> · Espera respuesta</span>}</small>
               </td>
               <td>{t.pedido ?? <span class="muted">—</span>}</td>

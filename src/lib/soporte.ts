@@ -1,6 +1,6 @@
 // Atención al cliente: calificaciones de pedidos y tickets de soporte (migración 0018).
 // El cliente califica sus pedidos entregados y levanta tickets desde "Mis compras" y /cuenta/soporte;
-// el personal del CRM los atiende en /crm/tickets.
+// el personal del CRM los atiende en /crm/tickets y logística atiende los de envío en /scm/tickets.
 import { and, asc, desc, eq, inArray, or } from 'drizzle-orm';
 import { db } from '../db/db';
 import { Clientes, Evaluaciones, Facturas, MensajesTicket, Roles, Tickets, Usuarios, Ventas } from '../db/schema';
@@ -19,6 +19,10 @@ export const TIPOS_TICKET = [
   'Otro',
 ] as const;
 export type TipoTicket = (typeof TIPOS_TICKET)[number];
+
+/** Tickets de envío y devoluciones: además del CRM, los atiende logística desde /scm/tickets. */
+export const TIPOS_TICKET_LOGISTICA: readonly TipoTicket[] = ['Retraso en la entrega', 'Producto dañado o incorrecto', 'Cambio o devolución'];
+export const esTicketLogistica = (tipo: string): boolean => (TIPOS_TICKET_LOGISTICA as readonly string[]).includes(tipo);
 
 export const ESTADOS_TICKET = ['Abierto', 'En proceso', 'Resuelto', 'Cerrado'] as const;
 export type EstadoTicket = (typeof ESTADOS_TICKET)[number];
@@ -328,13 +332,14 @@ export async function listarTicketsCliente(clientId: number, ventaId?: number): 
   }
 }
 
-/** Todos los tickets para el CRM, del más reciente al más antiguo. */
-export async function listarTicketsSoporte(): Promise<TicketResumen[]> {
+/** Tickets para el panel, del más reciente al más antiguo: todos (CRM) o solo los de logística (SCM). */
+export async function listarTicketsSoporte(area: 'todos' | 'logistica' = 'todos'): Promise<TicketResumen[]> {
   const filas = await db
     .select(columnasTicket)
     .from(Tickets)
     .innerJoin(Clientes, eq(Tickets.id_cliente, Clientes.id))
     .leftJoin(Usuarios, eq(Tickets.id_usuario_asignado, Usuarios.id))
+    .where(area === 'logistica' ? inArray(Tickets.tipo, [...TIPOS_TICKET_LOGISTICA]) : undefined)
     .orderBy(desc(Tickets.fecha_actualizacion), desc(Tickets.id));
   return completarResumen(filas, true);
 }
@@ -525,6 +530,7 @@ export async function crearTicket(clientId: number, datos: NuevoTicket): Promise
     prioridad: prioridadInicial(datos.tipo),
     cliente: cliente?.nombre ?? 'Un cliente',
     idVenta: venta?.id ?? null,
+    logistica: esTicketLogistica(datos.tipo),
   });
   return id;
 }
@@ -532,7 +538,7 @@ export async function crearTicket(clientId: number, datos: NuevoTicket): Promise
 /** El cliente responde en su ticket; si estaba resuelto se vuelve a abrir. Uno cerrado ya no acepta mensajes. */
 export async function responderComoCliente(clientId: number, id: number, mensaje: string): Promise<void> {
   const [ticket] = await db
-    .select({ estado: Tickets.estado, asunto: Tickets.asunto, cliente: Clientes.nombre })
+    .select({ estado: Tickets.estado, tipo: Tickets.tipo, asunto: Tickets.asunto, cliente: Clientes.nombre })
     .from(Tickets)
     .innerJoin(Clientes, eq(Tickets.id_cliente, Clientes.id))
     .where(and(eq(Tickets.id, id), eq(Tickets.id_cliente, clientId)))
@@ -552,7 +558,13 @@ export async function responderComoCliente(clientId: number, id: number, mensaje
       .set(reabre ? { estado: 'Abierto', fecha_resolucion: null, fecha_actualizacion: ahora } : { fecha_actualizacion: ahora })
       .where(eq(Tickets.id, id));
   });
-  await notificarRespuestaCliente({ folio: folioTicket(id), asunto: ticket.asunto, cliente: ticket.cliente, reabierto: reabre });
+  await notificarRespuestaCliente({
+    folio: folioTicket(id),
+    asunto: ticket.asunto,
+    cliente: ticket.cliente,
+    reabierto: reabre,
+    logistica: esTicketLogistica(ticket.tipo),
+  });
 }
 
 // ── Acciones del personal ───────────────────────────────────
@@ -663,12 +675,18 @@ export async function aprobarCancelacion(userId: number, id: number): Promise<vo
   await marcarNotificacionesTicketLeidas(folioTicket(id));
 }
 
-/** Personal del CRM al que se puede asignar un ticket. */
-export async function agentesSoporte(): Promise<Array<{ id: number; nombre: string }>> {
+/** Personal al que se puede asignar un ticket: el del CRM y, si es de envío o devolución, también logística. */
+export async function agentesSoporte(tipoTicket?: string): Promise<Array<{ id: number; nombre: string }>> {
+  const incluyeLogistica = tipoTicket !== undefined && esTicketLogistica(tipoTicket);
   const rows = await db
     .select({ id: Usuarios.id, nombre: Usuarios.nombre, rol: Roles.nombre, estado: Usuarios.estado })
     .from(Usuarios)
     .innerJoin(Roles, eq(Usuarios.id_rol, Roles.id))
     .orderBy(asc(Usuarios.nombre));
-  return rows.filter((r) => canAccessCrm(roleFromName(r.rol)) && isUsuarioActivo(r.estado)).map(({ id, nombre }) => ({ id, nombre }));
+  return rows
+    .filter((r) => {
+      const rol = roleFromName(r.rol);
+      return (canAccessCrm(rol) || (incluyeLogistica && rol === 'logistica')) && isUsuarioActivo(r.estado);
+    })
+    .map(({ id, nombre }) => ({ id, nombre }));
 }

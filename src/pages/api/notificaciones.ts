@@ -13,7 +13,7 @@ export const GET: APIRoute = async ({ locals }) => {
       .where(and(eq(Notificaciones.leida, false), filtroNotificacionesPorRol(locals.user?.role)))
       .orderBy(desc(Notificaciones.fecha_creacion))
       .limit(20);
-    const notificaciones = filas.map((n) => ({ ...n, accion: accionNotificacion(n) }));
+    const notificaciones = filas.map((n) => ({ ...n, accion: accionNotificacion(n, locals.user?.role) }));
 
     return new Response(JSON.stringify({ ok: true, notificaciones }), {
       status: 200,

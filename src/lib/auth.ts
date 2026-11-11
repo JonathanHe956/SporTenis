@@ -53,8 +53,9 @@ export const canAccessErp = (role: UserRole | null | undefined): boolean =>
 const startsWithSegment = (pathname: string, prefix: string): boolean =>
   pathname === prefix || pathname.startsWith(`${prefix}/`);
 
-// Páginas del panel reservadas al administrador, aunque el rol entre a la sección
-const adminOnlyRoutes = ['/erp/finanzas', '/erp/implementacion'];
+// Páginas del panel reservadas al administrador, aunque el rol entre a la sección.
+// Campañas: un correo a todos los clientes sale solo con el visto bueno del administrador.
+const adminOnlyRoutes = ['/erp/finanzas', '/erp/implementacion', '/crm/campanas'];
 const adminOnlyPages = /^\/(crm|scm|erp)\/(usuarios|configuracion)$/;
 
 // Páginas del SCM que ventas puede consultar sin entrar al resto de la sección

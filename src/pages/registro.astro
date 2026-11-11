@@ -1,63 +1,30 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { db } from '../db/db';
-import { Usuarios, Clientes } from '../db/schema';
-import { eq } from 'drizzle-orm';
-import { getOrCreateRoleId } from '../lib/auth';
-import { avisarBienvenida } from '../lib/avisosCorreo';
-import { hashPassword } from '../lib/password';
-import { iniciarSesion } from '../lib/session';
+import { iniciarRegistro, validarRegistro, VerificacionError } from '../lib/verificacionCorreo';
 
 if (Astro.locals.user) {
   return Astro.redirect('/');
 }
 
 let errorMsg = '';
+// Si algo falla se regresan los datos al formulario para no volver a escribirlos (las contraseñas no)
+const valores = { nombre: '', apellidos: '', telefono: '', correo: '' };
 if (Astro.request.method === 'POST') {
   try {
     const data = await Astro.request.formData();
-    const nombre = data.get('nombre')?.toString() || '';
-    const apellidos = data.get('apellidos')?.toString() || '';
-    const telefono = data.get('telefono')?.toString() || '';
-    const correo = data.get('correo')?.toString() || '';
-    const password = data.get('password')?.toString() || '';
-
-    const existing = await db.select().from(Usuarios).where(eq(Usuarios.correo, correo));
-    if (existing.length > 0) {
-      errorMsg = 'Este correo electrónico ya está registrado.';
-    } else {
-      const fullName = `${nombre} ${apellidos}`.trim();
-      const now = new Date();
-      
-      await db.insert(Usuarios).values({
-        id_rol: await getOrCreateRoleId('cliente'),
-        nombre: fullName,
-        correo: correo,
-        password_hash: await hashPassword(password),
-        estado: 'activo',
-        fecha_creacion: now
-      });
-      
-      const newUser = await db.select().from(Usuarios).where(eq(Usuarios.correo, correo));
-      const userId = newUser[0].id;
-      
-      await db.insert(Clientes).values({
-        id_usuario: userId,
-        id_etapa_crm: 1, // Prospecto
-        nombre: fullName,
-        correo: correo,
-        telefono: telefono,
-        estado: 'Activo',
-        fecha_registro: now
-      });
-
-      avisarBienvenida({ nombre: fullName, correo });
-      await iniciarSesion(Astro.cookies, userId);
-      return Astro.redirect('/cuenta');
+    for (const campo of Object.keys(valores) as Array<keyof typeof valores>) {
+      valores[campo] = data.get(campo)?.toString() ?? '';
     }
+    // La cuenta se crea hasta que el cliente confirme el código que le llega por correo
+    await iniciarRegistro(Astro.cookies, validarRegistro(data));
+    return Astro.redirect('/verificar-correo');
   } catch (e) {
-    console.error(e);
-    errorMsg = 'Hubo un error al procesar tu registro. Por favor intenta nuevamente.';
+    if (e instanceof VerificacionError) {
+      errorMsg = e.message;
+    } else {
+      console.error(e);
+      errorMsg = 'Hubo un error al procesar tu registro. Por favor intenta nuevamente.';
+    }
   }
 }
 ---
@@ -77,7 +44,7 @@ if (Astro.request.method === 'POST') {
         <div class="card-header">
           <p class="eyebrow"><span></span> Registro</p>
           <h1>Crear <em>Cuenta</em></h1>
-          <p class="subtitle">Completa tus datos para disfrutar de ofertas exclusivas, historial de compras y pagos rápidos.</p>
+          <p class="subtitle">Completa tus datos y te enviaremos un código a tu correo para confirmar que es tuyo.</p>
         </div>
 
         <form id="registerForm" class="auth-form" method="POST" novalidate>
@@ -93,26 +60,26 @@ if (Astro.request.method === 'POST') {
           <div class="form-row">
             <div class="field-group">
               <label for="nombre">Nombre</label>
-              <input type="text" id="nombre" name="nombre" placeholder="Tu nombre" autocomplete="given-name" required minlength="2" />
+              <input type="text" id="nombre" name="nombre" value={valores.nombre} placeholder="Tu nombre" autocomplete="given-name" required minlength="2" />
               <span class="field-error" id="error-nombre"></span>
             </div>
 
             <div class="field-group">
               <label for="apellidos">Apellidos</label>
-              <input type="text" id="apellidos" name="apellidos" placeholder="Tus apellidos" autocomplete="family-name" required minlength="2" />
+              <input type="text" id="apellidos" name="apellidos" value={valores.apellidos} placeholder="Tus apellidos" autocomplete="family-name" required minlength="2" />
               <span class="field-error" id="error-apellidos"></span>
             </div>
           </div>
 
           <div class="field-group">
             <label for="telefono">Número de teléfono</label>
-            <input type="tel" id="telefono" name="telefono" placeholder="5512345678" autocomplete="tel" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')" required maxlength="10" />
+            <input type="tel" id="telefono" name="telefono" value={valores.telefono} placeholder="5512345678" autocomplete="tel" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')" required maxlength="10" />
             <span class="field-error" id="error-telefono"></span>
           </div>
 
           <div class="field-group">
             <label for="correo">Correo electrónico</label>
-            <input type="email" id="correo" name="correo" placeholder="tu@correo.com" autocomplete="email" required />
+            <input type="email" id="correo" name="correo" value={valores.correo} placeholder="tu@correo.com" autocomplete="email" required />
             <span class="field-error" id="error-correo"></span>
           </div>
 
@@ -597,7 +564,7 @@ if (Astro.request.method === 'POST') {
     }
 
     if (submitButton) {
-      setSubmitState(true, 'Creando cuenta...');
+      setSubmitState(true, 'Enviando código...');
     }
   });
 </script>

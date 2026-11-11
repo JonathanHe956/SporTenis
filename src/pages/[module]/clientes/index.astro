@@ -1,8 +1,24 @@
 ---
 import CrmLayout from '../../../layouts/CrmLayout.astro';
 import { db } from '../../../db/db';
-import { Clientes, EtapasCrm, Interacciones } from '../../../db/schema';
-import { eq, like, or } from 'drizzle-orm';
+import {
+  Carritos,
+  CheckoutsMercadoPago,
+  Clientes,
+  CuentasPorCobrar,
+  DetalleCarritos,
+  Direcciones,
+  EtapasCrm,
+  Evaluaciones,
+  Favoritos,
+  Interacciones,
+  Monederos,
+  PreferenciasCliente,
+  TareasSeguimiento,
+  Tickets,
+  Ventas,
+} from '../../../db/schema';
+import { eq, inArray, like, or } from 'drizzle-orm';
 const { module } = Astro.params;
 if (module !== 'crm' && module !== 'erp') return Astro.redirect('/404');
 // La misma página se abre en su sección (/crm) o dentro del ERP (/erp)
@@ -36,14 +52,55 @@ if (Astro.request.method === 'POST') {
       .where(eq(Clientes.id, id));
   } else if (action === 'delete') {
     const id = Number(formData.get('id'));
-    // Eliminar interacciones relacionadas primero para evitar error de Foreign Key
-    await db.delete(Interacciones).where(eq(Interacciones.id_cliente, id));
-    // Eliminar cliente
-    await db.delete(Clientes).where(eq(Clientes.id, id));
+    const resultado = await eliminarOInactivarCliente(id);
+    return Astro.redirect(`${Astro.url.pathname}?ok=${resultado}`);
   }
-  
+
   return Astro.redirect(Astro.url.pathname);
 }
+
+/**
+ * Un cliente con compras, cobros, pagos en Mercado Pago o monedero tiene historial
+ * financiero que el ERP necesita (facturas, pagos, reportes): en ese caso solo se
+ * marca como Inactivo. Si no tiene historial se borra junto con sus datos del CRM.
+ */
+async function eliminarOInactivarCliente(id: number): Promise<'eliminado' | 'inactivado'> {
+  return db.transaction(async (tx) => {
+    const tieneHistorial = async (tabla: typeof Ventas | typeof CuentasPorCobrar | typeof CheckoutsMercadoPago | typeof Monederos) =>
+      (await tx.select({ id: tabla.id }).from(tabla).where(eq(tabla.id_cliente, id)).limit(1)).length > 0;
+
+    if (
+      (await tieneHistorial(Ventas)) ||
+      (await tieneHistorial(CuentasPorCobrar)) ||
+      (await tieneHistorial(CheckoutsMercadoPago)) ||
+      (await tieneHistorial(Monederos))
+    ) {
+      await tx.update(Clientes).set({ estado: 'Inactivo' }).where(eq(Clientes.id, id));
+      return 'inactivado';
+    }
+
+    const carritos = await tx.select({ id: Carritos.id }).from(Carritos).where(eq(Carritos.id_cliente, id));
+    if (carritos.length > 0) {
+      await tx.delete(DetalleCarritos).where(inArray(DetalleCarritos.id_carrito, carritos.map((c) => c.id)));
+    }
+    await tx.delete(Carritos).where(eq(Carritos.id_cliente, id));
+    await tx.delete(Favoritos).where(eq(Favoritos.id_cliente, id));
+    await tx.delete(PreferenciasCliente).where(eq(PreferenciasCliente.id_cliente, id));
+    await tx.delete(Direcciones).where(eq(Direcciones.id_cliente, id));
+    await tx.delete(Interacciones).where(eq(Interacciones.id_cliente, id));
+    await tx.delete(TareasSeguimiento).where(eq(TareasSeguimiento.id_cliente, id));
+    await tx.delete(Evaluaciones).where(eq(Evaluaciones.id_cliente, id));
+    await tx.delete(Tickets).where(eq(Tickets.id_cliente, id)); // sus mensajes se borran en cascada
+    await tx.delete(Clientes).where(eq(Clientes.id, id));
+    return 'eliminado';
+  });
+}
+
+const avisos: Record<string, string> = {
+  eliminado: 'Cliente eliminado.',
+  inactivado: 'El cliente tiene compras o movimientos registrados, así que se marcó como Inactivo para conservar su historial.',
+};
+const aviso = avisos[Astro.url.searchParams.get('ok') ?? ''] ?? '';
 
 // Obtener datos para la vista
 const etapas = await db.select().from(EtapasCrm);
@@ -108,6 +165,8 @@ function getStageBadge(stage: string | null) {
       </button>
     </div>
   </div>
+
+  {aviso && <p class="alert-ok" role="status">{aviso}</p>}
 
   <!-- Stats Row estilo SCM -->
   <div class="stats-row">
@@ -198,7 +257,7 @@ function getStageBadge(stage: string | null) {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
                 
-                <form method="POST" style="display:inline;" data-confirm="¿Estás seguro de eliminar este cliente? Se borrarán sus interacciones asociadas." data-confirm-title="Eliminar cliente" data-confirm-accept="Eliminar">
+                <form method="POST" style="display:inline;" data-confirm="¿Estás seguro de eliminar este cliente? Se borrarán sus datos del CRM. Si tiene compras registradas solo se marcará como Inactivo." data-confirm-title="Eliminar cliente" data-confirm-accept="Eliminar">
                   <input type="hidden" name="action" value="delete" />
                   <input type="hidden" name="id" value={cliente.id} />
                   <button type="submit" class="action-btn text-danger" title="Eliminar cliente">
@@ -335,6 +394,7 @@ function getStageBadge(stage: string | null) {
 
 <style>
   /* Header y Subtítulos */
+  .alert-ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; border-radius: 8px; padding: 12px 16px; font-size: 13px; font-weight: 600; margin: 0 0 20px; }
   .header-actions { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
   .crm-title { margin-bottom: 4px; }
   .subtitle { margin: 0; font-size: 13px; color: var(--color-text-muted); }

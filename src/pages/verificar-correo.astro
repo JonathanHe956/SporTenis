@@ -1,0 +1,391 @@
+---
+// Segundo paso del registro: el cliente escribe el código que le llegó por correo y entonces se crea su cuenta.
+import Layout from '../layouts/Layout.astro';
+import { avisarBienvenida } from '../lib/avisosCorreo';
+import { iniciarSesion } from '../lib/session';
+import {
+  confirmarCodigo,
+  enmascararCorreo,
+  estadoVerificacion,
+  MINUTOS_CODIGO,
+  reenviarCodigo,
+  VerificacionError,
+} from '../lib/verificacionCorreo';
+
+if (Astro.locals.user) {
+  return Astro.redirect('/');
+}
+
+let errorMsg = '';
+let okMsg = '';
+
+if (Astro.request.method === 'POST') {
+  const data = await Astro.request.formData();
+  try {
+    if (data.get('action') === 'reenviar') {
+      await reenviarCodigo(Astro.cookies);
+      okMsg = 'Te enviamos un código nuevo. El anterior ya no sirve.';
+    } else {
+      const usuario = await confirmarCodigo(Astro.cookies, data.get('codigo')?.toString() ?? '');
+      avisarBienvenida({ nombre: usuario.nombre, correo: usuario.correo });
+      await iniciarSesion(Astro.cookies, usuario.idUsuario);
+      return Astro.redirect('/cuenta');
+    }
+  } catch (e) {
+    if (e instanceof VerificacionError) {
+      errorMsg = e.message;
+    } else {
+      console.error(e);
+      errorMsg = 'Hubo un error al verificar tu correo. Por favor intenta nuevamente.';
+    }
+  }
+}
+
+const estado = await estadoVerificacion(Astro.cookies);
+if (!estado && !errorMsg) {
+  // Sin registro en espera (expiró o abrió la página directo): de vuelta al formulario
+  return Astro.redirect('/registro');
+}
+---
+
+<Layout>
+  <div class="auth-page">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="SporTenis, inicio">
+        <span class="brand-mark">S</span>
+        <span>Spor<span>Tenis</span></span>
+      </a>
+      <a href="/" class="back-link">← Volver a la tienda</a>
+    </header>
+
+    <main class="auth-main">
+      <div class="auth-card">
+        <div class="card-header">
+          <p class="eyebrow"><span></span> Registro · Paso 2 de 2</p>
+          <h1>Confirma tu <em>correo</em></h1>
+          {estado ? (
+            <p class="subtitle">
+              Enviamos un código de 6 dígitos a <strong>{enmascararCorreo(estado.correo)}</strong>.
+              Escríbelo aquí para crear tu cuenta. Vence en {MINUTOS_CODIGO} minutos; si no lo ves, revisa tu carpeta de spam.
+            </p>
+          ) : (
+            <p class="subtitle">Tu registro expiró. Vuelve a llenar el formulario para recibir un código nuevo.</p>
+          )}
+        </div>
+
+        {okMsg && <div class="success-banner" role="status">{okMsg}</div>}
+        {errorMsg && <div class="error-banner" role="alert">{errorMsg}</div>}
+
+        {estado ? (
+          <>
+            <form method="POST" class="auth-form" id="verifyForm">
+              <input type="hidden" name="action" value="verificar" />
+              <div class="field-group">
+                <label for="codigo">Código de verificación</label>
+                <input
+                  type="text"
+                  id="codigo"
+                  name="codigo"
+                  class="code-input"
+                  inputmode="numeric"
+                  autocomplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  placeholder="000000"
+                  required
+                  autofocus
+                />
+              </div>
+              <button type="submit" id="verifyBtn" class="primary-button">
+                Verificar y crear cuenta <span>↗</span>
+              </button>
+            </form>
+
+            <form method="POST" class="resend-form">
+              <input type="hidden" name="action" value="reenviar" />
+              <span>¿No te llegó?</span>
+              <button
+                type="submit"
+                id="resendBtn"
+                class="link-button"
+                data-espera={estado.segundosParaReenviar}
+                disabled={estado.segundosParaReenviar > 0}
+              >
+                {estado.segundosParaReenviar > 0 ? `Reenviar en ${estado.segundosParaReenviar} s` : 'Reenviar código'}
+              </button>
+            </form>
+          </>
+        ) : null}
+
+        <p class="login-link">¿Correo equivocado? <a href="/registro">Regístrate de nuevo</a></p>
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<style>
+  :global(*) { box-sizing: border-box; }
+  :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; margin: 0; }
+
+  .auth-page { min-height: 100vh; display: flex; flex-direction: column; }
+
+  .topbar {
+    align-items: center;
+    background: #f7d21c;
+    display: flex;
+    justify-content: space-between;
+    min-height: 76px;
+    padding: 0 clamp(20px, 4vw, 64px);
+  }
+
+  .brand {
+    align-items: center;
+    color: #171717;
+    display: flex;
+    font-family: Arial, sans-serif;
+    font-size: 25px;
+    font-weight: 900;
+    letter-spacing: -1.5px;
+    text-decoration: none;
+  }
+  .brand span span { font-weight: 400; }
+  .brand-mark {
+    align-items: center;
+    border: 3px solid #171717;
+    border-radius: 50%;
+    display: inline-flex;
+    font-size: 15px;
+    height: 30px;
+    justify-content: center;
+    margin-right: 8px;
+    width: 30px;
+  }
+
+  .back-link {
+    color: #171717;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .back-link:hover { text-decoration: underline; }
+
+  .auth-main {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+
+  .auth-card {
+    background: #fffdf3;
+    border: 2px solid #171717;
+    box-shadow: 8px 8px 0 rgba(23, 23, 23, 1);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    width: 100%;
+    max-width: 480px;
+    padding: clamp(30px, 5vw, 45px);
+  }
+
+  .eyebrow {
+    color: #d93e2e;
+    font-family: Arial, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin: 0 0 10px;
+    text-transform: uppercase;
+  }
+  .eyebrow span {
+    background: #f7d21c;
+    display: inline-block;
+    height: 7px;
+    margin-right: 8px;
+    width: 7px;
+  }
+
+  h1 {
+    font-size: 42px;
+    font-weight: 400;
+    letter-spacing: -2px;
+    line-height: 0.95;
+    margin: 0 0 10px;
+  }
+  h1 em {
+    color: #d93e2e;
+    font-style: italic;
+  }
+
+  .subtitle {
+    color: #716e67;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  .subtitle strong { color: #171717; }
+
+  .auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .field-group label {
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  .code-input {
+    background: #f6f4ed;
+    border: 1.5px solid #171717;
+    color: #171717;
+    font-family: 'Courier New', monospace;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: 12px;
+    outline: none;
+    padding: 14px;
+    text-align: center;
+    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+    width: 100%;
+  }
+  .code-input::placeholder { color: #d8d3c3; }
+  .code-input:focus {
+    background: #fff;
+    border-color: #d93e2e;
+    box-shadow: 0 0 0 3px rgba(217, 62, 46, 0.12);
+  }
+
+  .error-banner,
+  .success-banner {
+    border-radius: 10px;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 10px 12px;
+  }
+
+  .error-banner {
+    background: #fee2e2;
+    border: 1.5px solid #ef4444;
+    color: #991b1b;
+  }
+
+  .success-banner {
+    background: #dcfce7;
+    border: 1.5px solid #22c55e;
+    color: #166534;
+  }
+
+  .primary-button {
+    align-items: center;
+    background: #171717;
+    border: 0;
+    color: #fffdf3;
+    cursor: pointer;
+    display: inline-flex;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 800;
+    justify-content: space-between;
+    letter-spacing: 0.5px;
+    padding: 16px 20px;
+    text-transform: uppercase;
+    transition: background-color 0.15s ease, transform 0.15s ease;
+  }
+  .primary-button:hover { background: #d93e2e; }
+  .primary-button:active { transform: scale(0.99); }
+  .primary-button:disabled { opacity: 0.6; cursor: not-allowed; }
+  .primary-button span { font-size: 16px; }
+
+  .resend-form {
+    align-items: center;
+    color: #716e67;
+    display: flex;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    gap: 6px;
+    justify-content: center;
+    margin: 0;
+  }
+
+  .link-button {
+    background: none;
+    border: 0;
+    color: #d93e2e;
+    cursor: pointer;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 0;
+  }
+  .link-button:hover:not(:disabled) { text-decoration: underline; }
+  .link-button:disabled { color: #b0a99a; cursor: default; }
+
+  .login-link {
+    color: #716e67;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    margin: 0;
+    text-align: center;
+  }
+  .login-link a {
+    color: #d93e2e;
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .login-link a:hover { text-decoration: underline; }
+
+  @media (max-width: 680px) {
+    .auth-card { padding: 28px 20px; }
+    .code-input { font-size: 26px; letter-spacing: 8px; }
+  }
+</style>
+
+<script>
+  const codigo = document.getElementById('codigo') as HTMLInputElement | null;
+  const verifyForm = document.getElementById('verifyForm') as HTMLFormElement | null;
+  const verifyBtn = document.getElementById('verifyBtn') as HTMLButtonElement | null;
+
+  // Solo dígitos (también al pegar "123 456"); con los 6 completos se envía solo
+  codigo?.addEventListener('input', () => {
+    codigo.value = codigo.value.replace(/\D/g, '').slice(0, 6);
+    if (codigo.value.length === 6) verifyForm?.requestSubmit();
+  });
+
+  verifyForm?.addEventListener('submit', () => {
+    if (verifyBtn) {
+      verifyBtn.disabled = true;
+      verifyBtn.textContent = 'Verificando...';
+    }
+  });
+
+  // Cuenta regresiva para poder pedir otro código
+  const resendBtn = document.getElementById('resendBtn') as HTMLButtonElement | null;
+  let espera = Number(resendBtn?.dataset.espera ?? 0);
+  if (resendBtn && espera > 0) {
+    const timer = setInterval(() => {
+      espera -= 1;
+      if (espera <= 0) {
+        clearInterval(timer);
+        resendBtn.disabled = false;
+        resendBtn.textContent = 'Reenviar código';
+      } else {
+        resendBtn.textContent = `Reenviar en ${espera} s`;
+      }
+    }, 1000);
+  }
+</script>

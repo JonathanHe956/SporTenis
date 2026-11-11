@@ -1,0 +1,305 @@
+---
+// Campañas de correo: el administrador escribe un correo (con una promoción opcional), se lo manda
+// primero a sí mismo como prueba y luego a todos los clientes con cuenta en la tienda.
+import CrmLayout from '../../layouts/CrmLayout.astro';
+import {
+  CampanaError,
+  LIMITES,
+  audienciaCampana,
+  correoDeUsuario,
+  descuentoPromocion,
+  enviarPrueba,
+  iniciarCampana,
+  limiteCampana,
+  listarCampanas,
+  promocionesAnunciables,
+  validarCampana,
+  type Audiencia,
+  type CampanaResumen,
+} from '../../lib/campanas';
+import { smtpConfigurado } from '../../lib/correo';
+import { esTablaInexistente } from '../../lib/dbErrores';
+
+const user = Astro.locals.user!;
+
+const clientes = (n: number) => `${n} ${n === 1 ? 'cliente' : 'clientes'}`;
+const avisos: Record<string, (n: string) => string> = {
+  enviando: (n) => `La campaña se está enviando a ${clientes(Number(n))}. El avance se actualiza abajo.`,
+};
+const ok = Astro.url.searchParams.get('ok') ?? '';
+let successMsg = avisos[ok]?.(Astro.url.searchParams.get('n') ?? '') ?? '';
+let errorMsg = '';
+
+// Lo que escribió el administrador se conserva si hay un error o después de la prueba
+let valores = { asunto: '', titulo: '', mensaje: '', promocion: '', boton_texto: '', boton_url: '', correo_prueba: '' };
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  valores = Object.fromEntries(Object.keys(valores).map((k) => [k, form.get(k)?.toString() ?? ''])) as typeof valores;
+  try {
+    const datos = validarCampana(form);
+    if (form.get('accion') === 'enviar') {
+      const n = await iniciarCampana(user.id, datos);
+      return Astro.redirect(`/crm/campanas?ok=enviando&n=${n}`, 303);
+    }
+    const correo = await enviarPrueba(valores.correo_prueba, datos);
+    successMsg = smtpConfigurado()
+      ? `Te mandamos la prueba a ${correo}. Revísala antes de enviarla a todos.`
+      : 'No hay SMTP configurado: la prueba se guardó en la carpeta correos-salida/ del proyecto.';
+  } catch (error: unknown) {
+    if (error instanceof CampanaError) {
+      errorMsg = error.message;
+    } else if (esTablaInexistente(error)) {
+      errorMsg = 'Falta aplicar la migración db/migrations/0019_campanas_correo.sql.';
+    } else {
+      console.error('Error en campañas de correo:', error);
+      errorMsg = 'No se pudo enviar. Revisa la configuración del correo y el log del servidor.';
+    }
+  }
+}
+
+let audiencia: Audiencia | null = null;
+let campanas: CampanaResumen[] = [];
+let faltaMigracion = false;
+try {
+  [audiencia, campanas] = await Promise.all([audienciaCampana(), listarCampanas()]);
+} catch (error: unknown) {
+  // Sin la migración no existen la tabla de campañas ni la columna recibe_promociones
+  faltaMigracion = true;
+  if (!esTablaInexistente(error)) console.error('Error al cargar campañas:', error);
+}
+const promociones = await promocionesAnunciables();
+if (!valores.correo_prueba) valores.correo_prueba = (await correoDeUsuario(user.id))?.correo ?? '';
+const destinatarios = audiencia?.destinatarios.length ?? 0;
+const hayEnvioEnCurso = campanas.some((c) => c.estado === 'Enviando');
+const excedeLimite = destinatarios > limiteCampana();
+
+const claseEstado: Record<CampanaResumen['estado'], string> = {
+  Enviando: 'st-enviando',
+  Enviada: 'st-enviada',
+  'Con errores': 'st-errores',
+  Interrumpida: 'st-interrumpida',
+};
+const fmtFechaHora = (fecha: Date) =>
+  new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(fecha));
+const fmtFecha = (fecha: Date) => new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short' }).format(fecha);
+---
+
+<CrmLayout title="Campañas de correo" activePath="/crm/campanas">
+  <div class="head">
+    <div>
+      <h1 class="crm-title">Campañas de correo</h1>
+      <p class="subtitle">Manda promociones y novedades a todos los clientes con cuenta en la tienda.</p>
+    </div>
+  </div>
+
+  {successMsg && <p class="alert success" role="status">{successMsg}</p>}
+  {errorMsg && <p class="alert error" role="alert">{errorMsg}</p>}
+  {!smtpConfigurado() && (
+    <p class="alert warn">No hay SMTP configurado en <code>.env</code>: los correos no salen, se guardan como archivos en <code>correos-salida/</code>.</p>
+  )}
+
+  {faltaMigracion ? (
+    <section class="crm-card">
+      <p>Para usar las campañas aplica primero la migración:</p>
+      <pre>mysql -u root -p sportenis_db &lt; db/migrations/0019_campanas_correo.sql</pre>
+    </section>
+  ) : (
+    <>
+      <div class="stats">
+        <div class="crm-card stat main"><span>Recibirán la campaña</span><strong>{destinatarios}</strong></div>
+        <div class="crm-card stat"><span>Clientes con cuenta</span><strong>{audiencia!.total}</strong></div>
+        <div class="crm-card stat"><span>Se dieron de baja</span><strong>{audiencia!.deBaja}</strong></div>
+        <div class="crm-card stat" title="Correos de prueba (@…test, @…local, example.com) que no pueden recibir correo">
+          <span>Correos de prueba</span><strong>{audiencia!.noEntregables}</strong>
+        </div>
+        {audiencia!.inactivos > 0 && <div class="crm-card stat"><span>Inactivos</span><strong>{audiencia!.inactivos}</strong></div>}
+      </div>
+
+      <div class="layout">
+        <section class="crm-card">
+          <h2>Nueva campaña</h2>
+          <form method="POST" class="campaign" id="campaignForm">
+            <label>Asunto
+              <input class="input" name="asunto" maxlength={LIMITES.asunto} required value={valores.asunto} placeholder="Ej. 20% en raquetas este fin de semana" />
+            </label>
+            <label>Título dentro del correo
+              <input class="input" name="titulo" maxlength={LIMITES.titulo} required value={valores.titulo} placeholder="Ej. ¡Llegó el Buen Fin a SporTenis!" />
+            </label>
+            <label>Mensaje
+              <textarea class="input" name="mensaje" rows="8" maxlength={LIMITES.mensaje} required placeholder="Escribe el mensaje. Deja una línea en blanco para separar párrafos.">{valores.mensaje}</textarea>
+              <small>Cada correo empieza con "Hola, &lt;nombre del cliente&gt;:" y termina con el enlace para darse de baja.</small>
+            </label>
+            <label>Promoción destacada (opcional)
+              <select class="input" name="promocion">
+                <option value="">Sin promoción</option>
+                {promociones.map((p) => (
+                  <option value={p.id} selected={valores.promocion === String(p.id)}>
+                    {p.nombre} · {descuentoPromocion(p)} · {fmtFecha(p.fecha_inicio)} al {fmtFecha(p.fecha_fin)}{p.vigencia === 'Programada' ? ' (programada)' : ''}
+                  </option>
+                ))}
+              </select>
+              {promociones.length === 0 && <small>No hay promociones vigentes. Créalas en <a href="/scm/precios">Promociones e IVA</a>.</small>}
+            </label>
+            <div class="row">
+              <label>Texto del botón (opcional)
+                <input class="input" name="boton_texto" maxlength={LIMITES.botonTexto} value={valores.boton_texto} placeholder="Ir a la tienda" />
+              </label>
+              <label>Enlace del botón (opcional)
+                <input class="input" name="boton_url" type="url" maxlength={LIMITES.botonUrl} value={valores.boton_url} placeholder="Página principal de la tienda" />
+              </label>
+            </div>
+
+            <div class="actions">
+              <label class="test-to">Enviar prueba a
+                <input class="input" name="correo_prueba" type="email" maxlength="255" value={valores.correo_prueba} />
+              </label>
+              <button type="submit" name="accion" value="prueba" class="btn-secondary">Enviar prueba</button>
+              <button
+                type="submit"
+                name="accion"
+                value="enviar"
+                class="btn-primary"
+                disabled={destinatarios === 0 || hayEnvioEnCurso || excedeLimite}
+                data-confirm-send={`Se enviará este correo a ${clientes(destinatarios)}. Ya no se puede detener ni deshacer.`}
+              >
+                Enviar a {clientes(destinatarios)}
+              </button>
+            </div>
+            {hayEnvioEnCurso && <p class="hint">Hay una campaña enviándose; espera a que termine para mandar otra.</p>}
+            {excedeLimite && <p class="hint">Son más de {limiteCampana()} destinatarios, el límite por envío (Gmail gratuito manda unos 500 al día).</p>}
+          </form>
+        </section>
+
+        <aside class="crm-card tips">
+          <h2>Antes de enviar</h2>
+          <ol>
+            <li>Escribe el correo, pon tu dirección en <strong>Enviar prueba a</strong> y pulsa <strong>Enviar prueba</strong>.</li>
+            <li>Revísalo en tu bandeja (también en el celular).</li>
+            <li>Pulsa <strong>Enviar a todos</strong>. Los correos salen uno por uno en segundo plano; puedes salir de esta página.</li>
+          </ol>
+          <p>Solo se manda a clientes con cuenta en la tienda que no se han dado de baja; las cuentas del personal no la reciben. Se saltan los correos de los datos de prueba, que no existen.</p>
+        </aside>
+      </div>
+
+      <section class="crm-card history">
+        <h2>Campañas enviadas</h2>
+        {campanas.length === 0 ? (
+          <p class="empty">Todavía no se ha enviado ninguna campaña.</p>
+        ) : (
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Fecha</th><th>Asunto</th><th>Promoción</th><th>Envió</th><th>Avance</th><th>Estado</th></tr>
+              </thead>
+              <tbody>
+                {campanas.map((c) => (
+                  <tr>
+                    <td class="nowrap">{fmtFechaHora(c.fecha)}</td>
+                    <td>{c.asunto}</td>
+                    <td>{c.promocion ?? '—'}</td>
+                    <td>{c.autor ?? '—'}</td>
+                    <td class="nowrap">
+                      {c.enviados} de {c.destinatarios}
+                      {c.fallidos > 0 && <span class="failed"> · {c.fallidos} fallidos</span>}
+                    </td>
+                    <td><span class={`tag ${claseEstado[c.estado]}`}>{c.estado}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </>
+  )}
+
+  <script is:inline data-en-curso={hayEnvioEnCurso ? 'true' : 'false'}>
+    (() => {
+      const script = document.currentScript;
+      // Mientras haya una campaña enviándose, la página se recarga para mostrar el avance
+      if (script?.dataset.enCurso === 'true') setTimeout(() => location.replace('/crm/campanas'), 5000);
+
+      // El envío a todos pide confirmación con el diálogo del panel; la prueba no
+      const form = document.getElementById('campaignForm');
+      form?.addEventListener('submit', (event) => {
+        const boton = event.submitter;
+        if (!boton?.dataset.confirmSend || form.dataset.confirmed === 'true') return;
+        form.dataset.confirm = boton.dataset.confirmSend;
+        form.dataset.confirmTitle = 'Enviar campaña';
+        form.dataset.confirmAccept = 'Enviar a todos';
+        // Al confirmar, el panel vuelve a enviar el formulario; se agrega la acción porque requestSubmit()
+        // sin botón no la incluye
+        let accion = form.querySelector('input[name="accion"]');
+        if (!accion) {
+          accion = document.createElement('input');
+          accion.type = 'hidden';
+          accion.name = 'accion';
+          form.append(accion);
+        }
+        accion.value = 'enviar';
+      }, true);
+      // Si se cancela el diálogo, la siguiente prueba no debe heredar la acción ni la confirmación
+      form?.querySelector('button[value="prueba"]')?.addEventListener('click', () => {
+        form.querySelector('input[name="accion"]')?.remove();
+        delete form.dataset.confirm;
+      });
+    })();
+  </script>
+
+  <style>
+    .head { margin-bottom: 18px; }
+    .crm-title { margin: 0; }
+    .subtitle { color: var(--color-text-muted); font-size: 14px; margin: 6px 0 0; }
+
+    .alert { border-radius: 6px; font-size: 13px; margin: 0 0 16px; padding: 12px 14px; }
+    .success { background: #dcfce7; color: #166534; }
+    .error { background: #fee2e2; color: #991b1b; }
+    .warn { background: #fef3c7; color: #92400e; }
+    pre { background: var(--color-bg); border-radius: 6px; font-size: 13px; overflow-x: auto; padding: 12px; }
+
+    .stats { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 20px; }
+    .stat { display: grid; gap: 4px; }
+    .stat span { color: var(--color-text-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .stat strong { font-size: 28px; font-weight: 900; }
+    .stat.main { border-left: 4px solid var(--color-primary); }
+
+    .layout { align-items: start; display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr) 300px; margin-bottom: 20px; }
+    h2 { font-size: 13px; font-weight: 800; letter-spacing: .04em; margin: 0 0 14px; text-transform: uppercase; }
+
+    .campaign { display: grid; gap: 14px; }
+    .campaign label { display: grid; font-size: 12px; font-weight: 700; gap: 5px; }
+    .campaign small { color: var(--color-text-muted); font-size: 12px; font-weight: 400; }
+    .campaign small a { color: var(--color-text); }
+    .input { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text); font: inherit; font-size: 14px; font-weight: 400; padding: 9px 10px; width: 100%; }
+    .input:focus { border-color: var(--color-text); outline: none; }
+    textarea.input { resize: vertical; }
+    .row { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
+    .actions { align-items: flex-end; display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+    .campaign .test-to { flex: 1 1 220px; }
+    .actions button:disabled { cursor: not-allowed; opacity: .45; }
+    .hint { color: var(--color-text-muted); font-size: 12px; margin: 0; text-align: right; }
+    .btn-secondary { background: transparent; border: 1px solid var(--color-text); border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 700; padding: 10px 14px; text-transform: uppercase; }
+    .btn-secondary:hover { background: var(--color-bg); }
+
+    .tips ol { display: grid; font-size: 13px; gap: 8px; line-height: 1.5; margin: 0 0 12px; padding-left: 18px; }
+    .tips p { color: var(--color-text-muted); font-size: 12px; line-height: 1.5; margin: 0; }
+
+    .table-wrap { overflow-x: auto; }
+    table { border-collapse: collapse; font-size: 13px; width: 100%; }
+    th { border-bottom: 2px solid var(--color-border); color: var(--color-text-muted); font-size: 11px; padding: 8px; text-align: left; text-transform: uppercase; }
+    td { border-bottom: 1px solid var(--color-border); padding: 10px 8px; vertical-align: top; }
+    .nowrap { white-space: nowrap; }
+    .failed { color: var(--color-danger); font-weight: 700; }
+    .empty { color: var(--color-text-muted); font-size: 13px; margin: 0; }
+
+    .tag { border-radius: 4px; display: inline-block; font-size: 11px; font-weight: 700; padding: 4px 9px; white-space: nowrap; }
+    .st-enviando { background: #dbeafe; color: #1e40af; }
+    .st-enviada { background: #dcfce7; color: #166534; }
+    .st-errores { background: #fee2e2; color: #991b1b; }
+    .st-interrumpida { background: #e5e5e5; color: #525252; }
+
+    @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
+    @media (max-width: 600px) { .row { grid-template-columns: 1fr; } }
+  </style>
+</CrmLayout>

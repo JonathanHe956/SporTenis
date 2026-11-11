@@ -3,12 +3,12 @@
 //   - Pedidos: recibido (orden en Procesando), confirmado, entregado (invita a calificar) y cancelado
 //     (dice a dónde regresa el dinero).
 //   - Tickets: creado (al cliente y a CORREO_SOPORTE), respuesta del equipo, resuelto o cerrado.
-//   - Cuenta: bienvenida al registrarse.
+//   - Cuenta: bienvenida al registrarse y confirmación al eliminarla (con el saldo que se le devuelve).
 import { eq } from 'drizzle-orm';
 import { db } from '../db/db';
 import { Clientes, Tickets, Ventas } from '../db/schema';
 import { getDetalleCompra, type CompraDetalle } from './compras';
-import { enviarEnSegundoPlano, escaparHtml, parrafoSeguro, plantillaCorreo, tablaResumen, urlTienda, type Correo } from './correo';
+import { correoContacto, enviarEnSegundoPlano, escaparHtml, parrafoSeguro, plantillaCorreo, tablaResumen, urlTienda, type Correo } from './correo';
 import type { Reembolso } from './reembolsos';
 
 export type EventoPedido = 'recibido' | 'confirmado' | 'entregado' | 'cancelado';
@@ -217,4 +217,38 @@ export function avisarBienvenida(cliente: { nombre: string; correo: string }): v
       texto: `${saludo}\n\nTu cuenta de SporTenis quedó lista. Te escribiremos a este correo para confirmar tus compras y avisarte cómo van tus pedidos.\n\n${url}`,
     };
   });
+}
+
+/**
+ * Confirmación de que el cliente eliminó su cuenta (exportado para las pruebas). Va al correo que tenía
+ * antes de anonimizarla; si tenía saldo en el monedero, dice cuánto se le devolverá. Ya no tiene cuenta,
+ * así que este correo es su comprobante.
+ */
+export function correoCuentaEliminada(cliente: { nombre: string; correo: string }, saldoDevuelto: number): Correo {
+  const saludo = `Hola, ${primerNombre(cliente.nombre)}:`;
+  const contacto = correoContacto();
+  const devolucion = saldoDevuelto > 0
+    ? `Tenías <strong>${pesos(saldoDevuelto)}</strong> en tu monedero. Te lo vamos a devolver: nuestro equipo te escribirá a este correo en los próximos días hábiles para hacerte la devolución.`
+    : '';
+  const devolucionTexto = saldoDevuelto > 0
+    ? `Tenías ${pesos(saldoDevuelto)} en tu monedero. Te lo vamos a devolver: nuestro equipo te escribirá a este correo en los próximos días hábiles para hacerte la devolución.\n\n`
+    : '';
+  return {
+    para: cliente.correo,
+    asunto: saldoDevuelto > 0 ? `Eliminamos tu cuenta · te devolveremos ${pesos(saldoDevuelto)}` : 'Eliminamos tu cuenta de SporTenis',
+    html: plantillaCorreo({
+      titulo: 'Tu cuenta fue eliminada',
+      saludo,
+      contenidoHtml: `<p>Eliminamos tu cuenta de SporTenis como lo pediste. Borramos tus datos personales, direcciones, favoritos y tickets de soporte, y ya no podrás iniciar sesión.</p>
+        ${devolucion ? `<p>${devolucion}</p>` : ''}
+        <p>Conservamos tus pedidos y facturas para la contabilidad de la tienda, pero sin ningún dato que te identifique.</p>
+        <p>Si no fuiste tú quien la eliminó, escríbenos${contacto ? ` a ${escaparHtml(contacto)}` : ''} lo antes posible. Si algún día quieres volver, puedes registrarte de nuevo con este correo.</p>`,
+      sinCuenta: true,
+    }),
+    texto: `${saludo}\n\nEliminamos tu cuenta de SporTenis como lo pediste. Borramos tus datos personales y ya no podrás iniciar sesión.\n\n${devolucionTexto}Conservamos tus pedidos y facturas para la contabilidad de la tienda, sin datos que te identifiquen.\n\nSi no fuiste tú, escríbenos${contacto ? ` a ${contacto}` : ''} lo antes posible.`,
+  };
+}
+
+export function avisarCuentaEliminada(cliente: { nombre: string; correo: string }, saldoDevuelto: number): void {
+  enviarEnSegundoPlano(`cuenta eliminada ${cliente.correo}`, async () => correoCuentaEliminada(cliente, saldoDevuelto));
 }

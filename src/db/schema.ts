@@ -106,6 +106,9 @@ export const Clientes = mysqlTable('Clientes', {
   telefono: varchar('telefono', { length: 50 }),
   estado: varchar('estado', { length: 100 }).notNull(),
   fecha_registro: datetime('fecha_registro').notNull(),
+  // Campañas de correo: el cliente puede darse de baja con el enlace de cada campaña
+  recibe_promociones: boolean('recibe_promociones').default(true).notNull(),
+  token_baja: varchar('token_baja', { length: 43 }).unique(),
 });
 
 export const Monederos = mysqlTable('Monederos', {
@@ -117,8 +120,9 @@ export const Monederos = mysqlTable('Monederos', {
 export const MovimientosMonedero = mysqlTable('MovimientosMonedero', {
   id: int('id').autoincrement().primaryKey(),
   id_monedero: int('id_monedero').references(() => Monederos.id, { onDelete: 'cascade' }).notNull(),
-  // Descuento = pago de una compra; Reembolso = devolución al cancelar esa compra
-  tipo: mysqlEnum('tipo', ['Recarga', 'Descuento', 'Reembolso']).notNull(),
+  // Descuento = pago de una compra; Reembolso = devolución al cancelar esa compra;
+  // Retiro = saldo que se le devuelve al cliente al eliminar su cuenta
+  tipo: mysqlEnum('tipo', ['Recarga', 'Descuento', 'Reembolso', 'Retiro']).notNull(),
   monto: decimal('monto', { precision: 10, scale: 2 }).notNull(),
   fecha: datetime('fecha').default(sql`CURRENT_TIMESTAMP`).notNull(),
   // Compra pagada (o reembolsada) con este movimiento; null en las recargas
@@ -491,4 +495,37 @@ export const MensajesTicket = mysqlTable('MensajesTicket', {
   id_usuario: int('id_usuario').references(() => Usuarios.id, { onDelete: 'set null' }),
   mensaje: text('mensaje').notNull(),
   fecha: datetime('fecha').notNull(),
+});
+
+export const CampanasCorreo = mysqlTable('CampanasCorreo', {
+  id: int('id').autoincrement().primaryKey(),
+  asunto: varchar('asunto', { length: 150 }).notNull(),
+  titulo: varchar('titulo', { length: 150 }).notNull(),
+  mensaje: text('mensaje').notNull(),
+  id_promocion: int('id_promocion').references(() => Promociones.id, { onDelete: 'set null' }),
+  boton_texto: varchar('boton_texto', { length: 60 }),
+  boton_url: varchar('boton_url', { length: 500 }),
+  estado: mysqlEnum('estado', ['Enviando', 'Enviada', 'Con errores', 'Interrumpida']).default('Enviando').notNull(),
+  destinatarios: int('destinatarios').default(0).notNull(),
+  enviados: int('enviados').default(0).notNull(),
+  fallidos: int('fallidos').default(0).notNull(),
+  id_usuario: int('id_usuario').references(() => Usuarios.id, { onDelete: 'set null' }),
+  fecha_creacion: datetime('fecha_creacion').notNull(),
+  fecha_actualizacion: datetime('fecha_actualizacion').notNull(),
+});
+
+// Registros esperando que el cliente confirme su correo con el código que le llegó (migración 0020)
+export const VerificacionesCorreo = mysqlTable('VerificacionesCorreo', {
+  id: int('id').autoincrement().primaryKey(),
+  token_hash: varchar('token_hash', { length: 64 }).unique('uq_verificaciones_token').notNull(),
+  correo: varchar('correo', { length: 255 }).unique('uq_verificaciones_correo').notNull(),
+  nombre: varchar('nombre', { length: 255 }).notNull(),
+  telefono: varchar('telefono', { length: 50 }),
+  password_hash: varchar('password_hash', { length: 255 }).notNull(),
+  codigo_hash: varchar('codigo_hash', { length: 64 }).notNull(),
+  intentos: int('intentos').default(0).notNull(),
+  envios: int('envios').default(1).notNull(),
+  fecha_envio: datetime('fecha_envio').notNull(),
+  fecha_expiracion: datetime('fecha_expiracion').notNull(),
+  fecha_creacion: datetime('fecha_creacion').notNull(),
 });

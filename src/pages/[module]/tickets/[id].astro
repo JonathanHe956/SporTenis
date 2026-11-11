@@ -1,7 +1,9 @@
 ---
 // Atención de un ticket: el agente responde al cliente, cambia estado, prioridad o quién lo atiende
 // y, si es una solicitud de cancelación, la aprueba (cancela el pedido con la lógica de /erp/ordenes).
+// Desde /scm/tickets logística solo abre los de envío y devoluciones; las cancelaciones quedan en el CRM.
 import CrmLayout from '../../../layouts/CrmLayout.astro';
+import { canAccessRoute } from '../../../lib/auth';
 import { MonederoError } from '../../../lib/monedero';
 import { OrdenError, esCancelable } from '../../../lib/ordenes';
 import {
@@ -14,14 +16,27 @@ import {
   aprobarCancelacion,
   esEstadoTicket,
   esPrioridadTicket,
+  esTicketLogistica,
   obtenerTicket,
   responderComoSoporte,
   ticketActivo,
   validarMensaje,
 } from '../../../lib/soporte';
 
+const { module } = Astro.params;
+if (module !== 'crm' && module !== 'scm') return Astro.redirect('/404');
+const base = `/${module}`;
+const esLogistica = module === 'scm';
+
 const user = Astro.locals.user!;
 const id = Number(Astro.params.id);
+
+// Antes de cualquier acción: el ticket existe y, en la bandeja de logística, es de envío o devolución
+const encontrado = await obtenerTicket(id);
+if (!encontrado || (esLogistica && !esTicketLogistica(encontrado.tipo))) {
+  return Astro.redirect(`${base}/tickets`);
+}
+const tipoTicket = encontrado.tipo;
 
 const avisos: Record<string, string> = {
   respuesta: 'Respuesta enviada al cliente.',
@@ -43,8 +58,8 @@ async function atender(form: FormData): Promise<keyof typeof avisos> {
     const estado = form.get('estado')?.toString();
     const prioridad = form.get('prioridad')?.toString();
     const asignado = form.get('asignado')?.toString() ?? '';
-    if (asignado !== '' && !(await agentesSoporte()).some((a) => a.id === Number(asignado))) {
-      throw new SoporteError('Elige un agente del CRM.');
+    if (asignado !== '' && !(await agentesSoporte(tipoTicket)).some((a) => a.id === Number(asignado))) {
+      throw new SoporteError(esTicketLogistica(tipoTicket) ? 'Elige a alguien del CRM o de logística.' : 'Elige un agente del CRM.');
     }
     await actualizarTicket(user.id, id, {
       estado: esEstadoTicket(estado) ? estado : undefined,
@@ -54,6 +69,8 @@ async function atender(form: FormData): Promise<keyof typeof avisos> {
     return 'actualizado';
   }
   if (accion === 'aprobar_cancelacion') {
+    // Cancelar reembolsa el cobro: solo desde el CRM
+    if (esLogistica) throw new SoporteError('Las cancelaciones se aprueban desde el CRM.');
     await aprobarCancelacion(user.id, id);
     return 'cancelado';
   }
@@ -63,7 +80,7 @@ async function atender(form: FormData): Promise<keyof typeof avisos> {
 if (Astro.request.method === 'POST') {
   try {
     const aviso = await atender(await Astro.request.formData());
-    return Astro.redirect(`/crm/tickets/${id}?ok=${aviso}`, 303);
+    return Astro.redirect(`${base}/tickets/${id}?ok=${aviso}`, 303);
   } catch (error: unknown) {
     if (error instanceof SoporteError || error instanceof OrdenError || error instanceof MonederoError) {
       errorMsg = error.message;
@@ -74,20 +91,24 @@ if (Astro.request.method === 'POST') {
   }
 }
 
-const ticket = await obtenerTicket(id);
-if (!ticket) return Astro.redirect('/crm/tickets');
-const agentes = await agentesSoporte();
+// Si hubo una acción se vuelve a leer para mostrar el estado más reciente
+const ticket = Astro.request.method === 'POST' ? await obtenerTicket(id) : encontrado;
+if (!ticket) return Astro.redirect(`${base}/tickets`);
+const agentes = await agentesSoporte(ticket.tipo);
 
 const activo = ticketActivo(ticket.estado);
-const puedeAprobarCancelacion = ticket.tipo === 'Cancelación' && activo && ticket.idVenta !== null && esCancelable(ticket.estadoPedido ?? '');
+const puedeAprobarCancelacion = !esLogistica && ticket.tipo === 'Cancelación' && activo && ticket.idVenta !== null && esCancelable(ticket.estadoPedido ?? '');
+// Enlaces a otras secciones solo si el rol puede abrirlas (logística no entra a la ficha del CRM)
+const verFichaCliente = canAccessRoute(user.role, '/crm/clientes');
+const verOrdenes = canAccessRoute(user.role, '/erp/ordenes');
 const claseEstado: Record<string, string> = { Abierto: 'st-abierto', 'En proceso': 'st-proceso', Resuelto: 'st-resuelto', Cerrado: 'st-cerrado' };
 const clasePrioridad: Record<string, string> = { Alta: 'pr-alta', Media: 'pr-media', Baja: 'pr-baja' };
 const fmtFechaHora = (fecha: Date) =>
   new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(fecha));
 ---
 
-<CrmLayout title={`${ticket.folio} · Tickets`} activePath="/crm/tickets">
-  <a href="/crm/tickets" class="back">← Tickets de soporte</a>
+<CrmLayout title={`${ticket.folio} · Tickets`} activePath={`${base}/tickets`}>
+  <a href={`${base}/tickets`} class="back">← {esLogistica ? 'Tickets de envío' : 'Tickets de soporte'}</a>
 
   <div class="head">
     <div>
@@ -153,10 +174,10 @@ const fmtFechaHora = (fecha: Date) =>
       <section class="crm-card">
         <h2>Cliente</h2>
         <dl class="info">
-          <div><dt>Nombre</dt><dd><a href={`/crm/clientes/${ticket.cliente.id}`}>{ticket.cliente.nombre}</a></dd></div>
+          <div><dt>Nombre</dt><dd>{verFichaCliente ? <a href={`/crm/clientes/${ticket.cliente.id}`}>{ticket.cliente.nombre}</a> : ticket.cliente.nombre}</dd></div>
           <div><dt>Correo</dt><dd>{ticket.cliente.correo}</dd></div>
           {ticket.idVenta && (
-            <div><dt>Pedido</dt><dd><a href={`/erp/ordenes?q=${ticket.idVenta}`}>{ticket.pedido}</a> · {ticket.estadoPedido}</dd></div>
+            <div><dt>Pedido</dt><dd>{verOrdenes ? <a href={`/erp/ordenes?q=${ticket.idVenta}`}>{ticket.pedido}</a> : ticket.pedido} · {ticket.estadoPedido}</dd></div>
           )}
           <div><dt>Levantado</dt><dd>{fmtFechaHora(ticket.fechaCreacion)}</dd></div>
           {ticket.fechaResolucion && <div><dt>Resuelto</dt><dd>{fmtFechaHora(ticket.fechaResolucion)}</dd></div>}

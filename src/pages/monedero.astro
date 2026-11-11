@@ -200,12 +200,13 @@ if (!Astro.locals.user) {
   const formatMoney = (amount: number): string =>
     new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amount);
 
-  type Movimiento = { tipo: 'Recarga' | 'Descuento' | 'Reembolso'; monto: string | number; fecha: string; id_venta?: number | null };
+  type Movimiento = { tipo: 'Recarga' | 'Descuento' | 'Reembolso' | 'Retiro'; monto: string | number; fecha: string; id_venta?: number | null };
 
   // Un descuento es el pago de una compra; un reembolso, su devolución al cancelarla
   const etiquetaMovimiento = (m: Movimiento): string => {
     if (m.tipo === 'Descuento') return m.id_venta ? `Compra #${m.id_venta}` : 'Compra';
     if (m.tipo === 'Reembolso') return m.id_venta ? `Reembolso compra #${m.id_venta}` : 'Reembolso';
+    if (m.tipo === 'Retiro') return 'Devolución de saldo';
     return 'Recarga';
   };
 
@@ -240,7 +241,7 @@ if (!Astro.locals.user) {
       typeLabel.textContent = etiquetaMovimiento(movimiento);
       typeCell.append(typeLabel);
       // Las compras restan saldo; recargas y reembolsos lo suman
-      amountCell.textContent = `${movimiento.tipo === 'Descuento' ? '−' : '+'}${formatMoney(Number(movimiento.monto))}`;
+      amountCell.textContent = `${movimiento.tipo === 'Descuento' || movimiento.tipo === 'Retiro' ? '−' : '+'}${formatMoney(Number(movimiento.monto))}`;
       row.append(dateCell, typeCell, amountCell);
       movementHistory.append(row);
     });

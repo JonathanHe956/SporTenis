@@ -18,6 +18,8 @@ export interface Correo {
   asunto: string;
   html: string;
   texto: string;
+  /** Encabezados extra, p. ej. List-Unsubscribe en las campañas. */
+  encabezados?: Record<string, string>;
 }
 
 export const smtpConfigurado = (): boolean => Boolean(process.env.SMTP_HOST?.trim());
@@ -41,9 +43,13 @@ const obtenerTransporte = (): Transporter => {
   return transporte;
 };
 
+/** Buzón al que puede escribir alguien que ya no tiene cuenta: el de soporte o, si no hay, el remitente. */
+export const correoContacto = (): string | null =>
+  process.env.CORREO_SOPORTE?.trim() || process.env.SMTP_USER?.trim() || null;
+
 const remitente = (): string => process.env.CORREO_REMITENTE?.trim() || `SporTenis <${process.env.SMTP_USER ?? 'no-responder@sportenis.local'}>`;
 
-const CORREO_VALIDO = /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$/;
+export const CORREO_VALIDO = /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$/;
 
 /** Envía el correo (o lo guarda en correos-salida/ si no hay SMTP). Lanza si el proveedor lo rechaza. */
 export async function enviarCorreo(correo: Correo): Promise<void> {
@@ -65,6 +71,7 @@ export async function enviarCorreo(correo: Correo): Promise<void> {
     subject: correo.asunto,
     html: correo.html,
     text: correo.texto,
+    headers: correo.encabezados,
   });
 }
 
@@ -99,8 +106,18 @@ export function plantillaCorreo(opciones: {
   contenidoHtml: string;
   boton?: { texto: string; url: string };
   pie?: string;
+  /** Enlace para dejar de recibir promociones (solo en las campañas). */
+  bajaUrl?: string;
+  /** El destinatario ya no tiene cuenta (la eliminó): la ayuda es por correo, no desde Soporte en su cuenta. */
+  sinCuenta?: boolean;
 }): string {
-  const { titulo, saludo, contenidoHtml, boton, pie } = opciones;
+  const { titulo, saludo, contenidoHtml, boton, pie, bajaUrl, sinCuenta } = opciones;
+  const contacto = correoContacto();
+  const ayuda = !sinCuenta
+    ? `Este correo se envió automáticamente; por favor no lo respondas. Si necesitas ayuda, escríbenos desde <a href="${escaparHtml(urlTienda('/cuenta/soporte'))}" style="color:#171717;">Soporte</a> en tu cuenta.`
+    : contacto
+      ? `Si tienes alguna duda, escríbenos a <a href="mailto:${escaparHtml(contacto)}" style="color:#171717;">${escaparHtml(contacto)}</a>.`
+      : 'Este correo se envió automáticamente.';
   return `<!doctype html>
 <html lang="es">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escaparHtml(titulo)}</title></head>
@@ -118,7 +135,8 @@ export function plantillaCorreo(opciones: {
           ${boton ? `<p style="margin:24px 0 8px;"><a href="${escaparHtml(boton.url)}" style="display:inline-block;background:#171717;color:#fffdf3;text-decoration:none;font-weight:700;font-size:13px;letter-spacing:.5px;text-transform:uppercase;padding:14px 22px;">${escaparHtml(boton.texto)}</a></p>` : ''}
         </td></tr>
         <tr><td style="padding:18px 24px 24px;color:#716e67;font-size:12px;line-height:1.5;border-top:1px dashed #d8d3c3;">
-          ${pie ? `${escaparHtml(pie)}<br>` : ''}Este correo se envió automáticamente; por favor no lo respondas. Si necesitas ayuda, escríbenos desde <a href="${escaparHtml(urlTienda('/cuenta/soporte'))}" style="color:#171717;">Soporte</a> en tu cuenta.
+          ${pie ? `${escaparHtml(pie)}<br>` : ''}${ayuda}
+          ${bajaUrl ? `<br>Recibes este correo porque tienes una cuenta en SporTenis. ¿Ya no quieres promociones? <a href="${escaparHtml(bajaUrl)}" style="color:#171717;">Darme de baja</a>.` : ''}
         </td></tr>
       </table>
     </td></tr>

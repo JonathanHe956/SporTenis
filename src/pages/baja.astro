@@ -1,0 +1,102 @@
+---
+// Enlace "Darme de baja" de las campañas de correo (/baja?t=<token>). No pide iniciar sesión: el token
+// identifica al cliente. La baja se confirma con un botón (no al abrir el enlace) porque algunos
+// filtros de correo visitan los enlaces automáticamente.
+import Layout from '../layouts/Layout.astro';
+import { cambiarSuscripcion, clientePorToken, ocultarCorreo } from '../lib/campanas';
+
+const token = Astro.url.searchParams.get('t') ?? '';
+let accion: string | null = null;
+
+if (Astro.request.method === 'POST' && token) {
+  accion = (await Astro.request.formData()).get('accion')?.toString() ?? null;
+  if (accion === 'baja' || accion === 'alta') await cambiarSuscripcion(token, accion === 'alta');
+}
+
+let cliente: Awaited<ReturnType<typeof clientePorToken>> = null;
+try {
+  cliente = token ? await clientePorToken(token) : null;
+} catch (error: unknown) {
+  console.error('Error al buscar el enlace de baja:', error);
+}
+---
+
+<Layout title="Preferencias de correo | SporTenis">
+  <div class="page">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="SporTenis, volver al inicio">
+        <span class="brand-mark">S</span>
+        <span>Spor<span>Tenis</span></span>
+      </a>
+      <a href="/" class="back-link">← Volver a la tienda</a>
+    </header>
+
+    <main class="main">
+      <div class="card">
+        <p class="eyebrow"><span></span> Preferencias de correo</p>
+        {!token ? (
+          <>
+            <h1>Enlace de <em>prueba</em></h1>
+            <p class="text">Este es el enlace de un correo de prueba. En los correos reales, aquí el cliente se da de baja de las promociones.</p>
+          </>
+        ) : !cliente ? (
+          <>
+            <h1>Enlace <em>no válido</em></h1>
+            <p class="text">No encontramos este enlace. Revisa que lo hayas copiado completo desde el correo.</p>
+          </>
+        ) : cliente.recibe ? (
+          <>
+            <h1>{accion === 'alta' ? <>¡Bienvenido <em>de vuelta</em>!</> : <>¿Dejar de recibir <em>promociones</em>?</>}</h1>
+            <p class="text">
+              {accion === 'alta'
+                ? `Volverás a recibir nuestras promociones en ${ocultarCorreo(cliente.correo)}.`
+                : `Al darte de baja ya no te mandaremos promociones ni novedades a ${ocultarCorreo(cliente.correo)}. Seguirás recibiendo los correos de tus pedidos y de soporte.`}
+            </p>
+            {accion !== 'alta' && (
+              <form method="POST">
+                <input type="hidden" name="accion" value="baja" />
+                <button type="submit" class="primary-button">Darme de baja <span>→</span></button>
+              </form>
+            )}
+          </>
+        ) : (
+          <>
+            <h1>Listo, te <em>dimos de baja</em></h1>
+            <p class="text">Ya no recibirás promociones en {ocultarCorreo(cliente.correo)}. Seguirás recibiendo los correos de tus pedidos y de soporte.</p>
+            <form method="POST">
+              <input type="hidden" name="accion" value="alta" />
+              <button type="submit" class="secondary-button">Me equivoqué, quiero seguir recibiéndolas</button>
+            </form>
+          </>
+        )}
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<style>
+  :global(*) { box-sizing: border-box; }
+  :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, "Times New Roman", serif; margin: 0; }
+
+  .page { display: flex; flex-direction: column; min-height: 100vh; }
+  .topbar { align-items: center; background: #f7d21c; display: flex; justify-content: space-between; min-height: 76px; padding: 0 clamp(16px, 4vw, 64px); }
+  .brand { align-items: center; color: #171717; display: flex; font-family: Arial, sans-serif; font-size: 25px; font-weight: 900; letter-spacing: -1.5px; text-decoration: none; }
+  .brand span span { font-weight: 400; }
+  .brand-mark { align-items: center; border: 3px solid #171717; border-radius: 50%; display: inline-flex; font-size: 15px; height: 30px; justify-content: center; margin-right: 8px; width: 30px; }
+  .back-link { color: #171717; font-family: Arial, sans-serif; font-size: 12px; font-weight: 700; text-decoration: none; text-transform: uppercase; }
+  .back-link:hover { text-decoration: underline; }
+
+  .main { align-items: center; display: flex; flex: 1; justify-content: center; padding: 40px 16px; }
+  .card { background: #fffdf3; border: 2px solid #171717; box-shadow: 8px 8px 0 #171717; max-width: 460px; padding: clamp(26px, 5vw, 45px); width: 100%; }
+  .eyebrow { color: #d93e2e; font-family: Arial, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 2px; margin: 0 0 10px; text-transform: uppercase; }
+  .eyebrow span { background: #f7d21c; display: inline-block; height: 7px; margin-right: 8px; width: 7px; }
+  h1 { font-size: clamp(32px, 7vw, 40px); font-weight: 400; letter-spacing: -1.5px; line-height: 1; margin: 0 0 14px; }
+  h1 em { color: #d93e2e; font-style: italic; }
+  .text { color: #57534e; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.55; margin: 0 0 22px; overflow-wrap: anywhere; }
+
+  .primary-button { align-items: center; background: #171717; border: 0; color: #fffdf3; cursor: pointer; display: flex; font-family: Arial, sans-serif; font-size: 11px; font-weight: 800; justify-content: space-between; letter-spacing: .5px; padding: 16px 20px; text-transform: uppercase; width: 100%; }
+  .primary-button:hover { background: #d93e2e; }
+  .primary-button span { font-size: 16px; }
+  .secondary-button { background: transparent; border: 1.5px solid #171717; color: #171717; cursor: pointer; font-family: Arial, sans-serif; font-size: 12px; font-weight: 700; padding: 12px 16px; width: 100%; }
+  .secondary-button:hover { background: #f6f4ed; }
+</style>

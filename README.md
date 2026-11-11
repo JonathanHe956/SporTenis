@@ -59,9 +59,11 @@ mysql -u root -p sportenis_db < db/migrations/0015_direcciones_envio.sql
 mysql -u root -p sportenis_db < db/migrations/0016_codigos_postales.sql
 mysql -u root -p sportenis_db < db/migrations/0017_mercado_pago.sql
 mysql -u root -p sportenis_db < db/migrations/0018_calificaciones_tickets.sql
+mysql -u root -p sportenis_db < db/migrations/0019_campanas_correo.sql
+mysql -u root -p sportenis_db < db/migrations/0021_retiro_monedero.sql
 ```
 
-Ejecuta solo las migraciones que aún no hayas aplicado, en orden. La `0009` es necesaria para que funcionen las recargas y el historial del monedero, la `0010` crea la tabla de impuestos con el IVA al 16% y la `0011` las tablas de promociones (ambas se administran en `/scm/precios`). La `0012` guarda el desglose de impuestos de cada factura. El precio de cada producto ya incluye los impuestos: cambiar el IVA o agregar un impuesto solo cambia el desglose, no lo que se cobra. La `0013` agrega el método de pago Monedero: las compras de la tienda se pagan con el saldo del monedero (se bloquean si no alcanza) y se reembolsan al cancelarlas. La `0014` agrega tarjeta de crédito, tarjeta de débito y Mercado Pago como formas de pago en el carrito. Son **simulados**: no se cobra nada y de la tarjeta solo se guardan la marca y los últimos 4 dígitos. Tarjetas de prueba: `4242 4242 4242 4242` se aprueba, `4000 0000 0000 0002` se rechaza y `4000 0000 0000 9995` no tiene fondos (cualquier vencimiento futuro y CVV de 3 dígitos). La `0015` agrega las direcciones de envío: el cliente guarda varias en `/cuenta/direcciones` (una es la principal), elige una en el carrito antes de pagar y cada pedido guarda una copia de la dirección a la que se envió. La `0016` crea la tabla del catálogo de códigos postales y la `0017` la de los pagos con Mercado Pago. La `0018` agrega las calificaciones de pedidos y los tickets de soporte (ver [Atención al cliente](#atención-al-cliente-calificaciones-y-tickets)).
+Ejecuta solo las migraciones que aún no hayas aplicado, en orden. La `0009` es necesaria para que funcionen las recargas y el historial del monedero, la `0010` crea la tabla de impuestos con el IVA al 16% y la `0011` las tablas de promociones (ambas se administran en `/scm/precios`). La `0012` guarda el desglose de impuestos de cada factura. El precio de cada producto ya incluye los impuestos: cambiar el IVA o agregar un impuesto solo cambia el desglose, no lo que se cobra. La `0013` agrega el método de pago Monedero: las compras de la tienda se pagan con el saldo del monedero (se bloquean si no alcanza) y se reembolsan al cancelarlas. La `0014` agrega tarjeta de crédito, tarjeta de débito y Mercado Pago como formas de pago en el carrito. Son **simulados**: no se cobra nada y de la tarjeta solo se guardan la marca y los últimos 4 dígitos. Tarjetas de prueba: `4242 4242 4242 4242` se aprueba, `4000 0000 0000 0002` se rechaza y `4000 0000 0000 9995` no tiene fondos (cualquier vencimiento futuro y CVV de 3 dígitos). La `0015` agrega las direcciones de envío: el cliente guarda varias en `/cuenta/direcciones` (una es la principal), elige una en el carrito antes de pagar y cada pedido guarda una copia de la dirección a la que se envió. La `0016` crea la tabla del catálogo de códigos postales y la `0017` la de los pagos con Mercado Pago. La `0018` agrega las calificaciones de pedidos y los tickets de soporte (ver [Atención al cliente](#atención-al-cliente-calificaciones-y-tickets)). La `0019` agrega las campañas de correo y la baja de promociones (ver [Campañas de correo](#campañas-de-correo)).
 
 ### Catálogo de códigos postales
 
@@ -132,9 +134,32 @@ SMTP_PASS=xxxx xxxx xxxx xxxx          # contraseña de aplicación, no la de tu
 CORREO_REMITENTE="SporTenis <tu-correo@gmail.com>"   # opcional
 CORREO_SOPORTE=tu-correo@gmail.com     # opcional: aviso de tickets nuevos
 SITE_URL=http://localhost:4321         # para los enlaces de los correos
+CORREO_LIMITE_CAMPANA=450              # opcional: máximo de destinatarios por campaña
 ```
 
 Sin `SMTP_HOST` no se envía nada: cada correo se guarda como `.html` en `correos-salida/` (ignorada por git) para revisarlo en el navegador.
+
+### Eliminar la cuenta
+
+Desde su perfil (`/cuenta`, "Borrar mi cuenta") el cliente elimina su cuenta (`src/lib/eliminarCuenta.ts`). Los registros no se borran, porque el ERP necesita los pedidos, las facturas y los pagos. En una sola transacción:
+
+- Se borran sus direcciones, favoritos, carrito, preferencias, tickets de soporte y sesiones.
+- El usuario y su ficha de cliente se anonimizan ("Cliente eliminado", `eliminado-<id>@sportenis.invalid`, sin teléfono) y quedan inactivos: ya no puede iniciar sesión.
+- La copia de la dirección en sus pedidos y pagos de Mercado Pago se reemplaza por un texto genérico.
+- Su correo queda libre: puede registrarse otra vez, pero como una cuenta nueva y sin su historial.
+- Si tiene saldo en el monedero, el saldo queda en cero con un movimiento **Retiro** y el administrador recibe una notificación en el panel con el monto y el correo del cliente para hacerle la devolución. Las recargas son simuladas y no guardan con qué se pagaron, por eso la devolución la hace el equipo. El perfil le muestra el saldo antes de confirmar.
+- Le llega un correo, a su dirección de antes, que confirma la eliminación y el saldo que se le devolverá. Ya no tiene cuenta, así que ese correo es su comprobante.
+
+No se permite mientras tenga un pedido en curso (Procesando o Confirmada) o un pago de Mercado Pago pendiente: el perfil le explica qué falta. La eliminación necesita las migraciones `0019` y `0021`. El personal interno no puede eliminar su cuenta desde ahí; lo desactiva un administrador en Usuarios.
+
+### Campañas de correo
+
+En `/crm/campanas` (solo el administrador) se manda un mismo correo a todos los clientes: asunto, título, mensaje, una promoción destacada opcional (de las que están vigentes o programadas en `/scm/precios`) y un botón con enlace. Primero se envía una prueba a un solo correo y después a todos; los correos salen uno por uno en segundo plano y el historial muestra el avance.
+
+- Solo la reciben clientes con cuenta en la tienda (rol cliente) que no se dieron de baja ni están inactivos. Las cuentas del personal no la reciben y se saltan los correos de los datos de prueba (`@…test`, `@…local`, `example.com`).
+- Cada correo trae un enlace personal para darse de baja (`/baja?t=…`). La baja se confirma con un botón y el cliente puede volver a suscribirse desde la misma página. Los correos de pedidos y de soporte le siguen llegando.
+- Gmail gratuito manda unos 500 correos al día, por eso cada campaña admite hasta `CORREO_LIMITE_CAMPANA` destinatarios (450 por defecto). Para más clientes conviene un proveedor de correo masivo (Brevo, Resend…) cambiando las variables `SMTP_*`.
+- Si el servidor se apaga a media campaña, queda como **Interrumpida** en el historial.
 
 ### Usuarios de prueba
 

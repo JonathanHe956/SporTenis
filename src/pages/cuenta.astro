@@ -4,6 +4,7 @@ import AccountHeader from '../components/AccountHeader.astro';
 import { db } from '../db/db';
 import { Usuarios, Clientes } from '../db/schema';
 import { eq } from 'drizzle-orm';
+import { saldoPorDevolver } from '../lib/eliminarCuenta';
 
 const sessionUser = Astro.locals.user;
 
@@ -52,6 +53,15 @@ if (user.length > 0) {
     userData.telefono = client[0].telefono || '';
   }
 }
+
+// Saldo del monedero que se le devolverá si elimina su cuenta
+let saldoMonedero = 0;
+try {
+  saldoMonedero = await saldoPorDevolver(sessionUserId);
+} catch {
+  // Sin tabla de monederos no hay saldo que devolver
+}
+const saldoFormateado = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(saldoMonedero);
 ---
 
 <Layout title="Mi cuenta | SporTenis">
@@ -129,7 +139,7 @@ if (user.length > 0) {
           <div class="danger-zone">
             <div class="danger-zone-info">
               <h3>Zona de peligro</h3>
-              <p>Eliminar tu cuenta es una acción permanente. Se borrarán todos tus datos, favoritos, direcciones y preferencias.</p>
+              <p>Eliminar tu cuenta es una acción permanente. Se borrarán tus datos personales, favoritos, direcciones y preferencias, y ya no podrás iniciar sesión.</p>
             </div>
             <button type="button" class="btn-delete-account" id="deleteAccountBtn">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
@@ -147,13 +157,17 @@ if (user.length > 0) {
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         </div>
         <h2>¿Estás seguro?</h2>
-        <p class="modal-desc">Esta acción <strong>no se puede deshacer</strong>. Se eliminarán permanentemente todos tus datos, incluyendo:</p>
+        <p class="modal-desc">Esta acción <strong>no se puede deshacer</strong>. Se eliminarán permanentemente:</p>
         <ul class="modal-list">
-          <li>Tu perfil e información personal</li>
+          <li>Tu nombre, correo y teléfono</li>
           <li>Tus direcciones guardadas</li>
-          <li>Tus favoritos y preferencias</li>
-          <li>Tu carrito de compras</li>
+          <li>Tus favoritos, preferencias y carrito</li>
+          <li>Tus tickets de soporte</li>
         </ul>
+        {saldoMonedero > 0 && (
+          <p class="modal-refund">Tienes <strong>{saldoFormateado}</strong> en tu monedero. No lo pierdes: te lo devolveremos y te escribiremos a <strong>{userData.correo}</strong> para hacer la devolución.</p>
+        )}
+        <p class="modal-desc">Conservamos tus pedidos y facturas para la contabilidad de la tienda, pero sin ningún dato que te identifique. Si después quieres volver, puedes registrarte de nuevo con el mismo correo.</p>
         <p class="modal-confirm-text">Escribe <strong>ELIMINAR</strong> para confirmar:</p>
         <input type="text" id="confirmInput" class="confirm-input" placeholder="Escribe ELIMINAR" autocomplete="off" />
         <div class="modal-actions">
@@ -480,6 +494,7 @@ if (user.length > 0) {
     letter-spacing: -1px;
     margin: 0 0 10px;
   }
+  .modal-refund { background: #fffbe6; border: 1px solid #f7d21c; border-radius: 6px; font-size: 13px; line-height: 1.5; margin: 0 0 14px; padding: 10px 12px; text-align: left; overflow-wrap: anywhere; }
   .modal-desc {
     color: #716e67;
     font-family: var(--font-ui);
@@ -785,12 +800,19 @@ if (user.length > 0) {
       const res = await fetch('/api/delete-account', { method: 'POST' });
       if (res.ok) {
         window.location.href = '/';
-      } else {
-        throw new Error('Error del servidor');
+        return;
       }
-    } catch {
+      // Saldo en el monedero, pedido en curso…: el servidor explica por qué no se puede todavía
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.error || 'Ocurrió un error al eliminar tu cuenta. Intenta de nuevo.');
+    } catch (error) {
       if (deleteLoading) deleteLoading.style.display = 'none';
-      if (deleteError) deleteError.style.display = 'block';
+      if (deleteError) {
+        deleteError.textContent = error instanceof Error && error.message !== 'Failed to fetch'
+          ? error.message
+          : 'Ocurrió un error al eliminar tu cuenta. Intenta de nuevo.';
+        deleteError.style.display = 'block';
+      }
       if (confirmDeleteBtn) confirmDeleteBtn.disabled = false;
       if (cancelDeleteBtn) (cancelDeleteBtn as HTMLButtonElement).disabled = false;
     }
