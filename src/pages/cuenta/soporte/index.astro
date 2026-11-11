@@ -51,6 +51,33 @@ const descripcionTipo: Record<string, string> = {
 const activos = tickets.filter((t) => ticketActivo(t.estado));
 const cerrados = tickets.filter((t) => !ticketActivo(t.estado));
 const tonoEstado: Record<string, string> = { Abierto: 'warn', 'En proceso': 'info', Resuelto: 'ok', Cerrado: 'muted' };
+const respuestasPreestablecidas = [
+  {
+    pregunta: '¿Cuánto tarda la entrega de mi pedido?',
+    respuesta:
+      'La mayoría de los pedidos se entregan entre 3 y 7 días hábiles según la zona de envío. Si tu compra ya lleva más tiempo del estimado, puedes abrir un ticket y revisamos el seguimiento con nosotros.',
+  },
+  {
+    pregunta: '¿Puedo cancelar mi pedido si aún no llega?',
+    respuesta:
+      'Sí. Si tu pedido aún no se entrega o se encuentra en preparación, puedes solicitar la cancelación desde este apartado. En caso de que ya haya sido entregado, te ayudamos con una devolución o cambio según el plazo vigente.',
+  },
+  {
+    pregunta: '¿Qué hago si el producto llegó dañado o equivocado?',
+    respuesta:
+      'Mándanos una descripción breve del problema y comparte fotos si es posible. Revisamos el caso y te indicamos si aplica cambio, devolución o envío de reemplazo.',
+  },
+  {
+    pregunta: '¿Cómo solicito una devolución o cambio?',
+    respuesta:
+      'Puedes solicitarla desde el motivo “Cambio o devolución” en este mismo soporte. Recuerda que el producto debe estar en buen estado y la solicitud debe ser dentro del plazo establecido.',
+  },
+  {
+    pregunta: '¿Dónde veo mi factura o información de pago?',
+    respuesta:
+      'Si tienes dudas sobre un cobro, reembolso o factura, usa el motivo “Pago o factura”. Ahí revisamos el detalle del pedido, el monto y cualquier comprobante relacionado.',
+  },
+];
 const fmtFecha = (fecha: Date) =>
   new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(fecha));
 const etiquetaPedido = (c: (typeof compras)[number]) => `${c.folio ?? `Pedido #${c.id}`} · ${fmtFecha(c.fecha)} · ${c.estado}`;
@@ -71,6 +98,22 @@ const etiquetaPedido = (c: (typeof compras)[number]) => `${c.folio ?? `Pedido #$
           <p class="head-sub">Levanta un ticket y te respondemos aquí mismo. Te avisamos con una etiqueta cuando haya una respuesta nueva.</p>
         </div>
         <button type="button" class="primary-btn" id="nuevoTicket" hidden={abrirFormulario}>+ Nuevo ticket</button>
+      </section>
+
+      <section class="support-help card" aria-labelledby="respuestasRapidasTitulo">
+        <div class="support-help__header">
+          <p class="eyebrow support-help__eyebrow"><span></span> Ayuda rápida</p>
+          <h2 id="respuestasRapidasTitulo">Respuestas preestablecidas</h2>
+        </div>
+
+        <div class="faq-list">
+          {respuestasPreestablecidas.map((item) => (
+            <details class="faq-item">
+              <summary>{item.pregunta}</summary>
+              <p>{item.respuesta}</p>
+            </details>
+          ))}
+        </div>
       </section>
 
       <div class="sop-layout">
@@ -248,6 +291,26 @@ const etiquetaPedido = (c: (typeof compras)[number]) => `${c.folio ?? `Pedido #$
   .primary-btn:disabled { cursor: wait; opacity: .6; }
   .primary-btn[hidden] { display: none; }
   .link-btn { background: none; border: 0; color: #171717; cursor: pointer; font: 700 12px var(--font-ui); padding: 4px 0; text-decoration: underline; }
+
+  .support-help {
+    margin-bottom: 28px;
+  }
+  .support-help__header { margin-bottom: 18px; }
+  .support-help__eyebrow { margin-bottom: 8px; }
+  .support-help h2 { font-size: clamp(26px, 3vw, 34px); font-weight: 400; letter-spacing: -1px; margin: 0; }
+  .faq-list { display: grid; gap: 12px; }
+  .faq-item { background: #fff; border: 1.5px solid #d8d3c3; padding: 0 14px; }
+  .faq-item summary {
+    cursor: pointer; font: 700 13px var(--font-ui); list-style: none; padding: 14px 0; position: relative;
+  }
+  .faq-item summary::-webkit-details-marker { display: none; }
+  .faq-item summary::after {
+    content: '+'; font-size: 20px; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  }
+  .faq-item[open] summary::after { content: '–'; }
+  .faq-item p {
+    color: #57534e; font: 14px/1.6 var(--font-ui); margin: 0 0 16px; max-width: 64ch;
+  }
 
   .sop-layout { align-items: start; display: grid; gap: 28px; grid-template-columns: minmax(0, 1fr); }
   .sop-layout:has(.ticket-form:not([hidden])) { grid-template-columns: minmax(0, 460px) minmax(0, 1fr); }
