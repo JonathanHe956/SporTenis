@@ -221,7 +221,7 @@ if (!Astro.locals.user) {
   th:last-child { text-align: right; }
   .history-type { align-items: center; display: inline-flex; gap: 8px; }
   .history-type::before { border-radius: 50%; content: ''; height: 7px; width: 7px; }
-  .history-type[data-type="Recarga"]::before, .history-type[data-type="RecargaTarjeta"]::before, .history-type[data-type="Canjeo"]::before { background: #25834b; }
+  .history-type[data-type="Recarga"]::before, .history-type[data-type="RecargaTarjeta"]::before, .history-type[data-type="Canjeo"]::before, .history-type[data-type="AjusteAbono"]::before { background: #25834b; }
   .history-type[data-type="Descuento"]::before { background: #d93e2e; }
   .history-type[data-type="Reembolso"]::before { background: #2563eb; }
   .history-empty { color: #716e67; padding: 20px 12px; text-align: center !important; }
@@ -261,7 +261,7 @@ if (!Astro.locals.user) {
   const formatMoney = (amount: number): string =>
     new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amount);
 
-  type Movimiento = { tipo: 'Recarga' | 'RecargaTarjeta' | 'Descuento' | 'Reembolso' | 'Retiro' | 'Canjeo'; monto: string | number; fecha: string; id_venta?: number | null };
+  type Movimiento = { tipo: 'Recarga' | 'RecargaTarjeta' | 'Descuento' | 'Reembolso' | 'Retiro' | 'Canjeo' | 'AjusteAbono' | 'AjusteCargo'; monto: string | number; fecha: string; id_venta?: number | null };
 
   // Un descuento es el pago de una compra; un reembolso, su devolución al cancelarla
   const etiquetaMovimiento = (m: Movimiento): string => {
@@ -270,6 +270,8 @@ if (!Astro.locals.user) {
     if (m.tipo === 'Retiro') return 'Devolución de saldo';
     if (m.tipo === 'Canjeo') return 'Tarjeta de regalo';
     if (m.tipo === 'RecargaTarjeta') return 'Recarga con tarjeta de prueba';
+    if (m.tipo === 'AjusteAbono') return 'Abono de SporTenis';
+    if (m.tipo === 'AjusteCargo') return 'Ajuste de saldo';
     return 'Recarga';
   };
 
@@ -304,7 +306,7 @@ if (!Astro.locals.user) {
       typeLabel.textContent = etiquetaMovimiento(movimiento);
       typeCell.append(typeLabel);
       // Las compras restan saldo; recargas y reembolsos lo suman
-      amountCell.textContent = `${movimiento.tipo === 'Descuento' || movimiento.tipo === 'Retiro' ? '−' : '+'}${formatMoney(Number(movimiento.monto))}`;
+      amountCell.textContent = `${movimiento.tipo === 'Descuento' || movimiento.tipo === 'Retiro' || movimiento.tipo === 'AjusteCargo' ? '−' : '+'}${formatMoney(Number(movimiento.monto))}`;
       row.append(dateCell, typeCell, amountCell);
       movementHistory.append(row);
     });

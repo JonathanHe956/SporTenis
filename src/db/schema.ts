@@ -121,13 +121,17 @@ export const MovimientosMonedero = mysqlTable('MovimientosMonedero', {
   id: int('id').autoincrement().primaryKey(),
   id_monedero: int('id_monedero').references(() => Monederos.id, { onDelete: 'cascade' }).notNull(),
   // Descuento = pago de una compra; Reembolso = devolución al cancelar esa compra;
-  // Retiro = saldo que se le devuelve al cliente al eliminar su cuenta; Canjeo = tarjeta regalo
-  tipo: mysqlEnum('tipo', ['Recarga', 'Descuento', 'Reembolso', 'Retiro', 'Canjeo', 'RecargaTarjeta']).notNull(),
+  // Retiro = saldo que se le devuelve al cliente al eliminar su cuenta; Canjeo = tarjeta regalo;
+  // AjusteAbono / AjusteCargo = corrección manual del administrador (con motivo)
+  tipo: mysqlEnum('tipo', ['Recarga', 'Descuento', 'Reembolso', 'Retiro', 'Canjeo', 'RecargaTarjeta', 'AjusteAbono', 'AjusteCargo']).notNull(),
   monto: decimal('monto', { precision: 10, scale: 2 }).notNull(),
   fecha: datetime('fecha').default(sql`CURRENT_TIMESTAMP`).notNull(),
   // Compra pagada (o reembolsada) con este movimiento; null en las recargas
   id_venta: int('id_venta').references(() => Ventas.id),
   id_tarjeta_regalo: int('id_tarjeta_regalo').references(() => TarjetasRegalo.id),
+  // Solo en los ajustes manuales: por qué se hizo y qué administrador lo hizo
+  motivo: varchar('motivo', { length: 255 }),
+  id_usuario: int('id_usuario').references(() => Usuarios.id, { onDelete: 'set null' }),
 }, (table) => [
   uniqueIndex('uq_movimiento_tarjeta_regalo').on(table.id_tarjeta_regalo),
 ]);

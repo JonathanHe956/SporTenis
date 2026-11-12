@@ -55,7 +55,8 @@ const startsWithSegment = (pathname: string, prefix: string): boolean =>
 
 // Páginas del panel reservadas al administrador, aunque el rol entre a la sección.
 // Campañas: un correo a todos los clientes sale solo con el visto bueno del administrador.
-const adminOnlyRoutes = ['/erp/finanzas', '/erp/implementacion', '/crm/campanas'];
+// Monedero: es dinero de los clientes, solo el administrador consulta y ajusta saldos.
+const adminOnlyRoutes = ['/erp/finanzas', '/erp/implementacion', '/crm/campanas', '/erp/monedero'];
 const adminOnlyPages = /^\/(crm|scm|erp)\/(usuarios|configuracion)$/;
 
 // Páginas del SCM que ventas puede consultar sin entrar al resto de la sección

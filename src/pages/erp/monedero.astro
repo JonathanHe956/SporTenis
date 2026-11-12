@@ -1,0 +1,257 @@
+---
+// Monedero (Administración): saldos de los clientes, ajustes manuales y reporte de uso.
+// Solo administrador (ver adminOnlyRoutes en lib/auth.ts).
+import CrmLayout from '../../layouts/CrmLayout.astro';
+import { clientesQueMasUsan, listarSaldos, reporteMensual, ultimosAjustes } from '../../lib/monederoAdmin';
+
+const sessionUser = Astro.locals.user;
+if (!sessionUser) return Astro.redirect('/login');
+
+const busqueda = (Astro.url.searchParams.get('q') ?? '').slice(0, 100);
+const [saldos, reporte, topClientes, ajustes] = await Promise.all([
+  listarSaldos(busqueda),
+  reporteMensual(6),
+  clientesQueMasUsan(5),
+  ultimosAjustes(8),
+]);
+
+const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n);
+const fecha = (d: Date | null) => (d ? new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium' }).format(d) : '—');
+const nombreMes = (periodo: string) => {
+  const [anio, mes] = periodo.split('-').map(Number);
+  return new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' }).format(new Date(anio, mes - 1, 1));
+};
+
+const saldoTotal = saldos.reduce((t, s) => t + Math.round(s.saldo * 100), 0) / 100;
+const conSaldo = saldos.filter((s) => s.saldo > 0).length;
+const mesActual = reporte[0];
+---
+
+<CrmLayout title="Monedero" activePath="/erp/monedero">
+  <div class="header-actions">
+    <div>
+      <h1 class="crm-title">Monedero</h1>
+      <p class="subtitle">Saldos de los clientes, ajustes manuales y uso del monedero en los últimos 6 meses</p>
+    </div>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-number">{money(saldoTotal)}</div><div class="stat-label">Saldo total en monederos</div></div>
+    <div class="stat-card"><div class="stat-number">{conSaldo}</div><div class="stat-label">Clientes con saldo</div></div>
+    <div class="stat-card"><div class="stat-number stat-in">{money(mesActual?.recargas ?? 0)}</div><div class="stat-label">Recargas del mes</div></div>
+    <div class="stat-card"><div class="stat-number stat-out">{money(mesActual?.consumos ?? 0)}</div><div class="stat-label">Compras con monedero del mes</div></div>
+  </div>
+
+  <section class="crm-card bloque">
+    <div class="bloque-head">
+      <h2>Saldos por cliente</h2>
+      <form method="GET" action="/erp/monedero" class="buscar">
+        <input type="search" name="q" value={busqueda} placeholder="Buscar por nombre o correo" aria-label="Buscar cliente" />
+        <button type="submit" class="btn-sec">Buscar</button>
+        {busqueda && <a href="/erp/monedero" class="link">Limpiar</a>}
+      </form>
+    </div>
+    {saldos.length === 0 ? (
+      <p class="vacio">{busqueda ? 'Ningún cliente con monedero coincide con la búsqueda.' : 'Todavía ningún cliente ha usado su monedero.'}</p>
+    ) : (
+      <div class="table-responsive">
+        <table class="crm-table">
+          <thead><tr><th>Cliente</th><th>Correo</th><th class="num">Saldo</th><th>Último movimiento</th><th></th></tr></thead>
+          <tbody>
+            {saldos.map((s) => (
+              <tr>
+                <td>{s.nombre}</td>
+                <td class="muted">{s.correo}</td>
+                <td class="num"><strong>{money(s.saldo)}</strong></td>
+                <td class="muted">{fecha(s.ultimoMovimiento)}</td>
+                <td class="num">
+                  <button type="button" class="btn-sec btn-ajustar" data-id={s.idCliente} data-nombre={s.nombre} data-saldo={s.saldo}>Ajustar</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </section>
+
+  <div class="dos-columnas">
+    <section class="crm-card bloque">
+      <h2>Uso por mes</h2>
+      {reporte.length === 0 ? (
+        <p class="vacio">Sin movimientos en los últimos 6 meses.</p>
+      ) : (
+        <div class="table-responsive">
+          <table class="crm-table">
+            <thead><tr><th>Mes</th><th class="num">Recargas</th><th class="num">Compras</th><th class="num">Reembolsos</th><th class="num">Ajustes</th><th class="num">Movs.</th></tr></thead>
+            <tbody>
+              {reporte.map((f) => (
+                <tr>
+                  <td class="mes">{nombreMes(f.periodo)}</td>
+                  <td class="num stat-in">{money(f.recargas)}</td>
+                  <td class="num stat-out">{money(f.consumos)}</td>
+                  <td class="num">{money(f.reembolsos)}</td>
+                  <td class="num">{f.ajustes > 0 ? '+' : ''}{money(f.ajustes)}</td>
+                  <td class="num muted">{f.movimientos}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+
+    <section class="crm-card bloque">
+      <h2>Clientes que más compran con monedero</h2>
+      {topClientes.length === 0 ? (
+        <p class="vacio">Aún no hay compras pagadas con monedero.</p>
+      ) : (
+        <ol class="top">
+          {topClientes.map((c) => (
+            <li><span>{c.nombre} <small>{c.compras} {c.compras === 1 ? 'compra' : 'compras'}</small></span><strong>{money(c.total)}</strong></li>
+          ))}
+        </ol>
+      )}
+    </section>
+  </div>
+
+  <section class="crm-card bloque">
+    <h2>Últimos ajustes manuales</h2>
+    {ajustes.length === 0 ? (
+      <p class="vacio">No se han hecho ajustes.</p>
+    ) : (
+      <div class="table-responsive">
+        <table class="crm-table">
+          <thead><tr><th>Fecha</th><th>Cliente</th><th>Tipo</th><th class="num">Monto</th><th>Motivo</th></tr></thead>
+          <tbody>
+            {ajustes.map((a) => (
+              <tr>
+                <td class="muted">{fecha(a.fecha)}</td>
+                <td>{a.cliente}</td>
+                <td>{a.tipo === 'AjusteAbono' ? 'Abono' : 'Cargo'}</td>
+                <td class:list={['num', a.tipo === 'AjusteAbono' ? 'stat-in' : 'stat-out']}>{a.tipo === 'AjusteAbono' ? '+' : '−'}{money(a.monto)}</td>
+                <td class="muted">{a.motivo}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </section>
+
+  <dialog id="dlgAjuste" class="dlg">
+    <form id="frmAjuste" method="dialog">
+      <h2>Ajustar saldo</h2>
+      <p class="dlg-sub"><strong id="ajNombre"></strong> · saldo actual <span id="ajSaldo"></span></p>
+      <input type="hidden" name="id_cliente" id="ajCliente" />
+      <fieldset class="tipos">
+        <label><input type="radio" name="tipo" value="abono" checked /> Abono (suma)</label>
+        <label><input type="radio" name="tipo" value="cargo" /> Cargo (resta)</label>
+      </fieldset>
+      <label class="campo">Monto
+        <input type="number" name="monto" min="0.01" step="0.01" required inputmode="decimal" />
+      </label>
+      <label class="campo">Motivo
+        <input type="text" name="motivo" minlength="5" maxlength="255" required placeholder="Ej. compensación por retraso del pedido #120" />
+      </label>
+      <p class="dlg-error" id="ajError" hidden></p>
+      <div class="dlg-acciones">
+        <button type="button" class="btn-sec" id="ajCancelar">Cancelar</button>
+        <button type="submit" class="btn-pri" id="ajGuardar">Guardar ajuste</button>
+      </div>
+    </form>
+  </dialog>
+</CrmLayout>
+
+<script>
+  const dlg = document.getElementById('dlgAjuste') as HTMLDialogElement | null;
+  const form = document.getElementById('frmAjuste') as HTMLFormElement | null;
+  const errorEl = document.getElementById('ajError');
+  const guardar = document.getElementById('ajGuardar') as HTMLButtonElement | null;
+  const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n);
+
+  document.querySelectorAll<HTMLButtonElement>('.btn-ajustar').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!dlg || !form) return;
+      form.reset();
+      (document.getElementById('ajCliente') as HTMLInputElement).value = btn.dataset.id ?? '';
+      document.getElementById('ajNombre')!.textContent = btn.dataset.nombre ?? '';
+      document.getElementById('ajSaldo')!.textContent = money(Number(btn.dataset.saldo ?? 0));
+      if (errorEl) errorEl.hidden = true;
+      dlg.showModal();
+    });
+  });
+
+  document.getElementById('ajCancelar')?.addEventListener('click', () => dlg?.close());
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!form || !guardar) return;
+    const datos = Object.fromEntries(new FormData(form));
+    guardar.disabled = true;
+    try {
+      const res = await fetch('/api/erp/monedero', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos),
+      });
+      const result = await res.json();
+      if (!res.ok || !result.ok) throw new Error(result.error || 'No se pudo guardar el ajuste.');
+      location.reload();
+    } catch (error) {
+      if (errorEl) {
+        errorEl.textContent = error instanceof Error ? error.message : 'No se pudo guardar el ajuste.';
+        errorEl.hidden = false;
+      }
+      guardar.disabled = false;
+    }
+  });
+</script>
+
+<style>
+  .header-actions { margin-bottom: 24px; }
+  .crm-title { margin-bottom: 4px; }
+  .subtitle { margin: 0; font-size: 13px; color: var(--color-text-muted); }
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px; padding: 20px; text-align: center; }
+  .stat-number { font-size: 24px; font-weight: 900; line-height: 1.1; margin-bottom: 6px; }
+  .stat-label { font-size: 12px; color: var(--color-text-muted); font-weight: 700; text-transform: uppercase; }
+  .stat-in { color: var(--color-success, #15803d); }
+  .stat-out { color: #d97706; }
+  .bloque { padding: 20px; margin-bottom: 24px; }
+  .bloque h2 { font-size: 16px; margin: 0 0 14px; }
+  .bloque-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .bloque-head h2 { margin: 0; }
+  .buscar { display: flex; gap: 8px; align-items: center; }
+  .buscar input { border: 1px solid var(--color-border); border-radius: 6px; padding: 8px 10px; font: inherit; min-width: 240px; }
+  .dos-columnas { display: grid; grid-template-columns: 3fr 2fr; gap: 24px; }
+  .num { text-align: right; white-space: nowrap; }
+  .muted { color: var(--color-text-muted); }
+  .mes { text-transform: capitalize; }
+  .vacio { color: var(--color-text-muted); font-size: 14px; margin: 0; }
+  .top { margin: 0; padding-left: 20px; }
+  .top li { padding: 8px 0; border-bottom: 1px solid var(--color-border); }
+  .top li span { display: inline-block; width: calc(100% - 110px); }
+  .top li strong { float: right; }
+  .top small { color: var(--color-text-muted); margin-left: 6px; }
+  .btn-sec, .btn-pri { border-radius: 6px; cursor: pointer; font: 700 13px inherit; padding: 8px 14px; }
+  .btn-sec { background: transparent; border: 1px solid var(--color-border); color: inherit; }
+  .btn-sec:hover { background: #f1f5f9; }
+  .btn-pri { background: #171717; border: 1px solid #171717; color: #fff; }
+  .btn-pri:disabled { opacity: .6; cursor: wait; }
+  .link { font-size: 13px; }
+  .dlg { border: 1px solid var(--color-border); border-radius: 10px; max-width: 420px; padding: 24px; width: calc(100% - 32px); }
+  .dlg::backdrop { background: #17171766; }
+  .dlg h2 { margin: 0 0 4px; font-size: 18px; }
+  .dlg-sub { color: var(--color-text-muted); font-size: 13px; margin: 0 0 16px; }
+  .tipos { border: 0; display: flex; gap: 18px; margin: 0 0 14px; padding: 0; font-size: 14px; }
+  .campo { display: grid; gap: 6px; font-size: 13px; font-weight: 700; margin-bottom: 12px; }
+  .campo input { border: 1px solid var(--color-border); border-radius: 6px; font: 400 14px inherit; padding: 9px 10px; }
+  .dlg-error { color: var(--color-danger, #d93e2e); font-size: 13px; margin: 0 0 12px; }
+  .dlg-acciones { display: flex; gap: 10px; justify-content: flex-end; }
+  @media (max-width: 900px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .dos-columnas { grid-template-columns: 1fr; }
+    .buscar input { min-width: 0; flex: 1; }
+  }
+</style>
