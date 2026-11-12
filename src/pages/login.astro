@@ -94,6 +94,7 @@ if (Astro.request.method === "POST") {
               placeholder="••••••••"
               required
             />
+            <a href="/olvide-password" class="forgot-link">¿Olvidaste tu contraseña?</a>
           </div>
 
           <button type="submit" class="primary-button">
@@ -306,6 +307,18 @@ if (Astro.request.method === "POST") {
     text-decoration: none;
   }
   .login-link a:hover {
+    text-decoration: underline;
+  }
+
+  .forgot-link {
+    align-self: flex-end;
+    color: #d93e2e;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .forgot-link:hover {
     text-decoration: underline;
   }
 

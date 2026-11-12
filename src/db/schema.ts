@@ -551,3 +551,13 @@ export const VerificacionesCorreo = mysqlTable('VerificacionesCorreo', {
   fecha_expiracion: datetime('fecha_expiracion').notNull(),
   fecha_creacion: datetime('fecha_creacion').notNull(),
 });
+
+// Etapa 4 (4.3): enlaces de un solo uso para restablecer la contraseña (solo se guarda el hash)
+export const RecuperacionesPassword = mysqlTable('RecuperacionesPassword', {
+  id: int('id').autoincrement().primaryKey(),
+  id_usuario: int('id_usuario').references(() => Usuarios.id, { onDelete: 'cascade' }).notNull(),
+  token_hash: varchar('token_hash', { length: 64 }).unique('uq_recuperaciones_token').notNull(),
+  fecha_creacion: datetime('fecha_creacion').notNull(),
+  fecha_expiracion: datetime('fecha_expiracion').notNull(),
+  fecha_uso: datetime('fecha_uso'),
+});

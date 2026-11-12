@@ -1,0 +1,58 @@
+---
+// Marco de las pantallas de acceso (recuperar y restablecer contraseña), con el mismo diseño que el login.
+import Layout from '../layouts/Layout.astro';
+
+interface Props {
+  title: string;
+}
+const { title } = Astro.props;
+---
+
+<Layout title={title}>
+  <div class="auth-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="SporTenis, volver al inicio">
+        <span class="brand-mark">S</span>
+        <span>Spor<span>Tenis</span></span>
+      </a>
+      <a href="/login" class="back-link">← Volver a iniciar sesión</a>
+    </header>
+    <main class="auth-main">
+      <div class="auth-card">
+        <slot />
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<style is:global>
+  .auth-shell { display: flex; flex-direction: column; min-height: 100vh; background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; }
+  .auth-shell * { box-sizing: border-box; }
+  .auth-shell .topbar { align-items: center; background: #f7d21c; display: flex; justify-content: space-between; min-height: 76px; padding: 0 clamp(16px, 4vw, 64px); gap: 12px; }
+  .auth-shell .brand { align-items: center; color: #171717; display: flex; font-family: Arial, sans-serif; font-size: 25px; font-weight: 900; letter-spacing: -1.5px; text-decoration: none; }
+  .auth-shell .brand span span { font-weight: 400; }
+  .auth-shell .brand-mark { align-items: center; border: 3px solid #171717; border-radius: 50%; display: inline-flex; font-size: 15px; height: 30px; justify-content: center; margin-right: 8px; width: 30px; }
+  .auth-shell .back-link { color: #171717; font-family: Arial, sans-serif; font-size: 12px; font-weight: 700; text-decoration: none; text-transform: uppercase; }
+  .auth-shell .back-link:hover { text-decoration: underline; }
+  .auth-shell .auth-main { align-items: center; display: flex; flex: 1; justify-content: center; padding: 40px 16px; }
+  .auth-shell .auth-card { background: #fffdf3; border: 2px solid #171717; box-shadow: 8px 8px 0 #171717; max-width: 440px; padding: clamp(24px, 5vw, 45px); width: 100%; }
+  .auth-shell .eyebrow { color: #d93e2e; font-family: Arial, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 2px; margin: 0 0 10px; text-transform: uppercase; }
+  .auth-shell .eyebrow span { background: #f7d21c; display: inline-block; height: 7px; margin-right: 8px; width: 7px; }
+  .auth-shell h1 { font-size: 38px; font-weight: 400; letter-spacing: -2px; line-height: 0.95; margin: 0 0 10px; }
+  .auth-shell h1 em { color: #d93e2e; font-style: italic; }
+  .auth-shell .subtitle { color: #716e67; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.5; margin: 0 0 22px; }
+  .auth-shell .auth-form { display: flex; flex-direction: column; gap: 18px; }
+  .auth-shell .field-group { display: flex; flex-direction: column; gap: 6px; }
+  .auth-shell .field-group label { font-family: Arial, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+  .auth-shell .field-group input { background: #f6f4ed; border: 1.5px solid #171717; font-family: Arial, sans-serif; font-size: 13px; outline: none; padding: 12px 14px; }
+  .auth-shell .field-group input:focus { background: #fff; border-color: #d93e2e; }
+  .auth-shell .hint { color: #716e67; font-family: Arial, sans-serif; font-size: 11px; margin: 0; }
+  .auth-shell .primary-button { align-items: center; background: #171717; border: 0; color: #fffdf3; cursor: pointer; display: inline-flex; font-family: Arial, sans-serif; font-size: 11px; font-weight: 800; justify-content: space-between; letter-spacing: 0.5px; margin-top: 6px; padding: 16px 20px; text-decoration: none; text-transform: uppercase; }
+  .auth-shell .primary-button:hover { background: #d93e2e; }
+  .auth-shell .primary-button span { font-size: 16px; }
+  .auth-shell .error-banner { background: #fee2e2; border: 1.5px solid #ef4444; color: #991b1b; font-family: Arial, sans-serif; font-size: 12px; font-weight: 600; padding: 10px 12px; }
+  .auth-shell .ok-banner { background: #dcfce7; border: 1.5px solid #16a34a; color: #14532d; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.5; padding: 12px 14px; }
+  .auth-shell .login-link { color: #716e67; font-family: Arial, sans-serif; font-size: 12px; margin: 18px 0 0; text-align: center; }
+  .auth-shell .login-link a { color: #d93e2e; font-weight: 700; text-decoration: none; }
+  .auth-shell .login-link a:hover { text-decoration: underline; }
+</style>
