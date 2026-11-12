@@ -5,47 +5,53 @@ vi.mock('../src/db/db', () => ({ db: {} }));
 
 import {
   RecuperacionError,
-  enlaceVigente,
-  formatoTokenValido,
-  generarToken,
-  hashToken,
+  SEGUNDOS_REENVIO,
+  codigoVigente,
+  segundosParaReenviar,
+  solicitarRecuperacion,
   validarNuevaPassword,
 } from '../src/lib/recuperacionPassword';
+import { generarCodigo, hashCodigo } from '../src/lib/verificacionCorreo';
 
-describe('tokens del enlace', () => {
-  it('genera tokens distintos con el formato esperado', () => {
-    const a = generarToken();
-    const b = generarToken();
-    expect(a).not.toBe(b);
-    expect(formatoTokenValido(a)).toBe(true);
+describe('código de recuperación', () => {
+  it('es de 6 dígitos, como el del registro', () => {
+    for (let i = 0; i < 50; i++) expect(generarCodigo()).toMatch(/^\d{6}$/);
   });
 
-  it('rechaza tokens con otro largo o caracteres raros', () => {
-    expect(formatoTokenValido('')).toBe(false);
-    expect(formatoTokenValido('abc')).toBe(false);
-    expect(formatoTokenValido(`${'a'.repeat(42)}=`)).toBe(false);
-    expect(formatoTokenValido(`${'a'.repeat(42)}' OR 1=1`)).toBe(false);
+  it('en la base queda un hash ligado al token del navegador, nunca el código', () => {
+    const token = 'a'.repeat(43);
+    expect(hashCodigo('123456', token)).toMatch(/^[0-9a-f]{64}$/);
+    expect(hashCodigo('123456', token)).not.toContain('123456');
+    // El mismo código con otra cookie no coincide
+    expect(hashCodigo('123456', token)).not.toBe(hashCodigo('123456', 'b'.repeat(43)));
   });
 
-  it('en la base se guarda el hash, nunca el token', () => {
-    const token = generarToken();
-    expect(hashToken(token)).toMatch(/^[0-9a-f]{64}$/);
-    expect(hashToken(token)).not.toContain(token);
-    expect(hashToken(token)).toBe(hashToken(token));
+  it('rechaza un correo inválido antes de consultar la base', async () => {
+    await expect(solicitarRecuperacion({} as never, 'no-es-correo')).rejects.toThrow(RecuperacionError);
   });
 });
 
-describe('enlaceVigente', () => {
+describe('codigoVigente', () => {
   const ahora = new Date('2026-11-11T12:00:00Z');
 
   it('sirve si no se ha usado y no ha vencido', () => {
-    expect(enlaceVigente({ fecha_expiracion: new Date('2026-11-11T12:10:00Z'), fecha_uso: null }, ahora)).toBe(true);
+    expect(codigoVigente({ fecha_expiracion: new Date('2026-11-11T12:10:00Z'), fecha_uso: null }, ahora)).toBe(true);
   });
 
   it('no sirve si ya venció o ya se usó', () => {
-    expect(enlaceVigente({ fecha_expiracion: new Date('2026-11-11T11:59:59Z'), fecha_uso: null }, ahora)).toBe(false);
-    expect(enlaceVigente({ fecha_expiracion: ahora, fecha_uso: null }, ahora)).toBe(false);
-    expect(enlaceVigente({ fecha_expiracion: new Date('2026-11-11T12:10:00Z'), fecha_uso: new Date('2026-11-11T11:00:00Z') }, ahora)).toBe(false);
+    expect(codigoVigente({ fecha_expiracion: new Date('2026-11-11T11:59:59Z'), fecha_uso: null }, ahora)).toBe(false);
+    expect(codigoVigente({ fecha_expiracion: ahora, fecha_uso: null }, ahora)).toBe(false);
+    expect(codigoVigente({ fecha_expiracion: new Date('2026-11-11T12:10:00Z'), fecha_uso: new Date('2026-11-11T11:00:00Z') }, ahora)).toBe(false);
+  });
+});
+
+describe('segundosParaReenviar', () => {
+  const ahora = new Date('2026-11-11T12:00:00Z');
+
+  it(`espera ${SEGUNDOS_REENVIO} segundos entre códigos`, () => {
+    expect(segundosParaReenviar({ fecha_creacion: ahora }, ahora)).toBe(SEGUNDOS_REENVIO);
+    expect(segundosParaReenviar({ fecha_creacion: new Date('2026-11-11T11:59:30Z') }, ahora)).toBe(30);
+    expect(segundosParaReenviar({ fecha_creacion: new Date('2026-11-11T11:58:00Z') }, ahora)).toBe(0);
   });
 });
 

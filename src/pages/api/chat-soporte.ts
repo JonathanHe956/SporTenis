@@ -89,7 +89,8 @@ INSTRUCCIONES:
 - Si un pedido está en "Procesando" significa que se está preparando; "Confirmada" que ya fue confirmado y está en camino.
 - Puedes ayudar con dudas sobre devoluciones, cancelaciones, envío y facturación, pero para acciones concretas (cancelar, devolver) diles que abran un ticket en esta misma página.
 - No inventes información. Si no sabes algo, dilo y sugiere abrir un ticket.
-- Respuestas cortas (máximo 3 párrafos).`;
+- Respuestas cortas (máximo 3 párrafos).
+- Formato: puedes usar **negritas** para folios, montos y estados. Si enumeras varios pedidos u opciones, pon cada uno en su propia línea como lista ("1. ..." o "- ..."), nunca todos en el mismo párrafo. No uses tablas ni encabezados.`;
 
   // ── Historial ──────────────────────────────────────────────────────────────
   const history: Mensaje[] = Array.isArray(body.history)

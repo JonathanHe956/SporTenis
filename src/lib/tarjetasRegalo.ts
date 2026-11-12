@@ -1,8 +1,12 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/db';
-import { Monederos, MovimientosMonedero, TarjetasRegalo } from '../db/schema';
+import { Clientes, Monederos, MovimientosMonedero, TarjetasRegalo } from '../db/schema';
 import { MonederoError } from './monedero';
+
+/** Todas las tarjetas que se generan desde el panel valen lo mismo. */
+export const MONTO_TARJETA_REGALO = 2000;
+export const MAX_TARJETAS_POR_LOTE = 50;
 
 const CODIGO_ALFABETO = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 const CODIGO_NORMALIZADO = /^ST[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{16}$/;
@@ -79,4 +83,87 @@ export const canjearTarjetaRegalo = async (
 
     return { monto: Number(tarjeta.monto), saldo: Number(monedero.saldo) };
   });
+};
+
+// ---- Panel (administrador): ver los códigos sin canjear y generar lotes nuevos ----
+
+/** Cantidad de tarjetas a generar; llega del formulario como texto. */
+export const validarCantidadTarjetas = (valor: unknown): number => {
+  const cantidad = Number(valor);
+  if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > MAX_TARJETAS_POR_LOTE) {
+    throw new MonederoError(`Elige entre 1 y ${MAX_TARJETAS_POR_LOTE} tarjetas.`);
+  }
+  return cantidad;
+};
+
+/** Nombre del lote con la fecha y hora en que se generó, p. ej. L-20261112-085130. */
+export const nombreLote = (fecha: Date): string => {
+  const dos = (n: number) => String(n).padStart(2, '0');
+  return `L-${fecha.getFullYear()}${dos(fecha.getMonth() + 1)}${dos(fecha.getDate())}`
+    + `-${dos(fecha.getHours())}${dos(fecha.getMinutes())}${dos(fecha.getSeconds())}`;
+};
+
+/** Genera `cantidad` tarjetas de $2,000 con códigos aleatorios, todas en el mismo lote. */
+export const generarTarjetasRegalo = async (
+  cantidad: number,
+  idUsuario: number,
+): Promise<{ lote: string; codigos: string[] }> => {
+  const total = validarCantidadTarjetas(cantidad);
+  const ahora = new Date();
+  const lote = nombreLote(ahora);
+
+  const codigos = new Set<string>();
+  while (codigos.size < total) codigos.add(generarCodigoTarjeta());
+
+  await db.insert(TarjetasRegalo).values(
+    [...codigos].map((codigo) => ({
+      codigo_hash: hashCodigoTarjeta(codigo),
+      codigo,
+      monto: MONTO_TARJETA_REGALO.toFixed(2),
+      lote,
+      fecha_creacion: ahora,
+      generada_por: idUsuario,
+    })),
+  );
+
+  return { lote, codigos: [...codigos] };
+};
+
+export type EstadoTarjeta = 'Activa' | 'Canjeada';
+
+export interface TarjetaRegalo {
+  id: number;
+  codigo: string | null;
+  monto: number;
+  lote: string;
+  fechaCreacion: Date;
+  estado: EstadoTarjeta;
+  /** Cliente que la canjeó y cuándo; null mientras siga activa */
+  canjeadaPor: string | null;
+  fechaCanje: Date | null;
+}
+
+/** Todas las tarjetas con su estado, de la más nueva a la más vieja. */
+export const listarTarjetasRegalo = async (): Promise<TarjetaRegalo[]> => {
+  const rows = await db
+    .select({
+      id: TarjetasRegalo.id,
+      codigo: TarjetasRegalo.codigo,
+      monto: TarjetasRegalo.monto,
+      lote: TarjetasRegalo.lote,
+      fechaCreacion: TarjetasRegalo.fecha_creacion,
+      idCliente: TarjetasRegalo.canjeada_por,
+      cliente: Clientes.nombre,
+      fechaCanje: TarjetasRegalo.fecha_canje,
+    })
+    .from(TarjetasRegalo)
+    .leftJoin(Clientes, eq(Clientes.id, TarjetasRegalo.canjeada_por))
+    .orderBy(desc(TarjetasRegalo.id));
+
+  return rows.map(({ idCliente, cliente, ...r }) => ({
+    ...r,
+    monto: Number(r.monto),
+    estado: idCliente === null ? 'Activa' : 'Canjeada',
+    canjeadaPor: idCliente === null ? null : (cliente ?? `Cliente #${idCliente}`),
+  }));
 };

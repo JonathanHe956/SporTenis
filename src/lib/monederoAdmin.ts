@@ -109,7 +109,8 @@ export async function listarSaldos(busqueda = ''): Promise<SaldoCliente[]> {
       nombre: Clientes.nombre,
       correo: Clientes.correo,
       saldo: Monederos.saldo,
-      ultimoMovimiento: sql<Date | null>`MAX(${MovimientosMonedero.fecha})`,
+      // mapWith: el MAX llega como texto en UTC; así se convierte igual que la columna fecha
+      ultimoMovimiento: sql<Date | null>`MAX(${MovimientosMonedero.fecha})`.mapWith(MovimientosMonedero.fecha),
     })
     .from(Monederos)
     .innerJoin(Clientes, eq(Clientes.id, Monederos.id_cliente))
@@ -122,7 +123,6 @@ export async function listarSaldos(busqueda = ''): Promise<SaldoCliente[]> {
   return rows.map((r) => ({
     ...r,
     saldo: Number(r.saldo),
-    ultimoMovimiento: r.ultimoMovimiento ? new Date(r.ultimoMovimiento) : null,
   }));
 }
 

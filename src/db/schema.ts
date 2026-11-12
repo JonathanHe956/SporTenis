@@ -139,9 +139,12 @@ export const MovimientosMonedero = mysqlTable('MovimientosMonedero', {
 export const TarjetasRegalo = mysqlTable('TarjetasRegalo', {
   id: int('id').autoincrement().primaryKey(),
   codigo_hash: varchar('codigo_hash', { length: 64 }).unique().notNull(),
+  // Código para mostrarlo en el panel; null en las tarjetas creadas antes de la migración 0026
+  codigo: varchar('codigo', { length: 24 }),
   monto: decimal('monto', { precision: 10, scale: 2 }).notNull(),
   lote: varchar('lote', { length: 80 }).notNull(),
   fecha_creacion: datetime('fecha_creacion').notNull(),
+  generada_por: int('generada_por').references(() => Usuarios.id, { onDelete: 'set null' }),
   canjeada_por: int('canjeada_por').references(() => Clientes.id),
   fecha_canje: datetime('fecha_canje'),
 });
@@ -552,11 +555,16 @@ export const VerificacionesCorreo = mysqlTable('VerificacionesCorreo', {
   fecha_creacion: datetime('fecha_creacion').notNull(),
 });
 
-// Etapa 4 (4.3): enlaces de un solo uso para restablecer la contraseña (solo se guarda el hash)
+// Etapa 4 (4.3): códigos de 6 dígitos para restablecer la contraseña (migración 0027; solo hashes).
+// id_usuario es null cuando el correo no tiene cuenta: la solicitud se guarda igual, pero no se envía nada.
 export const RecuperacionesPassword = mysqlTable('RecuperacionesPassword', {
   id: int('id').autoincrement().primaryKey(),
-  id_usuario: int('id_usuario').references(() => Usuarios.id, { onDelete: 'cascade' }).notNull(),
+  id_usuario: int('id_usuario').references(() => Usuarios.id, { onDelete: 'cascade' }),
+  correo: varchar('correo', { length: 255 }).notNull(),
+  // Hash del token de la cookie del navegador que pidió el código
   token_hash: varchar('token_hash', { length: 64 }).unique('uq_recuperaciones_token').notNull(),
+  codigo_hash: varchar('codigo_hash', { length: 64 }).notNull(),
+  intentos: int('intentos').notNull().default(0),
   fecha_creacion: datetime('fecha_creacion').notNull(),
   fecha_expiracion: datetime('fecha_expiracion').notNull(),
   fecha_uso: datetime('fecha_uso'),

@@ -6,10 +6,33 @@ import { db } from '../../db/db';
 import { Modelos, Productos } from '../../db/schema';
 import { impuestosVigentes, listarImpuestos, tasaTotal, type Impuesto } from '../../lib/impuestos';
 import { listarPromociones, type Promocion } from '../../lib/promociones';
+import {
+  MAX_TARJETAS_POR_LOTE,
+  MONTO_TARJETA_REGALO,
+  listarTarjetasRegalo,
+  type TarjetaRegalo,
+} from '../../lib/tarjetasRegalo';
 
 const user = Astro.locals.user;
 if (!user) return Astro.redirect('/login');
 const isAdmin = user.role === 'administrador';
+
+// Tarjetas de regalo: cada código es dinero para el monedero, por eso solo el administrador las ve
+let tarjetas: TarjetaRegalo[] = [];
+let faltaTarjetas = false;
+if (isAdmin) {
+  try {
+    tarjetas = await listarTarjetasRegalo();
+  } catch (error) {
+    console.error(error);
+    faltaTarjetas = true;
+  }
+}
+const tarjetasActivas = tarjetas.filter((t) => t.estado === 'Activa');
+const tarjetasCanjeadas = tarjetas.filter((t) => t.estado === 'Canjeada');
+const sumaMontos = (lista: TarjetaRegalo[]) => lista.reduce((t, a) => t + a.monto, 0);
+// Solo se copian los códigos que todavía sirven
+const codigosActivos = tarjetasActivas.flatMap((t) => (t.codigo ? [t.codigo] : []));
 
 // Si alguna migración (0010 / 0011) falta, la página lo dice en vez de romperse
 let promociones: Promocion[] = [];
@@ -203,6 +226,90 @@ const hoy = fechaInput(new Date());
     )}
   </section>
 
+  {isAdmin && (
+    <section class="crm-card section-card" aria-labelledby="tituloTarjetas" id="tarjetas-regalo">
+      <div class="section-head">
+        <div>
+          <h2 id="tituloTarjetas">Tarjetas de regalo</h2>
+          <p class="section-note">
+            Códigos de un solo uso de <strong>{money(MONTO_TARJETA_REGALO)}</strong> que el cliente canjea en su monedero.
+            Se generan al azar y quedan activos hasta que alguien los canjea.
+          </p>
+        </div>
+        {!faltaTarjetas && (
+          <form class="gift-generate" id="formTarjetas">
+            <label for="cantidadTarjetas">Cantidad</label>
+            <input type="number" id="cantidadTarjetas" name="cantidad" value="10" min="1" max={MAX_TARJETAS_POR_LOTE} step="1" required inputmode="numeric" list="cantidadesTarjetas" />
+            <datalist id="cantidadesTarjetas"><option value="10"></option><option value="20"></option></datalist>
+            <button type="submit" class="btn-secondary" id="btnGenerarTarjetas">Generar</button>
+          </form>
+        )}
+      </div>
+
+      {faltaTarjetas ? (
+        <p class="empty">Faltan las tablas de tarjetas de regalo. Aplica las migraciones <code>0022_tarjetas_regalo.sql</code> y <code>0026_codigos_tarjetas_regalo.sql</code>.</p>
+      ) : (
+        <>
+          <div class="gift-stats">
+            <span><strong>{tarjetasActivas.length}</strong> activas ({money(sumaMontos(tarjetasActivas))} sin canjear)</span>
+            <span><strong>{tarjetasCanjeadas.length}</strong> canjeadas ({money(sumaMontos(tarjetasCanjeadas))})</span>
+            {codigosActivos.length > 0 && (
+              <button type="button" class="link-btn" data-copiar={codigosActivos.join('\n')}>Copiar códigos activos</button>
+            )}
+          </div>
+
+          {tarjetas.length === 0 ? (
+            <p class="empty">Aún no hay tarjetas. Elige la cantidad (por ejemplo 10 o 20) y presiona <strong>Generar</strong>.</p>
+          ) : (
+            <>
+              <div class="gift-filters" role="group" aria-label="Filtrar tarjetas por estado">
+                <button type="button" class="gift-filter is-active" data-filtro-tarjetas="todas" aria-pressed="true">
+                  Todas <span class="gift-count">{tarjetas.length}</span>
+                </button>
+                <button type="button" class="gift-filter" data-filtro-tarjetas="Activa" aria-pressed="false">
+                  <span class="gift-dot gift-dot-active" aria-hidden="true"></span>
+                  Activas <span class="gift-count">{tarjetasActivas.length}</span>
+                </button>
+                <button type="button" class="gift-filter" data-filtro-tarjetas="Canjeada" aria-pressed="false">
+                  <span class="gift-dot gift-dot-used" aria-hidden="true"></span>
+                  Canjeadas <span class="gift-count">{tarjetasCanjeadas.length}</span>
+                </button>
+              </div>
+              <div class="table-responsive gift-table">
+                <table class="crm-table">
+                  <thead><tr><th>Código</th><th class="text-right">Monto</th><th class="text-center">Estado</th><th>Canje</th><th>Lote</th><th>Generada</th><th class="text-right"></th></tr></thead>
+                  <tbody>
+                    {tarjetas.map((t) => (
+                      <tr data-lote={t.lote} data-estado={t.estado} class:list={[{ 'gift-used': t.estado === 'Canjeada' }]}>
+                        <td>{t.codigo
+                          ? <code class="gift-code">{t.codigo}</code>
+                          : <span class="muted" title="Se creó antes de que se guardaran los códigos">No disponible</span>}
+                        </td>
+                        <td class="text-right">{money(t.monto)}</td>
+                        <td class="text-center">
+                          <span class={`badge ${t.estado === 'Activa' ? 'badge-success' : 'badge-neutral'}`}>{t.estado}</span>
+                        </td>
+                        <td>
+                          {t.estado === 'Canjeada'
+                            ? <span>{t.canjeadaPor}{t.fechaCanje && <div class="muted">{fecha(t.fechaCanje)}</div>}</span>
+                            : <span class="muted">—</span>}
+                        </td>
+                        <td class="muted">{t.lote}</td>
+                        <td class="muted nowrap">{fecha(t.fechaCreacion)}</td>
+                        <td class="text-right">{t.estado === 'Activa' && t.codigo && <button type="button" class="link-btn" data-copiar={t.codigo}>Copiar</button>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p class="empty" id="tarjetasSinResultados" hidden></p>
+            </>
+          )}
+        </>
+      )}
+    </section>
+  )}
+
   <!-- Alta / edición de promoción -->
   <dialog id="modalPromocion" class="scm-modal modal-wide" aria-labelledby="tituloModalPromocion">
     <form id="formPromocion" class="modal-content" novalidate>
@@ -297,7 +404,7 @@ const hoy = fechaInput(new Date());
     </dialog>
   )}
 
-  <script define:vars={{ promocionesCliente, hoy }}>
+  <script define:vars={{ promocionesCliente, hoy, MONTO_TARJETA_REGALO, MAX_TARJETAS_POR_LOTE }}>
     const AVISO_KEY = 'scmPreciosAviso';
 
     const toast = (mensaje, kind = 'success') => {
@@ -507,6 +614,74 @@ const hoy = fechaInput(new Date());
         }
       });
     }
+
+    // ── Tarjetas de regalo (solo administrador) ────────────────
+    const LOTE_KEY = 'scmTarjetasLote';
+    const pesos = (n) => n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+
+    document.getElementById('formTarjetas')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const cantidad = Number(event.currentTarget.cantidad.value);
+      if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > MAX_TARJETAS_POR_LOTE) {
+        toast(`Elige entre 1 y ${MAX_TARJETAS_POR_LOTE} tarjetas.`, 'error');
+        return;
+      }
+      const btn = document.getElementById('btnGenerarTarjetas');
+      btn.disabled = true;
+      try {
+        const data = await enviar('/api/tarjetas-regalo', 'POST', { cantidad });
+        try { sessionStorage.setItem(LOTE_KEY, data.lote); } catch {}
+        recargarCon(`Se generaron ${data.codigos.length} tarjetas de ${pesos(MONTO_TARJETA_REGALO)} (lote ${data.lote}).`);
+      } catch (error) {
+        toast(error.message, 'error');
+        btn.disabled = false;
+      }
+    });
+
+    // Resalta el lote recién generado
+    try {
+      const lote = sessionStorage.getItem(LOTE_KEY);
+      if (lote) {
+        sessionStorage.removeItem(LOTE_KEY);
+        const filas = [...document.querySelectorAll('#tarjetas-regalo tr[data-lote]')].filter((tr) => tr.dataset.lote === lote);
+        filas.forEach((tr) => tr.classList.add('gift-new'));
+        filas[0]?.closest('section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    } catch {}
+
+    // Filtro por estado: todas, activas o canjeadas
+    const filtros = [...document.querySelectorAll('[data-filtro-tarjetas]')];
+    filtros.forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const filtro = btn.dataset.filtroTarjetas;
+        filtros.forEach((b) => {
+          b.classList.toggle('is-active', b === btn);
+          b.setAttribute('aria-pressed', String(b === btn));
+        });
+        const filas = [...document.querySelectorAll('#tarjetas-regalo tr[data-estado]')];
+        filas.forEach((tr) => {
+          tr.hidden = filtro !== 'todas' && tr.dataset.estado !== filtro;
+        });
+        // Sin filas visibles se oculta la tabla y se explica por qué
+        const vacio = filas.every((tr) => tr.hidden);
+        const tabla = document.querySelector('#tarjetas-regalo .gift-table');
+        const aviso = document.getElementById('tarjetasSinResultados');
+        if (tabla) tabla.hidden = vacio;
+        if (aviso) {
+          aviso.hidden = !vacio;
+          aviso.textContent = filtro === 'Canjeada' ? 'Todavía no se ha canjeado ninguna tarjeta.' : 'No hay tarjetas activas.';
+        }
+      }));
+
+    document.querySelectorAll('[data-copiar]').forEach((btn) =>
+      btn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.copiar);
+          toast(btn.dataset.copiar.includes('\n') ? 'Códigos copiados.' : 'Código copiado.');
+        } catch {
+          toast('No se pudo copiar.', 'error');
+        }
+      }));
   </script>
 </CrmLayout>
 
@@ -541,6 +716,43 @@ const hoy = fechaInput(new Date());
   .text-center { text-align: center !important; }
 
   .badge-info { background: #e0f2fe; color: #0369a1; }
+
+  .gift-generate { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; font-weight: 650; }
+  .gift-generate input { width: 80px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; font: inherit; font-weight: 400; }
+  .gift-generate .btn-secondary:disabled { opacity: .5; cursor: wait; }
+  .gift-stats { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; margin-bottom: 12px; font-size: 13px; color: var(--color-text-muted); }
+  .gift-stats strong { color: var(--color-text); }
+  .gift-table { max-height: 480px; overflow-y: auto; }
+  .gift-code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 14px; font-weight: 700; letter-spacing: .03em; }
+  .gift-new td { background: #f0fdf4; }
+  .gift-used .gift-code { color: var(--color-text-muted); text-decoration: line-through; font-weight: 500; }
+  /* Control segmentado: la opción elegida se ve como una pastilla blanca sobre el riel gris */
+  .gift-filters {
+    display: inline-flex; flex-wrap: wrap; gap: 2px; margin-bottom: 14px; padding: 4px;
+    background: #f1f0eb; border: 1px solid var(--color-border); border-radius: 10px;
+  }
+  .gift-filter {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 14px;
+    background: transparent; border: 0; border-radius: 7px;
+    font: inherit; font-size: 13px; font-weight: 650; color: var(--color-text-muted);
+    cursor: pointer; transition: background-color .15s, color .15s, box-shadow .15s;
+  }
+  .gift-filter:hover { color: var(--color-text); background: #ffffff80; }
+  .gift-filter:focus-visible { outline: 2px solid #0369a1; outline-offset: 1px; }
+  .gift-filter.is-active { background: #fff; color: var(--color-text); box-shadow: 0 1px 2px #0000001f, 0 1px 1px #0000000d; }
+  .gift-count {
+    min-width: 22px; padding: 1px 7px; border-radius: 999px;
+    background: #e4e2da; color: var(--color-text-muted); font-size: 11px; font-weight: 700; text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .gift-filter.is-active .gift-count { background: #171717; color: #fff; }
+  .gift-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .gift-dot-active { background: var(--color-success, #15803d); }
+  .gift-dot-used { background: #a8a29e; }
+  @media (max-width: 480px) {
+    .gift-filters { display: flex; }
+    .gift-filter { flex: 1; justify-content: center; padding: 0 8px; }
+  }
 
   .link-btn { background: none; border: 0; padding: 4px 6px; font: inherit; font-size: 13px; font-weight: 650; color: #0369a1; cursor: pointer; border-radius: 4px; }
   .link-btn:hover { background: #e0f2fe; }
