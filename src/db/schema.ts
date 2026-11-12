@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { int, varchar, text, decimal, boolean, datetime, mysqlEnum, mysqlTable, primaryKey } from 'drizzle-orm/mysql-core';
+import { int, varchar, text, decimal, boolean, datetime, mysqlEnum, mysqlTable, primaryKey, uniqueIndex } from 'drizzle-orm/mysql-core';
 
 export const Roles = mysqlTable('Roles', {
   id: int('id').autoincrement().primaryKey(),
@@ -121,12 +121,30 @@ export const MovimientosMonedero = mysqlTable('MovimientosMonedero', {
   id: int('id').autoincrement().primaryKey(),
   id_monedero: int('id_monedero').references(() => Monederos.id, { onDelete: 'cascade' }).notNull(),
   // Descuento = pago de una compra; Reembolso = devolución al cancelar esa compra;
-  // Retiro = saldo que se le devuelve al cliente al eliminar su cuenta
-  tipo: mysqlEnum('tipo', ['Recarga', 'Descuento', 'Reembolso', 'Retiro']).notNull(),
+  // Retiro = saldo que se le devuelve al cliente al eliminar su cuenta; Canjeo = tarjeta regalo
+  tipo: mysqlEnum('tipo', ['Recarga', 'Descuento', 'Reembolso', 'Retiro', 'Canjeo', 'RecargaTarjeta']).notNull(),
   monto: decimal('monto', { precision: 10, scale: 2 }).notNull(),
   fecha: datetime('fecha').default(sql`CURRENT_TIMESTAMP`).notNull(),
   // Compra pagada (o reembolsada) con este movimiento; null en las recargas
   id_venta: int('id_venta').references(() => Ventas.id),
+  id_tarjeta_regalo: int('id_tarjeta_regalo').references(() => TarjetasRegalo.id),
+}, (table) => [
+  uniqueIndex('uq_movimiento_tarjeta_regalo').on(table.id_tarjeta_regalo),
+]);
+
+export const TarjetasRegalo = mysqlTable('TarjetasRegalo', {
+  id: int('id').autoincrement().primaryKey(),
+  codigo_hash: varchar('codigo_hash', { length: 64 }).unique().notNull(),
+  monto: decimal('monto', { precision: 10, scale: 2 }).notNull(),
+  lote: varchar('lote', { length: 80 }).notNull(),
+  fecha_creacion: datetime('fecha_creacion').notNull(),
+  canjeada_por: int('canjeada_por').references(() => Clientes.id),
+  fecha_canje: datetime('fecha_canje'),
+});
+
+export const SaldoTarjetaDemo = mysqlTable('SaldoTarjetaDemo', {
+  id: int('id').primaryKey(),
+  saldo: decimal('saldo', { precision: 10, scale: 2 }).notNull(),
 });
 
 export const Direcciones = mysqlTable('Direcciones', {

@@ -82,35 +82,6 @@ export const consultarMovimientos = async (idCliente: number) =>
     .orderBy(desc(MovimientosMonedero.fecha), desc(MovimientosMonedero.id))
     .limit(10);
 
-export const recargar = async (idCliente: number, monto: number): Promise<void> => {
-  const centavos = montoEnCentavos(monto);
-  const importe = saldoFormateado(centavos);
-
-  await db.transaction(async (tx) => {
-    await tx
-      .insert(Monederos)
-      .values({ id_cliente: idCliente, saldo: importe })
-      .onDuplicateKeyUpdate({
-        set: { saldo: sql`${Monederos.saldo} + ${importe}` },
-      });
-
-    const [monedero] = await tx
-      .select({ id: Monederos.id })
-      .from(Monederos)
-      .where(eq(Monederos.id_cliente, idCliente));
-
-    if (!monedero) throw new Error('No se pudo encontrar el monedero después de recargar.');
-
-    await tx.insert(MovimientosMonedero).values({
-      id_monedero: monedero.id,
-      tipo: 'Recarga',
-      monto: importe,
-      // Como en el resto de la app, la fecha va desde aquí (UTC); el DEFAULT de MySQL usa su hora local
-      fecha: new Date(),
-    });
-  });
-};
-
 export async function esMetodoMonedero(executor: Executor, id_metodo_pago: number): Promise<boolean> {
   const [metodo] = await executor.select({ nombre: MetodosPago.nombre }).from(MetodosPago).where(eq(MetodosPago.id, id_metodo_pago));
   return metodo?.nombre === METODO_MONEDERO;

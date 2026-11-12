@@ -26,3 +26,6 @@ pnpm-debug.log*
 
 # correos guardados en desarrollo (sin SMTP configurado)
 correos-salida/
+
+# Codigos de tarjetas de regalo sin canjear (entrega local de una sola vez)
+tarjetas-regalo-demo-*.txt
