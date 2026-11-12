@@ -845,7 +845,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
 
       if (data.compra_confirmada) {
         showToast('¡Tu pago con Mercado Pago se aprobó! Registramos tu compra.');
-        window.setTimeout(() => { window.location.href = `/cuenta/compras/${data.compra_confirmada}`; }, 1400);
+        window.setTimeout(() => { window.location.href = `/compra/confirmada/${data.compra_confirmada}`; }, 1400);
       }
       renderNotices(data.avisos);
       renderCart(data);
@@ -1022,7 +1022,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
     };
 
     try {
-      const res = await fetch('/api/ventas', {
+      const res = await fetch('/api/pagos/procesar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ pago: forma, id_direccion: direccionElegida, ...extra }),
@@ -1041,7 +1041,7 @@ const fmt = (n: number) => `$${n.toLocaleString('es-MX')}`;
 
       const detalle = data.referencia_pago ? ` (${data.referencia_pago})` : '';
       showToast(`¡Compra realizada! Pagaste ${money(Number(data.total ?? 0))} MXN ${nombrePago[forma]}${detalle}.`);
-      window.setTimeout(() => { window.location.href = `/cuenta/compras/${data.id_venta}`; }, 1400);
+      window.setTimeout(() => { window.location.href = `/compra/confirmada/${data.id_venta}`; }, 900);
       return true;
     } catch {
       showToast('No se pudo completar el pago. Revisa tu conexión e intenta de nuevo.', 'error');

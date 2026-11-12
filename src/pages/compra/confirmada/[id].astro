@@ -1,0 +1,116 @@
+---
+// Confirmación de compra (paso 7 del flujo): se muestra justo después de pagar.
+// Solo lee datos; la compra ya quedó registrada por /api/pagos/procesar o por Mercado Pago.
+import Layout from '../../../layouts/Layout.astro';
+import AccountHeader from '../../../components/AccountHeader.astro';
+import { findClientId } from '../../../lib/clientes';
+import { getDetalleCompra } from '../../../lib/compras';
+import { METODO_MONEDERO, consultarSaldo } from '../../../lib/monedero';
+
+const sessionUser = Astro.locals.user;
+if (!sessionUser) return Astro.redirect('/login');
+
+const clientId = await findClientId(sessionUser.id);
+const compra = clientId !== null ? await getDetalleCompra(clientId, Number(Astro.params.id)) : null;
+
+// Pedido inexistente o de otro cliente: se regresa al historial
+if (!compra) return Astro.redirect('/cuenta/compras');
+
+const pagoConMonedero = compra.metodoPago === METODO_MONEDERO;
+let saldoRestante: number | null = null;
+if (pagoConMonedero) {
+  try {
+    saldoRestante = await consultarSaldo(clientId as number);
+  } catch (error) {
+    console.error('No se pudo leer el saldo del monedero:', error);
+  }
+}
+
+const money = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n);
+const fecha = new Intl.DateTimeFormat('es-MX', { dateStyle: 'long', timeStyle: 'short' }).format(compra.fecha);
+const folio = compra.factura?.folio ?? `Pedido #${compra.id}`;
+const unidades = compra.articulos.reduce((total, a) => total + a.cantidad, 0);
+---
+
+<Layout title={`Compra realizada ${folio} | SporTenis`}>
+  <AccountHeader backHref="/" backLabel="Volver a la tienda" active="compras" />
+  <main class="ok-main">
+    <section class="ok-card" aria-labelledby="ok-titulo">
+      <div class="ok-icono" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+      </div>
+      <p class="eyebrow">Compra confirmada</p>
+      <h1 id="ok-titulo">¡Compra realizada con éxito!</h1>
+      <p class="sub">
+        Recibimos tu pago y tu pedido el {fecha}. Ya comenzamos a prepararlo.
+      </p>
+
+      <dl class="datos">
+        <div><dt>Orden</dt><dd>{folio}</dd></div>
+        <div><dt>Pago</dt><dd>{compra.metodoPago}{compra.pago?.referencia && <span class="ref"> · {compra.pago.referencia}</span>}</dd></div>
+        <div><dt>Total pagado</dt><dd class="total">{money(compra.total)}</dd></div>
+        {pagoConMonedero && saldoRestante !== null && (
+          <div><dt>Saldo actual del monedero</dt><dd class="saldo">{money(saldoRestante)}</dd></div>
+        )}
+      </dl>
+
+      <div class="resumen">
+        <p class="resumen-titulo">{unidades} {unidades === 1 ? 'artículo' : 'artículos'}</p>
+        <ul>
+          {compra.articulos.map((a) => (
+            <li>
+              <span>{a.cantidad} × {a.nombre} <small>{a.variante}</small></span>
+              <strong>{money(a.subtotal)}</strong>
+            </li>
+          ))}
+        </ul>
+        <div class="lineas">
+          <p><span>Subtotal sin impuestos</span><span>{money(compra.baseSinImpuestos)}</span></p>
+          {compra.impuestos.map((i) => (
+            <p><span>{i.nombre} ({i.porcentaje}%)</span><span>{money(i.monto)}</span></p>
+          ))}
+          <p><span>Envío</span><span>{compra.envio > 0 ? money(compra.envio) : 'Gratis'}</span></p>
+          <p class="fila-total"><span>Total</span><span>{money(compra.total)}</span></p>
+        </div>
+      </div>
+
+      {compra.direccionEnvio && <p class="envio">Se enviará a: {compra.direccionEnvio}</p>}
+
+      <div class="acciones">
+        <a class="btn" href={`/cuenta/compras/${compra.id}`}>Ver mi pedido</a>
+        <a class="btn btn-sec" href="/">Seguir comprando</a>
+      </div>
+    </section>
+  </main>
+</Layout>
+
+<style>
+  :global(body) { background: #f6f4ed; color: #171717; font-family: Georgia, 'Times New Roman', serif; margin: 0; }
+  .ok-main { display: grid; padding: 40px 16px 64px; place-items: center; }
+  .ok-card { background: #fffdf3; border: 1.5px solid #171717; border-top: 6px solid #2f8f46; box-shadow: 6px 6px 0 #171717; max-width: 600px; padding: 32px; width: 100%; box-sizing: border-box; }
+  .ok-icono { align-items: center; background: #2f8f46; border-radius: 50%; color: #fffdf3; display: flex; height: 60px; justify-content: center; margin-bottom: 16px; width: 60px; }
+  .eyebrow { color: #2f8f46; font: 700 11px var(--font-ui); letter-spacing: 2px; margin: 0 0 8px; text-transform: uppercase; }
+  h1 { font-size: clamp(28px, 4vw, 38px); font-weight: 400; letter-spacing: -1px; line-height: 1.05; margin: 0 0 12px; }
+  .sub { color: #57534e; font: 15px/1.6 var(--font-ui); margin: 0 0 22px; }
+  .datos { border-bottom: 1px solid #d6d3c8; border-top: 1px solid #d6d3c8; display: grid; gap: 10px; margin: 0 0 20px; padding: 16px 0; }
+  .datos div { display: flex; gap: 12px; justify-content: space-between; }
+  .datos dt { color: #716e67; font: 13px var(--font-ui); }
+  .datos dd { font: 700 14px var(--font-ui); margin: 0; text-align: right; }
+  .datos .ref { color: #716e67; font-weight: 400; }
+  .datos .total { font-size: 18px; }
+  .datos .saldo { color: #2f8f46; }
+  .resumen { font: 14px var(--font-ui); margin-bottom: 18px; }
+  .resumen-titulo { font-weight: 700; margin: 0 0 8px; }
+  .resumen ul { list-style: none; margin: 0 0 12px; padding: 0; }
+  .resumen li { display: flex; gap: 12px; justify-content: space-between; padding: 6px 0; }
+  .resumen small { color: #716e67; }
+  .lineas p { color: #57534e; display: flex; justify-content: space-between; margin: 4px 0; }
+  .lineas .fila-total { border-top: 1px solid #d6d3c8; color: #171717; font-weight: 700; margin-top: 8px; padding-top: 8px; }
+  .envio { color: #57534e; font: 13px/1.5 var(--font-ui); margin: 0 0 22px; }
+  .acciones { display: flex; flex-wrap: wrap; gap: 12px; }
+  .btn { background: #171717; color: #fffdf3; font: 700 13px var(--font-ui); padding: 12px 18px; text-decoration: none; }
+  .btn:hover { background: #2b2b2b; }
+  .btn-sec { background: transparent; border: 1.5px solid #171717; color: #171717; }
+  .btn-sec:hover { background: #ece8da; }
+  @media (max-width: 480px) { .ok-card { padding: 22px; } .acciones .btn { flex: 1; text-align: center; } }
+</style>

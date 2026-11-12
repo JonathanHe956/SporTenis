@@ -29,7 +29,7 @@ if (!paymentId || paymentId === 'null') {
   }
 }
 
-if (resultado.estado === 'pagado') return Astro.redirect(`/cuenta/compras/${resultado.id_venta}`);
+if (resultado.estado === 'pagado') return Astro.redirect(`/compra/confirmada/${resultado.id_venta}`);
 
 const titulos: Record<Exclude<ResultadoPago['estado'], 'pagado'>, string> = {
   pendiente: 'Tu pago está en proceso',
