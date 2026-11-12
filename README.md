@@ -225,6 +225,7 @@ npm run preview
 ```text
 /
 ├── db/                     Esquema de Drizzle, seed y migraciones SQL
+├── docs/                   Diseño de la base de datos y diagrama entidad-relación
 ├── public/                 Archivos públicos y recursos estáticos
 ├── src/
 │   ├── assets/             Recursos utilizados por la interfaz

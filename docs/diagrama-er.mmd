@@ -1,0 +1,131 @@
+erDiagram
+    Roles ||--o{ Usuarios : "tiene"
+    Usuarios |o--o| Clientes : "cuenta de"
+    Usuarios ||--o{ Sesiones : "inicia"
+    Usuarios ||--o{ RecuperacionesPassword : "pide"
+    Clientes ||--o{ Direcciones : "registra"
+    Clientes ||--o| Carritos : "tiene"
+    Carritos ||--o{ DetalleCarritos : "contiene"
+    Productos ||--o{ DetalleCarritos : "en"
+    Categorias ||--o{ Modelos : "agrupa"
+    Marcas ||--o{ Modelos : "fabrica"
+    Modelos ||--o{ Productos : "variantes"
+    Clientes ||--o{ Ventas : "realiza"
+    Direcciones |o--o{ Ventas : "envío a"
+    MetodosPago ||--o{ Ventas : "se paga con"
+    Ventas ||--|{ DetalleVentas : "incluye"
+    Productos ||--o{ DetalleVentas : "vendido en"
+    Ventas ||--o| Pagos : "se cobra con"
+    Ventas ||--o| Facturas : "se factura en"
+    Facturas ||--o{ FacturaImpuestos : "desglosa"
+    Ventas ||--o{ HistorialOrdenes : "cambia de estado"
+    Promociones ||--o{ PromocionesProductos : "aplica a"
+    Productos ||--o{ PromocionesProductos : "en promoción"
+    Clientes ||--o{ Tickets : "genera"
+    Ventas |o--o{ Tickets : "sobre"
+    Tickets ||--|{ MensajesTicket : "conversación"
+    Clientes ||--o| Monederos : "tiene"
+    Monederos ||--o{ MovimientosMonedero : "registra"
+    Ventas |o--o{ MovimientosMonedero : "pagada con"
+
+    Clientes {
+        int id PK
+        int id_usuario FK
+        varchar nombre
+        varchar correo UK
+        varchar telefono
+        varchar estado
+        datetime fecha_registro
+    }
+    Usuarios {
+        int id PK
+        int id_rol FK
+        varchar correo UK
+        varchar password_hash
+        varchar estado
+    }
+    Productos {
+        int id PK
+        int id_modelo FK
+        varchar sku UK
+        decimal precio_venta
+        int stock
+        varchar estado
+    }
+    Categorias {
+        int id PK
+        varchar nombre
+    }
+    Carritos {
+        int id PK
+        int id_cliente FK
+        datetime fecha_actualizacion
+    }
+    DetalleCarritos {
+        int id PK
+        int id_carrito FK
+        int id_producto FK
+        int cantidad
+    }
+    Ventas {
+        int id PK
+        int id_cliente FK
+        int id_metodo_pago FK
+        int id_direccion FK
+        decimal subtotal
+        decimal envio
+        decimal total
+        varchar estado
+        datetime fecha_venta
+    }
+    DetalleVentas {
+        int id PK
+        int id_venta FK
+        int id_producto FK
+        int cantidad
+        decimal precio_unitario
+    }
+    Pagos {
+        int id PK
+        int id_venta FK "UNIQUE"
+        int id_metodo_pago FK
+        decimal monto
+        varchar estado
+        datetime fecha_pago
+    }
+    Promociones {
+        int id PK
+        varchar nombre
+        enum tipo_descuento
+        decimal valor
+        datetime fecha_inicio
+        datetime fecha_fin
+        enum estado
+    }
+    Impuestos {
+        int id PK
+        varchar nombre UK
+        decimal porcentaje "CHECK 0-100"
+        varchar estado
+    }
+    Tickets {
+        int id PK
+        int id_cliente FK
+        int id_venta FK
+        varchar asunto
+        enum estado
+        enum prioridad
+    }
+    Monederos {
+        int id PK
+        int id_cliente FK "UNIQUE"
+        decimal saldo "CHECK >= 0"
+    }
+    MovimientosMonedero {
+        int id PK
+        int id_monedero FK
+        enum tipo
+        decimal monto
+        int id_venta FK
+        varchar motivo
+    }
